@@ -177,6 +177,17 @@ export class ItemsService {
       });
     }
 
+    if (fields.isFmHardware) {
+      await this.syncFmServiceSegment(item.id, {
+        productCode: item.productCode,
+        name: item.name,
+        fmUnitCode: fields.fmUnitCode,
+        fmMixCode: fields.fmMixCode,
+        isVision: fields.isVision,
+        isActive: true,
+      });
+    }
+
     return this.findById(item.id);
   }
 
@@ -198,8 +209,26 @@ export class ItemsService {
 
     console.log(data, "___________________________________________");
 
-
     await db(this.prisma).update({ where: { id }, data });
+
+    if (data.isFmHardware !== undefined) {
+      if (data.isFmHardware) {
+        const currentItem = await db(this.prisma).findUnique({ where: { id } });
+        await this.syncFmServiceSegment(id, {
+          productCode: currentItem.productCode,
+          name: currentItem.name,
+          fmUnitCode: currentItem.fmUnitCode,
+          fmMixCode: currentItem.fmMixCode,
+          isVision: currentItem.isVision,
+          isActive: true,
+        });
+      } else {
+        await (this.prisma as any).fMServiceSegment.updateMany({
+          where: { productId: id },
+          data: { isActive: false },
+        });
+      }
+    }
 
     if (bogLines !== undefined) {
       await (this.prisma as any).productBogLine.deleteMany({ where: { parentProductId: id } });
@@ -217,6 +246,48 @@ export class ItemsService {
     }
 
     return this.findById(id);
+  }
+
+  private async syncFmServiceSegment(productId: string, itemData: any) {
+    const code = itemData.fmUnitCode || itemData.productCode;
+    const label = itemData.name ? `${itemData.productCode} - ${itemData.name}` : itemData.productCode;
+    const type = itemData.isVision ? 'VISION' : 'UNIT_CODE';
+    const segment = itemData.isVision ? 3 : 1;
+
+    try {
+      const existing = await (this.prisma as any).fMServiceSegment.findFirst({
+        where: { productId },
+      });
+
+      if (existing) {
+        await (this.prisma as any).fMServiceSegment.update({
+          where: { id: existing.id },
+          data: {
+            code,
+            label,
+            type,
+            segment,
+            mixCode: itemData.fmMixCode || null,
+            isActive: true,
+          },
+        });
+      } else {
+        await (this.prisma as any).fMServiceSegment.create({
+          data: {
+            segment,
+            type,
+            code,
+            label,
+            mixCode: itemData.fmMixCode || null,
+            productId,
+            isActive: true,
+            sortOrder: 100,
+          },
+        });
+      }
+    } catch (e) {
+      console.warn('Failed to sync FMServiceSegment:', e);
+    }
   }
 
   async salesSummary(id: string) {

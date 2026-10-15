@@ -43,8 +43,9 @@ export class ProductsController {
     async list(
         @Query('category') category?: string,
         @Query('search') search?: string,
+        @Query('isFmHardware') isFmHardware?: string,
     ) {
-        return this.productsService.list(category, search)
+        return this.productsService.list(category, search, isFmHardware)
     }
 
     @Get(':id')

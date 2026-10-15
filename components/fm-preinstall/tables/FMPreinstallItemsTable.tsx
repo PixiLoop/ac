@@ -19,13 +19,14 @@ export function FMPreinstallItemsTable({
   const [rawProducts, setRawProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    api.get('/products').then(res => {
+    // Only load items where FM Hardware is checked (FM Preinstall is for hardware)
+    api.get('/products?isFmHardware=true').then(res => {
       const list = res.data?.data ?? res.data ?? [];
       setRawProducts(list);
       const options = [
-        { label: 'Select item', value: '' },
+        { label: 'Select hardware item', value: '' },
         ...list.map((p: any) => ({
-          label: `${p.productCode}`,
+          label: p.name ? `${p.productCode} — ${p.name}` : `${p.productCode} (FM Hardware)`,
           value: p.id,
         })),
       ];

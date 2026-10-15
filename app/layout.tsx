@@ -7,8 +7,8 @@ import { CommentProvider } from '../providers/CommentProvider'
 import { OperationsProvider } from '../providers/OperationsContext';
 
 export const metadata = {
-  title: 'AIMS',
-  description: 'Airco AIMS - Field Services',
+  title: 'Fleet Telematics Operations & Job Book',
+  description: 'Enterprise fleet management, hardware inventory, FM preinstallation tracking, and technician job book operations platform.',
   manifest: '/manifest.json',
   themeColor: '#0f172a',
   icons: {

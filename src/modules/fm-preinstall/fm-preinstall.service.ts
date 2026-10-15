@@ -293,6 +293,79 @@ export class FMPreinstallService {
         },
       });
     }
+
+    // Auto-create Workshop Card on Job Board
+    try {
+      const card = await this.createWorkshopJob(preinstall.id);
+      if (card?.id) {
+        await this.prisma.fMPreinstall.update({
+          where: { id: preinstall.id },
+          data: { jobId: card.id },
+        });
+      }
+    } catch (e) {
+      console.warn('Could not auto-create workshop card on preinstall create:', e);
+    }
+
+    // Auto-create Installation Job for Job Book
+    try {
+      const i = dto.installDetail || {};
+      const rego = i.regoNumber || 'TBD';
+      const vin = i.vinNumber || `VIN-${preinstall.preinstallNo}`;
+      const fleetNumber = i.fleetNumber || 'FLEET-01';
+      const makeModel = `${i.vehicleMake || ''} ${i.vehicleModel || ''}`.trim() || 'Commercial Fleet Vehicle';
+
+      let vehicle = await (this.prisma as any).vehicle.findFirst({
+        where: {
+          OR: [
+            { vin },
+            { rego, customerId: dto.customerId },
+          ],
+        },
+      });
+
+      if (!vehicle) {
+        vehicle = await (this.prisma as any).vehicle.create({
+          data: {
+            customerId: dto.customerId,
+            rego,
+            vin,
+            fleetNumber,
+            makeModel,
+          },
+        });
+      }
+
+      const jobId = `INSTALL-${preinstall.preinstallNo.replace(/[^0-9]/g, '') || Date.now().toString().slice(-4)}`;
+      const jobNumber = `JOB-${preinstall.preinstallNo}`;
+      const installDate = i.installDate ? new Date(i.installDate) : null;
+
+      const installationJob = await (this.prisma as any).installationJob.create({
+        data: {
+          id: jobId,
+          jobNumber,
+          customerId: dto.customerId,
+          projectId: 'proj-fleet-telematics',
+          vehicleId: vehicle.id,
+          location: i.installLocation || dto.shippingAddress1 || 'Main Workshop',
+          technicianId: i.installer || null,
+          installationDate: installDate && !isNaN(installDate.getTime()) ? installDate : null,
+          startTime: '09:00',
+          endTime: '12:00',
+          isScheduled: !!(i.installer && installDate),
+          status: 'NOT_ACTIONED',
+          notes: `Created from FM Preinstall ${preinstall.preinstallNo}. Location: ${i.installLocation || 'Main Workshop'}. Unit Code: ${i.fmUnitCode || 'N/A'}.`,
+        },
+      });
+
+      await this.prisma.fMPreinstall.update({
+        where: { id: preinstall.id },
+        data: { installJobId: installationJob.id },
+      });
+    } catch (e) {
+      console.warn('Could not auto-create installation job in DB:', e);
+    }
+
     return preinstall;
   }
 

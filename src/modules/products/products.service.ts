@@ -378,7 +378,14 @@ export class ProductsService {
         return { imported, skippedExisting, failed, warnings, rows: report };
     }
 
-    async list(category?: string, search?: string) {
+    async list(category?: string, search?: string, isFmHardware?: boolean | string) {
+        const isFmBool =
+            isFmHardware === true || isFmHardware === 'true'
+                ? true
+                : isFmHardware === false || isFmHardware === 'false'
+                ? false
+                : undefined;
+
         return this.prisma.product.findMany({
             where: {
                 ...(category && { productCategory: category }),
@@ -388,6 +395,7 @@ export class ProductsService {
                         mode: 'insensitive',
                     },
                 }),
+                ...(isFmBool !== undefined && { isFmHardware: isFmBool }),
             },
             orderBy: {
                 productCode: 'asc',

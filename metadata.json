@@ -1,0 +1,8 @@
+{
+  "name": "Fleet Telematics Operations & Job Book",
+  "description": "Enterprise fleet management, hardware inventory, FM preinstallation tracking, and technician job book operations platform.",
+  "version": "1.0.0",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -3,12 +3,9 @@
 import { OperationsCalendar } from '../../../components/job-boards/operations/OperationsCalendar';
 import { AdminShell } from '../../../components/layout/AdminShell';
 
-
-export default function InvoicesPage() {
-    
-
+export default function OperationsCalendarPage() {
     return (
-        <AdminShell title="Invoices" showTableDensity>
+        <AdminShell title="Operations Calendar | Job Book" showTableDensity>
             <OperationsCalendar />
         </AdminShell>
     );

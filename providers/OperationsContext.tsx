@@ -152,7 +152,18 @@ interface OperationsContextType {
 const OperationsContext = createContext<OperationsContextType | undefined>(undefined);
 
 export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [jobs, setJobs] = useState<InstallationJob[]>(INITIAL_INSTALLATION_JOBS);
+  const [jobs, setJobs] = useState<InstallationJob[]>(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('operations_installation_jobs');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        }
+      } catch (e) {}
+    }
+    return INITIAL_INSTALLATION_JOBS;
+  });
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -176,6 +187,15 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return jobs.find((j) => j.id === selectedJobId) || null;
   }, [jobs, selectedJobId]);
 
+  // Save jobs to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('operations_installation_jobs', JSON.stringify(jobs));
+      } catch (e) {}
+    }
+  }, [jobs]);
+
   // Initial sync with backend REST APIs
   const refreshFromApi = async () => {
     try {
@@ -187,8 +207,17 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         api.projects.list(),
       ]);
 
-      if (jobsRes.data?.data) {
-        setJobs(jobsRes.data.data);
+      if (jobsRes.data?.data && Array.isArray(jobsRes.data.data) && jobsRes.data.data.length > 0) {
+        setJobs((prev) => {
+          const apiJobs = jobsRes.data!.data;
+          const merged = [...apiJobs];
+          for (const localJob of prev) {
+            if (!merged.some((j) => j.id === localJob.id)) {
+              merged.push(localJob);
+            }
+          }
+          return merged;
+        });
       }
 
       if (techRes.data?.items) {

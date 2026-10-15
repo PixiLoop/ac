@@ -6,7 +6,9 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "dev": "concurrently \"nest start --watch\" \"next dev\""
+    "dev": "concurrently \"nest start --watch\" \"next dev\"",
+    "build": "next build",
+    "start": "next start"
   },
   "dependencies": {
     "@azure/identity": "^4.13.1",

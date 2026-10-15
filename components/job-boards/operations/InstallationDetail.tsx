@@ -47,7 +47,21 @@ export const InstallationDetail: React.FC = () => {
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
 
   if (!selectedJob) {
-    return null;
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border">
+        <h3 className="text-lg font-semibold text-slate-800">Job Not Found or Loading</h3>
+        <p className="mt-1 text-sm text-slate-500">The requested installation job was not found or is still loading.</p>
+        <button
+          onClick={() => {
+            setSelectedJobId(null);
+            if (typeof window !== 'undefined') window.history.back();
+          }}
+          className="mt-4 px-4 py-2 text-sm font-medium text-white bg-slate-900 rounded-lg hover:bg-slate-800"
+        >
+          Back to Installation Jobs
+        </button>
+      </div>
+    );
   }
 
   const stats = getChecklistStats(selectedJob);

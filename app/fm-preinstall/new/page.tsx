@@ -106,7 +106,96 @@ export default function Page() {
         })),
       });
 
-      showToast({ type: 'success', title: 'Created successfully' });
+      // Auto-create and sync Installation Job with Job Book
+      try {
+        const preinstallNo = res.data?.data?.preinstallNo || res.data?.preinstallNo || `PI-${Date.now().toString().slice(-4)}`;
+        const rego = form.regoNumber || installDetail?.regoNumber || 'TBD';
+        const vin = form.vinNumber || installDetail?.vinNumber || `VIN-${preinstallNo}`;
+        const fleet = form.fleetNumber || installDetail?.fleetNumber || 'FLEET-01';
+        const makeModel = `${form.vehicleMake || installDetail?.vehicleMake || ''} ${form.vehicleModel || installDetail?.vehicleModel || ''}`.trim() || 'Commercial Vehicle';
+
+        const newJob = {
+          id: `INSTALL-${preinstallNo.replace(/[^0-9]/g, '') || Date.now().toString().slice(-4)}`,
+          jobNumber: `JOB-${preinstallNo}`,
+          customerId: form.customerId,
+          customerName: account?.name || form.shippingName || 'FM Customer',
+          customerContact: form.shippingName || 'Fleet Manager',
+          customerPhone: '02 9876 5432',
+          projectId: 'proj-fleet-telematics',
+          projectName: 'Fleet Telematics Rollout',
+          location: form.installLocation || installDetail?.installLocation || shipping?.address1 || 'Main Workshop',
+          vehicle: {
+            rego,
+            fleetNumber: fleet,
+            vin,
+            makeModel,
+          },
+          hardware: validItems.map(item => ({
+            id: item.productId,
+            model: item.partNumber || installDetail?.fmUnitCode || 'MIX4000',
+            name: item.description || item.partNumber || 'Telematics Hardware',
+            serialNumber: installDetail?.unitSerial || '',
+            imei: installDetail?.unitIMEI || '',
+            category: 'Telematics Unit',
+          })),
+          technicianId: form.installer || installDetail?.installer || undefined,
+          technicianName: users.find(u => u.id === (form.installer || installDetail?.installer))
+            ? `${users.find(u => u.id === (form.installer || installDetail?.installer)).firstName} ${users.find(u => u.id === (form.installer || installDetail?.installer)).lastName}`
+            : (form.installer || installDetail?.installer || undefined),
+          installationDate: (form.installDate || installDetail?.installDate) ? new Date(form.installDate || installDetail?.installDate).toISOString().split('T')[0] : undefined,
+          startTime: '09:00',
+          endTime: '12:00',
+          isScheduled: !!(form.installer && (form.installDate || installDetail?.installDate)),
+          status: 'Not Actioned',
+          checklistSections: [
+            {
+              id: 'sec-prep',
+              title: 'Hardware & Harness Pre-Check',
+              hardwareModel: 'MIX4000',
+              items: [
+                { id: `chk-${Date.now()}-1`, title: 'Verify serial and IMEI against preinstall sheet', isRequired: true, displayOrder: 1, completed: false, section: 'Hardware & Harness Pre-Check' },
+                { id: `chk-${Date.now()}-2`, title: 'Inspect harness cables and inline fuses', isRequired: true, displayOrder: 2, completed: false, section: 'Hardware & Harness Pre-Check' },
+              ],
+            },
+            {
+              id: 'sec-install',
+              title: 'Vehicle Installation & Telemetry Verification',
+              hardwareModel: 'MIX4000',
+              items: [
+                { id: `chk-${Date.now()}-3`, title: 'Secure mounting in cabin away from moving linkages', isRequired: true, displayOrder: 3, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
+                { id: `chk-${Date.now()}-4`, title: 'Connect ignition and continuous 12V/24V power lines', isRequired: true, displayOrder: 4, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
+                { id: `chk-${Date.now()}-5`, title: 'Confirm GPS fix and telematics cellular heartbeat', isRequired: true, displayOrder: 5, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
+              ],
+            },
+          ],
+          timeline: [
+            {
+              id: `tl-${Date.now()}`,
+              status: 'Not Actioned',
+              timestamp: new Date().toISOString(),
+              updatedBy: 'Operations Dispatch',
+              note: `Installation job created from FM Preinstall ${preinstallNo}.`,
+            },
+          ],
+          notes: `Created from FM Preinstall ${preinstallNo}. Location: ${form.installLocation || installDetail?.installLocation || 'Main Workshop'}.`,
+          createdAt: new Date().toISOString(),
+          canInvoice: false,
+        };
+
+        if (typeof window !== 'undefined') {
+          const raw = localStorage.getItem('operations_installation_jobs');
+          let currentJobs: any[] = [];
+          if (raw) {
+            try { currentJobs = JSON.parse(raw); } catch (e) {}
+          }
+          currentJobs = [newJob, ...currentJobs.filter((j: any) => j.id !== newJob.id)];
+          localStorage.setItem('operations_installation_jobs', JSON.stringify(currentJobs));
+        }
+      } catch (jobErr) {
+        console.warn('Could not cache installation job locally:', jobErr);
+      }
+
+      showToast({ type: 'success', title: 'Preinstall & Installation Job created successfully' });
       router.push('/fm-preinstall');
     } catch (err: any) {
       const raw = err?.response?.data?.message;

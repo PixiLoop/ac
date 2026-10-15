@@ -1,0 +1,2275 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+  schemas  = ["admin", "auth", "inventory"]
+}
+
+model User {
+  id                      String               @id @default(cuid())
+  tenantId                String?
+  email                   String               @unique
+  firstName               String?
+  lastName                String?
+  displayName             String?
+  phone                   String?
+  profilePhotoUrl         String?
+  passwordHash            String
+  isActive                Boolean              @default(false)
+  mustChangePassword      Boolean              @default(true)
+  mfaEnabled              Boolean              @default(false)
+  mfaSecret               String?
+  secretQuestion          String?
+  secretAnswerHash        String?
+  lastLoginAt             DateTime?
+  createdAt               DateTime             @default(now())
+  updatedAt               DateTime             @updatedAt
+  defaultLandingPage      String?
+  deletedAt               DateTime?
+  status                  userStatus?
+  auditLogs               AuditLog[]           @relation("actorUser")
+  cardActivities          CardActivity[]
+  cardMemberships         CardMember[]
+  DispatchedInvoices      DispatchedInvoices[]
+  createdInstallationJobs InstallationJob[]    @relation("JobCreator")
+  installationJobs        InstallationJob[]
+  jobBoards               JobBoard[]
+  timelineEvents          JobTimelineEvent[]   @relation("TimelineActor")
+  jobTimelineEvents       JobTimelineEvent[]
+  userJobs                UserJob[]
+  passwordResetTokens     PasswordResetToken[]
+  refreshTokens           RefreshToken[]
+  userRoles               UserRole[]
+
+  @@schema("auth")
+}
+
+model Role {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  createdAt       DateTime         @default(now())
+  deletedAt       DateTime?
+  isActive        Boolean          @default(false)
+  updatedAt       DateTime         @default(now()) @updatedAt
+  isSystem        Boolean          @default(false)
+  isTechnician    Boolean?         @default(false)
+  rolePermissions RolePermission[]
+  userRoles       UserRole[]
+
+  @@schema("auth")
+}
+
+model Permission {
+  id              String           @id @default(cuid())
+  name            String           @unique
+  description     String?
+  createdAt       DateTime         @default(now())
+  rolePermissions RolePermission[]
+
+  @@schema("auth")
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String
+  roleId    String
+  createdAt DateTime @default(now())
+  role      Role     @relation(fields: [roleId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, roleId])
+  @@schema("auth")
+}
+
+model RolePermission {
+  id           String     @id @default(cuid())
+  roleId       String
+  permissionId String
+  createdAt    DateTime   @default(now())
+  permission   Permission @relation(fields: [permissionId], references: [id])
+  role         Role       @relation(fields: [roleId], references: [id])
+
+  @@unique([roleId, permissionId])
+  @@schema("auth")
+}
+
+model AuditLog {
+  id         String   @id @default(cuid())
+  actorId    String?
+  actorType  String?
+  action     String
+  entityType String?
+  entityId   String?
+  ip         String?
+  metadata   Json?
+  createdAt  DateTime @default(now())
+  actor      User?    @relation("actorUser", fields: [actorId], references: [id])
+
+  @@schema("admin")
+}
+
+model RefreshToken {
+  id        String   @id @default(cuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  revoked   Boolean  @default(false)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@schema("auth")
+}
+
+model PasswordResetToken {
+  id        String    @id @default(uuid())
+  userId    String
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+  type      TokenType @default(PASSWORD_RESET)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@schema("auth")
+}
+
+model Job {
+  id           String    @id @default(cuid())
+  jobNumber    String    @unique
+  customer     String
+  shortAddress String
+  scheduledAt  DateTime?
+  status       String    @default("scheduled")
+  priority     String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+  deletedAt    DateTime?
+  isActive     Boolean   @default(false)
+  userJobs     UserJob[]
+
+  @@schema("admin")
+}
+
+model UserJob {
+  id         String   @id @default(cuid())
+  userId     String
+  jobId      String
+  assignedAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+  job        Job      @relation(fields: [jobId], references: [id])
+  user       User     @relation(fields: [userId], references: [id])
+
+  @@unique([userId, jobId])
+  @@schema("admin")
+}
+
+model Customer {
+  id                      String             @id @default(cuid())
+  customerNumber          String             @unique
+  name                    String
+  registeredName          String?
+  abn                     String?
+  gstNumber               String?
+  status                  CustomerStatus     @default(ACTIVE)
+  isGeneric               Boolean            @default(false)
+  requiresShippingDetails Boolean            @default(false)
+  fmCustomerNumber        String?
+  orderRequired           Boolean            @default(false)
+  creditLimit             Decimal?           @db.Decimal(12, 2)
+  creditHold              Boolean            @default(false)
+  creditHoldReason        String?
+  gstExempt               Boolean            @default(false)
+  priceLevel              PriceLevel         @default(RETAIL)
+  paymentTerms            PaymentTerms       @default(DAYS_30)
+  currentBalance          Decimal?           @db.Decimal(12, 2)
+  overdueAmount           Decimal?           @db.Decimal(12, 2)
+  primaryContactId        String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
+  deletedAt               DateTime?
+  accountType             String?
+  bankAccountName         String?
+  bankAccountNo           String?
+  bankBsb                 String?
+  bankName                String?
+  paymentMethod           String?
+  salesFactor             Decimal?           @db.Decimal(6, 2)
+  invoiceDelivery         String             @default("PRINT_WITH_GOODS")
+  addresses               CustomerAddress[]
+  contacts                CustomerContact[]
+  dispatches              CustomerDispatch[]
+  Depots                  Depots[]
+  Dispatch                Dispatch[]
+  fmCustomer              FMCustomer?
+  fmPreinstalls           FMPreinstall[]
+  installationJobs        InstallationJob[]
+  invoices                Invoice[]
+  Quotation               Quotation[]
+  salesOrders             SalesOrder[]
+  vehicles                Vehicle[]
+
+  @@schema("admin")
+}
+
+model CustomerContact {
+  id         String           @id @default(cuid())
+  customerId String
+  email      String
+  phone      String?
+  fax        String?
+  role       ContactRole
+  isPrimary  Boolean          @default(false)
+  createdAt  DateTime         @default(now())
+  updatedAt  DateTime         @updatedAt
+  deletedAt  DateTime?
+  firstName  String
+  lastName   String
+  category   contactCategory?
+  customer   Customer         @relation(fields: [customerId], references: [id])
+
+  @@schema("admin")
+}
+
+model CustomerAddress {
+  id         String      @id @default(cuid())
+  customerId String
+  type       AddressType
+  name       String?
+  address1   String
+  address2   String?
+  address3   String?
+  city       String?
+  state      String?
+  postcode   String?
+  country    String?
+  isDefault  Boolean     @default(false)
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  deletedAt  DateTime?
+  customer   Customer    @relation(fields: [customerId], references: [id])
+
+  @@schema("admin")
+}
+
+model DispatchMethod {
+  id                 String               @id @default(cuid())
+  code               String               @unique
+  label              String
+  isActive           Boolean              @default(true)
+  sortOrder          Int?
+  createdAt          DateTime             @default(now())
+  updatedAt          DateTime             @updatedAt
+  DispatchedInvoices DispatchedInvoices[]
+
+  @@schema("admin")
+}
+
+model CustomerDispatch {
+  id          String    @id @default(cuid())
+  customerId  String
+  method      String
+  accountNo   String?
+  accountName String?
+  charge      Decimal?  @db.Decimal(10, 2)
+  reference   String?
+  isDefault   Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  customer    Customer  @relation(fields: [customerId], references: [id])
+  invoices    Invoice[]
+
+  @@schema("admin")
+}
+
+model SalesOrder {
+  id               String           @id @default(cuid())
+  orderNumber      String           @unique
+  customerId       String
+  orderType        SalesOrderType
+  status           SalesOrderStatus @default(PENDING)
+  orderedAt        DateTime?
+  actionDate       DateTime?
+  completedAt      DateTime?
+  cancelledAt      DateTime?
+  customerPO       String?
+  internalNotes    String?
+  externalNotes    String?
+  priceLevel       PriceLevel
+  salesFactor      Decimal?         @db.Decimal(6, 2)
+  freight          Decimal?         @db.Decimal(10, 2)
+  sundries         Decimal?         @db.Decimal(10, 2)
+  discountPct      Decimal?         @db.Decimal(5, 2)
+  subtotal         Decimal?         @db.Decimal(12, 2)
+  gst              Decimal?         @db.Decimal(12, 2)
+  total            Decimal?         @db.Decimal(12, 2)
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+  sameAsCustomer   Boolean?         @default(false)
+  shippingAddress1 String?
+  shippingAddress2 String?
+  shippingAddress3 String?
+  shippingName     String?
+  billingAddress1  String?
+  billingAddress2  String?
+  billingAddress3  String?
+  billingCity      String?
+  billingCountry   String?
+  billingName      String?
+  billingPostcode  String?
+  billingState     String?
+  labour           Decimal?         @db.Decimal(10, 2)
+  rounding         Decimal?         @db.Decimal(10, 2)
+  otherCharges     Decimal?         @db.Decimal(10, 2)
+  shippingCity     String?
+  shippingCountry  String?
+  shippingPostcode String?
+  shippingState    String?
+  paymentTerms     PaymentTerms?
+  quotationId      String?
+  dispatchMethod   String?
+  invoices         Invoice[]
+  pickingSlips     PickingSlip[]
+  Quotation        Quotation[]      @relation("SalesOrderQuotations")
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  fromQuotation    Quotation?       @relation("SOFromQuotation", fields: [quotationId], references: [id])
+  items            SalesOrderItem[]
+
+  @@schema("admin")
+}
+
+model SalesOrderItem {
+  id                String     @id @default(cuid())
+  salesOrderId      String
+  description       String
+  quantity          Int
+  unitPrice         Decimal    @db.Decimal(10, 2)
+  discountPct       Decimal?   @db.Decimal(5, 2)
+  taxRate           Decimal?   @db.Decimal(5, 2)
+  allocatedQty      Int        @default(0)
+  backOrderQty      Int        @default(0)
+  lineTotal         Decimal?   @db.Decimal(12, 2)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+  deletedAt         DateTime?
+  productId         String
+  landedCost        Int        @default(0)
+  retailPrice       Int        @default(0)
+  tradePrice        Int        @default(0)
+  salesPartnerPrice Int        @default(0)
+  agentPrice        Int        @default(0)
+  product           Product    @relation(fields: [productId], references: [id])
+  salesOrder        SalesOrder @relation(fields: [salesOrderId], references: [id])
+
+  @@schema("admin")
+}
+
+model Invoice {
+  id                   String                @id @default(cuid())
+  invoiceNumber        String                @unique
+  invoiceType          InvoiceType           @default(FREEHAND)
+  customerId           String?
+  salesOrderId         String?
+  dispatchId           String?
+  status               InvoiceStatus         @default(DRAFT)
+  isProforma           Boolean               @default(false)
+  subtotal             Decimal?              @db.Decimal(12, 2)
+  gst                  Decimal?              @db.Decimal(12, 2)
+  total                Decimal?              @db.Decimal(12, 2)
+  balanceDue           Decimal?              @db.Decimal(12, 2)
+  paidAmount           Decimal?              @db.Decimal(12, 2)
+  paidAt               DateTime?
+  issuedAt             DateTime?
+  dueDate              DateTime?
+  sentAt               DateTime?
+  sentVia              String?
+  freight              Decimal?              @db.Decimal(10, 2)
+  sundries             Decimal?              @db.Decimal(10, 2)
+  labour               Decimal?              @db.Decimal(10, 2)
+  rounding             Decimal?              @db.Decimal(6, 2)
+  otherCharges         Decimal?              @db.Decimal(10, 2)
+  internalNotes        String?
+  externalNotes        String?
+  shippingName         String?
+  shippingAddress1     String?
+  shippingAddress2     String?
+  shippingAddress3     String?
+  shippingCity         String?
+  shippingState        String?
+  shippingPostcode     String?
+  billingName          String?
+  billingAddress1      String?
+  billingAddress2      String?
+  billingAddress3      String?
+  billingCity          String?
+  billingState         String?
+  billingPostcode      String?
+  reference            String?
+  abnNumber            String?
+  isLocked             Boolean               @default(false)
+  reversalOfInvoiceId  String?
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+  deletedAt            DateTime?
+  xeroInvoiceId        String?
+  xeroSyncedAt         DateTime?
+  subscriptionReportId String?
+  DispatchedInvoices   DispatchedInvoices[]
+  installationJobs     InstallationJob[]
+  customer             Customer?             @relation(fields: [customerId], references: [id])
+  dispatch             CustomerDispatch?     @relation(fields: [dispatchId], references: [id])
+  reversalOf           Invoice?              @relation("InvoiceReversal", fields: [reversalOfInvoiceId], references: [id])
+  reversals            Invoice[]             @relation("InvoiceReversal")
+  salesOrder           SalesOrder?           @relation(fields: [salesOrderId], references: [id])
+  subscriptionReport   FMSubscriptionReport? @relation(fields: [subscriptionReportId], references: [id])
+  items                InvoiceItem[]
+  fmSubscriptionItems  fmSubscriptionItems[]
+
+  @@schema("admin")
+}
+
+model PickingSlip {
+  id           String            @id @default(cuid())
+  slipNumber   String            @unique
+  salesOrderId String
+  status       PickingSlipStatus @default(DRAFT)
+  pickedBy     String?
+  notes        String?
+  createdAt    DateTime          @default(now())
+  updatedAt    DateTime          @updatedAt
+  deletedAt    DateTime?
+  salesOrder   SalesOrder        @relation(fields: [salesOrderId], references: [id])
+  lines        PickingSlipLine[]
+
+  @@schema("admin")
+}
+
+model PickingSlipLine {
+  id            String      @id @default(cuid())
+  pickingSlipId String
+  productId     String
+  description   String
+  onHandQty     Decimal     @db.Decimal(12, 3)
+  orderedQty    Int
+  pickedQty     Int         @default(0)
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+  pickingSlip   PickingSlip @relation(fields: [pickingSlipId], references: [id])
+  product       Product     @relation(fields: [productId], references: [id])
+
+  @@schema("admin")
+}
+
+model InvoiceItem {
+  id           String    @id @default(dbgenerated("(gen_random_uuid())::text"))
+  invoiceId    String
+  productId    String
+  description  String
+  quantity     Int
+  backorderQty Int       @default(0)
+  unitPrice    Decimal   @db.Decimal(10, 2)
+  discountPct  Decimal?  @db.Decimal(5, 2)
+  lineTotal    Decimal?  @db.Decimal(12, 2)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @default(now()) @updatedAt
+  deletedAt    DateTime?
+  invoice      Invoice   @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  product      Product   @relation(fields: [productId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@schema("admin")
+}
+
+model CommentThread {
+  id         String    @id @default(uuid())
+  entityType String
+  entityId   String
+  createdAt  DateTime  @default(now())
+  comments   Comment[]
+
+  @@schema("admin")
+}
+
+model Comment {
+  id            String        @id @default(uuid())
+  threadId      String
+  message       String
+  createdBy     String
+  createdAt     DateTime      @default(now())
+  createdByName String?
+  type          CommentType   @default(COMMENT)
+  thread        CommentThread @relation(fields: [threadId], references: [id])
+
+  @@schema("admin")
+}
+
+model FMCustomer {
+  id                   String                  @id @default(cuid())
+  customerId           String                  @unique
+  fmWebNumber          String?                 @unique
+  fleetName            String?
+  mixOrgId             String?
+  mixDBase             String?
+  priceLevel           PriceLevel
+  priceFactor          Int                     @default(1000)
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  depots               String?
+  invPeriod            String?
+  invoiceBy            String?
+  listBy               String?
+  sortBy               String?
+  volOffset            String?
+  customer             Customer                @relation(fields: [customerId], references: [id])
+  options              FMCustomerOption[]
+  FMCustomerOrgIds     FMCustomerOrgIds[]
+  services             FMCustomerService[]
+  cameraSimMixServices FMCustomerServiceItem[]
+  preinstalls          FMPreinstall[]
+  subscriptionReports  FMSubscriptionReport[]
+
+  @@schema("admin")
+}
+
+model FMCustomerService {
+  id            String     @id @default(cuid())
+  fmCustomerId  String
+  numItems      Int        @default(0)
+  active        Int        @default(0)
+  charge        Int        @default(0)
+  monthlyCharge Int        @default(0)
+  price         Decimal    @db.Decimal(10, 2)
+  isActive      Boolean    @default(true)
+  productId     String
+  fmCustomer    FMCustomer @relation(fields: [fmCustomerId], references: [id])
+  product       Product    @relation(fields: [productId], references: [id])
+
+  @@unique([fmCustomerId, productId])
+  @@schema("admin")
+}
+
+model FMOption {
+  id              String             @id @default(cuid())
+  code            String             @unique
+  label           String
+  hasCharge       Boolean            @default(true)
+  hasVehicleCount Boolean            @default(true)
+  isActive        Boolean            @default(true)
+  sortOrder       Int?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  customerOptions FMCustomerOption[]
+
+  @@schema("admin")
+}
+
+model FMCustomerOption {
+  id           String     @id @default(cuid())
+  fmCustomerId String
+  optionId     String
+  enabled      Boolean    @default(false)
+  charge       Decimal?   @db.Decimal(10, 2)
+  vehicleCount Int?
+  fmCustomer   FMCustomer @relation(fields: [fmCustomerId], references: [id])
+  option       FMOption   @relation(fields: [optionId], references: [id])
+
+  @@unique([fmCustomerId, optionId])
+  @@schema("admin")
+}
+
+model FMServiceMaster {
+  id               String                  @id @default(cuid())
+  code             String                  @unique
+  label            String
+  type             FMServiceType
+  hasActive        Boolean                 @default(false)
+  hasPrice         Boolean                 @default(true)
+  isActive         Boolean                 @default(true)
+  sortOrder        Int?
+  createdAt        DateTime                @default(now())
+  updatedAt        DateTime                @updatedAt
+  customerServices FMCustomerServiceItem[]
+
+  @@schema("admin")
+}
+
+model FMCustomerServiceItem {
+  id            String          @id @default(cuid())
+  fmCustomerId  String
+  serviceId     String
+  numItems      Int             @default(0)
+  active        Int?
+  price         Decimal?        @db.Decimal(10, 2)
+  monthlyCharge Decimal?        @db.Decimal(10, 2)
+  fmCustomer    FMCustomer      @relation(fields: [fmCustomerId], references: [id])
+  service       FMServiceMaster @relation(fields: [serviceId], references: [id])
+
+  @@unique([fmCustomerId, serviceId])
+  @@schema("admin")
+}
+
+model JobBoard {
+  id           String             @id @default(cuid())
+  name         String
+  color        String?
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  deletedAt    DateTime?
+  description  String?
+  userId       String?
+  customFields BoardCustomField[]
+  user         User?              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lists        JobList[]
+
+  @@index([userId])
+  @@index([deletedAt])
+  @@schema("admin")
+}
+
+model JobList {
+  id        String    @id @default(cuid())
+  boardId   String
+  name      String
+  sortOrder Int
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+  color     String?
+  cards     JobCard[]
+  board     JobBoard  @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId])
+  @@index([sortOrder])
+  @@schema("admin")
+}
+
+model JobCard {
+  id                String                 @id @default(cuid())
+  listId            String
+  title             String
+  description       String?
+  dueDate           DateTime?
+  sortOrder         Int
+  createdAt         DateTime               @default(now())
+  updatedAt         DateTime               @updatedAt
+  deletedAt         DateTime?
+  activities        CardActivity[]
+  attachments       CardAttachment[]
+  checklists        CardChecklist[]
+  customFieldValues CardCustomFieldValue[]
+  labels            CardLabel[]
+  members           CardMember[]
+  list              JobList                @relation(fields: [listId], references: [id], onDelete: Cascade)
+
+  @@index([listId])
+  @@index([sortOrder])
+  @@schema("admin")
+}
+
+model Product {
+  id                  String              @id @default(cuid())
+  name                String
+  productCode         String              @unique
+  parentProductId     String?
+  productCategory     String?
+  status              String?
+  replacedBy          String?
+  billOfGoods         Boolean             @default(false)
+  fieldServiceType    String?
+  decimalsSupported   Boolean             @default(false)
+  defaultUnit         String?
+  unitGroup           String?
+  vendorName          String?
+  vendorNumber        String?
+  vendorWeb           String?
+  vendorPartNumber    String?
+  reorderLogic        String?
+  automaticMaxQty     Int?
+  automaticMinQty     Int?
+  fixedMinQty         Int?
+  fixedMaxQty         Int?
+  isFmHardware        Boolean             @default(false)
+  isMonitor           Boolean             @default(false)
+  fmMixCode           String?
+  fmUnitCode          String?
+  fourGUnitModem      Boolean             @default(false)
+  mixUnitSim          Boolean             @default(false)
+  fuelRebate          Boolean             @default(false)
+  internSim           Boolean             @default(false)
+  rimOption           Boolean             @default(false)
+  nrcOption           Boolean             @default(false)
+  tmaOption           Boolean             @default(false)
+  isVision            Boolean             @default(false)
+  vision4GDevice      Boolean             @default(false)
+  standardVision      Boolean             @default(false)
+  highDefinition      Boolean             @default(false)
+  aiOption            Boolean             @default(false)
+  cameraCount         Int?
+  mixVisSim           Boolean             @default(false)
+  vision4GModem       Boolean             @default(false)
+  netSupplierBuyPrice Decimal?            @db.Decimal(12, 2)
+  importDuty          Decimal?            @db.Decimal(6, 2)
+  importMarkup        Decimal?            @db.Decimal(6, 2)
+  landedCost          Decimal?            @db.Decimal(12, 2)
+  aircoMarkupGroup    String?
+  agentPrice          Decimal?            @db.Decimal(12, 2)
+  salesPartnerPrice   Decimal?            @db.Decimal(12, 2)
+  tradePrice          Decimal?            @db.Decimal(12, 2)
+  retailPrice         Decimal?            @db.Decimal(12, 2)
+  salesMargin         Decimal?            @db.Decimal(6, 2)
+  sellingPrice        Decimal?            @db.Decimal(12, 2)
+  gstPercent          Decimal?            @db.Decimal(5, 2)
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+  isActive            Boolean             @default(true)
+  description         String?
+  extendedDescription String?
+  itemType            String?
+  orderRank           String?
+  weight              Decimal?            @db.Decimal(10, 3)
+  volume              Decimal?            @db.Decimal(10, 3)
+  barcode             String?
+  onHand              Decimal             @default(0) @db.Decimal(12, 3)
+  committed           Decimal             @default(0) @db.Decimal(12, 3)
+  backOrdered         Decimal             @default(0) @db.Decimal(12, 3)
+  onOrder             Decimal             @default(0) @db.Decimal(12, 3)
+  supplierStock       Decimal             @default(0) @db.Decimal(12, 3)
+  minStock            Decimal?            @db.Decimal(12, 3)
+  maxStock            Decimal?            @db.Decimal(12, 3)
+  reorderPoint        Decimal?            @db.Decimal(12, 3)
+  reorderQty          Decimal?            @db.Decimal(12, 3)
+  averageCost         Decimal?            @db.Decimal(12, 4)
+  standardCost        Decimal?            @db.Decimal(12, 4)
+  isTaxable           Boolean             @default(true)
+  isWeighed           Boolean             @default(false)
+  isSerialized        Boolean             @default(false)
+  allowBackOrder      Boolean             @default(true)
+  primarySupplierId   String?
+  supplierCode        String?
+  leadTimeDays        Int?
+  lastStocktakeDate   DateTime?
+  lastStocktakeQty    Decimal?            @db.Decimal(12, 3)
+  notes               String?
+  imageUrl            String?
+  deletedAt           DateTime?
+  xGroup              String?
+  bin                 String?
+  packSize            Int?
+  grade               Int?
+  fmRuleCode          String?
+  landedFactor        Int?
+  inStoreCost         Decimal?            @db.Decimal(12, 2)
+  agentFactor         Decimal?            @db.Decimal(8, 4)
+  partnerFactor       Decimal?            @db.Decimal(8, 4)
+  tradeFactor         Decimal?            @db.Decimal(8, 4)
+  retailFactor        Decimal?            @db.Decimal(8, 4)
+  agentFactorLocked   Boolean             @default(false)
+  partnerFactorLocked Boolean             @default(false)
+  tradeFactorLocked   Boolean             @default(false)
+  retailFactorLocked  Boolean             @default(false)
+  aliasAction         String?             @default("no_action")
+  fmCustomerServices  FMCustomerService[]
+  fmPreinstallItems   FMPreinstallItem[]
+  FMServiceSegment    FMServiceSegment[]
+  invoiceItems        InvoiceItem[]
+  pickingSlipLines    PickingSlipLine[]
+  InvCategory         InvCategory?        @relation(fields: [productCategory], references: [code], onDelete: NoAction, onUpdate: NoAction, map: "Category")
+  primarySupplier     InvSupplier?        @relation("PrimarySupplier", fields: [primarySupplierId], references: [id])
+  aliases             ProductAlias[]      @relation("SourceProduct")
+  aliasedBy           ProductAlias[]      @relation("TargetProduct")
+  bogComponentOf      ProductBogLine[]    @relation("BogComponent")
+  bogLines            ProductBogLine[]    @relation("BogParent")
+  QuotationItem       QuotationItem[]
+  salesOrderItems     SalesOrderItem[]
+  goodsReceiptLines   GoodsReceiptLine[]
+  importRows          ImportRow[]
+  priceGroupItems     PriceGroupItem[]
+  productLocations    ProductLocation[]
+  purchaseOrderLines  PurchaseOrderLine[]
+  stockMovements      StockMovement[]
+
+  @@schema("admin")
+}
+
+model ProductLocation {
+  id         String      @id @default(cuid())
+  productId  String
+  locationId String
+  isPrimary  Boolean     @default(false)
+  binCode    String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  location   InvLocation @relation(fields: [locationId], references: [id])
+  product    Product     @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([productId, locationId])
+  @@schema("inventory")
+}
+
+model InvLocation {
+  id               String            @id @default(cuid())
+  code             String            @unique
+  name             String
+  aisle            String?
+  bay              String?
+  level            String?
+  description      String?
+  isActive         Boolean           @default(true)
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  deletedAt        DateTime?
+  productLocations ProductLocation[]
+
+  @@schema("inventory")
+}
+
+model CardMember {
+  id     String  @id @default(cuid())
+  cardId String
+  userId String
+  card   JobCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user   User    @relation(fields: [userId], references: [id])
+
+  @@unique([cardId, userId])
+  @@schema("admin")
+}
+
+model CardLabel {
+  id     String  @id @default(cuid())
+  cardId String
+  name   String
+  color  String
+  card   JobCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@schema("admin")
+}
+
+model CardChecklist {
+  id     String              @id @default(cuid())
+  cardId String
+  title  String
+  card   JobCard             @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  items  CardChecklistItem[]
+
+  @@schema("admin")
+}
+
+model CardChecklistItem {
+  id          String        @id @default(cuid())
+  checklistId String
+  content     String
+  isCompleted Boolean       @default(false)
+  sortOrder   Int?
+  checklist   CardChecklist @relation(fields: [checklistId], references: [id], onDelete: Cascade)
+
+  @@schema("admin")
+}
+
+model BoardCustomField {
+  id      String                 @id @default(cuid())
+  boardId String
+  name    String
+  type    String
+  board   JobBoard               @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  values  CardCustomFieldValue[]
+
+  @@schema("admin")
+}
+
+model CardCustomFieldValue {
+  id      String           @id @default(cuid())
+  cardId  String
+  fieldId String
+  value   String?
+  card    JobCard          @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  field   BoardCustomField @relation(fields: [fieldId], references: [id], onDelete: Cascade)
+
+  @@unique([cardId, fieldId])
+  @@schema("admin")
+}
+
+model CardActivity {
+  id        String   @id @default(cuid())
+  cardId    String
+  userId    String
+  type      String
+  message   String
+  createdAt DateTime @default(now())
+  card      JobCard  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@schema("admin")
+}
+
+model CardAttachment {
+  id        String   @id @default(cuid())
+  cardId    String
+  fileName  String
+  fileUrl   String
+  createdAt DateTime @default(now())
+  card      JobCard  @relation(fields: [cardId], references: [id], onDelete: Cascade)
+
+  @@index([cardId])
+  @@schema("admin")
+}
+
+model Quotation {
+  id               String           @id @default(cuid())
+  quoteNumber      String           @unique
+  customerId       String
+  status           QuotationStatus  @default(DRAFT)
+  expiryDate       DateTime?
+  priceLevel       PriceLevel
+  salesFactor      Decimal?         @db.Decimal(6, 2)
+  paymentTerms     PaymentTerms?
+  hasPremium       Boolean          @default(false)
+  hasEssential     Boolean          @default(false)
+  hasOngoing       Boolean          @default(false)
+  shippingName     String?
+  shippingAddress1 String?
+  shippingAddress2 String?
+  shippingAddress3 String?
+  shippingCity     String?
+  shippingState    String?
+  shippingPostcode String?
+  shippingCountry  String?
+  billingName      String?
+  billingAddress1  String?
+  billingAddress2  String?
+  billingAddress3  String?
+  billingCity      String?
+  billingState     String?
+  billingPostcode  String?
+  billingCountry   String?
+  salesOrderId     String?
+  createdAt        DateTime         @default(now())
+  updatedAt        DateTime         @updatedAt
+  deletedAt        DateTime?
+  createdBy        String?
+  quotationDate    DateTime?
+  requestNumber    String?
+  sundries         Decimal?         @db.Decimal(10, 2)
+  labour           Decimal?         @db.Decimal(10, 2)
+  rounding         Decimal?         @db.Decimal(6, 2)
+  otherCharges     Decimal?         @db.Decimal(10, 2)
+  freight          Decimal?         @db.Decimal(10, 2)
+  hasGeneral       Boolean          @default(true)
+  dispatchMethod   String?
+  customer         Customer         @relation(fields: [customerId], references: [id])
+  salesOrder       SalesOrder?      @relation("SalesOrderQuotations", fields: [salesOrderId], references: [id])
+  groups           QuotationGroup[]
+  items            QuotationItem[]
+  soFromQuotation  SalesOrder[]     @relation("SOFromQuotation")
+
+  @@schema("admin")
+}
+
+model QuotationGroup {
+  id          String          @id @default(cuid())
+  quotationId String
+  groupType   QuoteItemGroup
+  subtotal    Decimal?        @db.Decimal(12, 2)
+  gst         Decimal?        @db.Decimal(12, 2)
+  total       Decimal?        @db.Decimal(12, 2)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+  deletedAt   DateTime?
+  quotation   Quotation       @relation(fields: [quotationId], references: [id])
+  items       QuotationItem[]
+
+  @@unique([quotationId, groupType])
+  @@schema("admin")
+}
+
+model QuotationItem {
+  id                String         @id @default(cuid())
+  quotationId       String
+  groupId           String
+  productId         String
+  description       String
+  quantity          Int
+  unitPrice         Decimal        @db.Decimal(10, 2)
+  discountPct       Decimal?       @db.Decimal(5, 2)
+  lineTotal         Decimal?       @db.Decimal(12, 2)
+  createdAt         DateTime       @default(now())
+  updatedAt         DateTime       @updatedAt
+  deletedAt         DateTime?
+  landedCost        Int            @default(0)
+  retailPrice       Int            @default(0)
+  tradePrice        Int            @default(0)
+  salesPartnerPrice Int            @default(0)
+  agentPrice        Int            @default(0)
+  group             QuotationGroup @relation(fields: [groupId], references: [id])
+  product           Product        @relation(fields: [productId], references: [id])
+  quotation         Quotation      @relation(fields: [quotationId], references: [id])
+
+  @@schema("admin")
+}
+
+model FMPreinstall {
+  id                 String             @id @default(cuid())
+  preinstallNo       String             @unique
+  customerId         String
+  fmCustomerId       String
+  status             PreinstallStatus   @default(NOT_ACTIONED)
+  type               PreinstallType
+  assignedUserId     String?
+  createdBy          String
+  orderNumber        String?
+  abnEntry           String?
+  termsOfTrade       String?
+  generalSalesFactor Decimal?           @db.Decimal(6, 2)
+  retailPrice        Decimal?           @db.Decimal(10, 2)
+  shippingName       String?
+  shippingAddress1   String?
+  shippingAddress2   String?
+  shippingAddress3   String?
+  billingName        String?
+  billingAddress1    String?
+  billingAddress2    String?
+  billingAddress3    String?
+  invoiceId          String?
+  installId          String?
+  jobId              String?
+  installJobId       String?
+  chargeParts        Decimal?           @db.Decimal(12, 2)
+  chargeSundries     Decimal?           @db.Decimal(12, 2)
+  chargeLabour       Decimal?           @db.Decimal(12, 2)
+  chargeFreight      Decimal?           @db.Decimal(12, 2)
+  chargeGst          Decimal?           @db.Decimal(12, 2)
+  chargeRounding     Decimal?           @db.Decimal(6, 2)
+  chargeTotal        Decimal?           @db.Decimal(12, 2)
+  dispatchMethod     String?
+  dispatchRef        String?
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+  deletedAt          DateTime?
+  targetInstallId    String?
+  notes              String?
+  depotId            String?
+  installDetail      FMInstallDetail?
+  Depots             Depots?            @relation(fields: [depotId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Depot")
+  customer           Customer           @relation(fields: [customerId], references: [id])
+  fmCustomer         FMCustomer         @relation(fields: [fmCustomerId], references: [id])
+  targetInstall      FMInstall?         @relation("PreinstallTarget", fields: [targetInstallId], references: [id])
+  items              FMPreinstallItem[]
+
+  @@schema("admin")
+}
+
+model FMPreinstallItem {
+  id           String       @id @default(cuid())
+  preinstallId String
+  productId    String
+  partNumber   String
+  description  String
+  quantity     Int
+  unitPrice    Decimal      @db.Decimal(10, 2)
+  discountPct  Decimal?     @db.Decimal(5, 2)
+  lineTotal    Decimal?     @db.Decimal(12, 2)
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  deletedAt    DateTime?
+  preinstall   FMPreinstall @relation(fields: [preinstallId], references: [id])
+  product      Product      @relation(fields: [productId], references: [id])
+
+  @@schema("admin")
+}
+
+model FMInstallDetail {
+  id                    String                  @id @default(cuid())
+  preinstallId          String                  @unique
+  installType           String?
+  fmUnitType            String?
+  fmUnitCode            String?
+  modem4G               Boolean?
+  serviceCode           String?
+  mixCode               String?
+  mixOrgId              String?
+  mixSim1               Boolean?
+  unitSim               String?
+  unitSerial            String?
+  unitIMEI              String?
+  visionType            String?
+  cameraType            String?
+  cameraCount           Int?
+  standard              Boolean?
+  highDefinition        Boolean?
+  ai                    Boolean?
+  multiNetwork          Boolean?
+  mixSim2               Boolean?
+  visSim                String?
+  visIMEI               String?
+  vis2Serial            String?
+  vis3Serial            String?
+  vis4Serial            String?
+  sim1Type              String?
+  sim2Type              String?
+  vis1Serial            String?
+  sim1Code              String?
+  international         Boolean?
+  visionCode            String?
+  baseVO                String?
+  addedC                String?
+  tachoData             Boolean?
+  muChargeCode          String?
+  aiOption              Boolean?
+  tmaOption             Boolean?
+  rimOption             Boolean?
+  assetNumber           String?
+  fleetNumber           String?
+  vehicleMake           String?
+  vehicleModel          String?
+  yearVariant           String?
+  vinNumber             String?
+  regoNumber            String?
+  installLocation       String?
+  installer             String?
+  installDate           DateTime?
+  installStatus         InstallStatus?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  fmInstall             FMInstall?              @relation("FMInstallToDetail")
+  preinstall            FMPreinstall            @relation(fields: [preinstallId], references: [id])
+  fMInstallDetailOrgIds fMInstallDetailOrgIds[]
+
+  @@schema("admin")
+}
+
+model FMServiceSegment {
+  id        String   @id @default(cuid())
+  segment   Int
+  type      String
+  code      String
+  label     String
+  mixCode   String?
+  mixIndex  Int?
+  dependsOn String?
+  sortOrder Int?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  productId String?
+  Product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Product")
+
+  @@unique([segment, type, code, label])
+  @@index([type])
+  @@index([segment])
+  @@schema("admin")
+}
+
+model FMInstall {
+  id                    String           @id @default(cuid())
+  preinstallId          String?
+  entryDate             DateTime?
+  installDate           DateTime?
+  installInvoice        String?
+  author                String?
+  installBy             String?
+  aasCustomerNum        String?
+  fmCustomerNum         String?
+  mixOrgId              String?
+  mixAssetNum           String?
+  baseUnit              String?
+  vehicleMake           String?
+  vehicleModel          String?
+  vehicleYear           String?
+  rego                  String?
+  fiNumber              String?
+  depot                 String?
+  site                  String?
+  serviceNumber         Int?
+  fmwService            String?
+  mixCode               String?
+  status                InstallStatus?
+  commissionedDate      DateTime?
+  decommissionedDate    DateTime?
+  notCharged            Boolean?
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+  installDetailId       String?          @unique
+  chargeFlag            Boolean          @default(false)
+  commissionMonth       String?
+  invoiceRef            String?
+  preinstallRef         String?
+  installDetail         FMInstallDetail? @relation("FMInstallToDetail", fields: [installDetailId], references: [id])
+  modifiedByPreinstalls FMPreinstall[]   @relation("PreinstallTarget")
+
+  @@schema("admin")
+}
+
+model InvCategory {
+  id          String    @id @default(cuid())
+  code        String    @unique
+  name        String
+  description String?
+  isActive    Boolean   @default(true)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+  Product     Product[]
+
+  @@schema("inventory")
+}
+
+model InvAircoGroup {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  groupLetter   String
+  level         Int
+  agentFactor   Decimal  @db.Decimal(8, 4)
+  partnerFactor Decimal  @db.Decimal(8, 4)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@schema("inventory")
+}
+
+model InvVariableMarginTier {
+  id             String   @id @default(cuid())
+  landedLessThan Decimal  @db.Decimal(12, 2)
+  kRetailFactor  Decimal  @db.Decimal(8, 4)
+  kTradeFactor   Decimal  @db.Decimal(8, 4)
+  kThreshold     Decimal  @db.Decimal(8, 4)
+  aRetailFactor  Decimal  @db.Decimal(8, 4)
+  aTradeFactor   Decimal  @db.Decimal(8, 4)
+  aThreshold     Decimal  @db.Decimal(8, 4)
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@schema("inventory")
+}
+
+model InvXGroup {
+  id            String   @id @default(cuid())
+  code          String   @unique
+  agentFactor   Decimal  @db.Decimal(8, 4)
+  partnerFactor Decimal  @db.Decimal(8, 4)
+  tradeFactor   Decimal  @db.Decimal(8, 4)
+  retailFactor  Decimal  @db.Decimal(8, 4)
+  isManual      Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@schema("inventory")
+}
+
+model InvPriceSettings {
+  id            String   @id @default(cuid())
+  roundBelow50  Int      @default(20)
+  roundBelow100 Int      @default(50)
+  roundAbove100 Int      @default(100)
+  priceOffset   Decimal  @default(0) @db.Decimal(8, 2)
+  minSalesPrice Int      @default(100)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@schema("inventory")
+}
+
+model InvSupplier {
+  id                    String             @id @default(cuid())
+  code                  String             @unique
+  name                  String
+  status                InvSupplierStatus  @default(ACTIVE)
+  abn                   String?
+  deliveryAddress1      String?
+  deliveryAddress2      String?
+  deliveryAddress3      String?
+  postalAddress1        String?
+  postalAddress2        String?
+  postalAddress3        String?
+  serviceRep            String?
+  orderPhone            String?
+  orderEmail            String?
+  ordersClose           String?
+  minOrderValue         Decimal?           @db.Decimal(12, 2)
+  freightCost           Decimal?           @db.Decimal(12, 2)
+  freightCutsAt         Decimal?           @db.Decimal(12, 2)
+  airBagClose           String?
+  airBagCost            Decimal?           @db.Decimal(12, 2)
+  orderLandedFactor     Decimal?           @db.Decimal(10, 4)
+  orderMethod           InvOrderMethod?    @default(EMAIL)
+  dispatchMethod        InvDispatchMethod? @default(SUPPLIER_CARRIER)
+  useSupplierPartNumber Boolean            @default(false)
+  activeSupplierForAai  Boolean            @default(false)
+  expenseTypeCode       String?
+  expenseTypeKey        String?
+  repContactName        String?
+  repContactPhone       String?
+  repContactMobile      String?
+  repContactEmail       String?
+  accContactName        String?
+  accContactPhone       String?
+  accContactFax         String?
+  accContactEmail       String?
+  warContactName        String?
+  warContactPhone       String?
+  warContactFax         String?
+  warContactEmail       String?
+  tradingTerms          String?
+  paymentMethod         String?
+  billerCodeBsb         String?
+  accountReference      String?
+  creditLimit           Decimal?           @db.Decimal(12, 2)
+  currencyCode          String?            @default("AUD")
+  notes                 String?
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+  deletedAt             DateTime?
+  poAttachmentType      PoAttachmentType   @default(PDF)
+  primaryProducts       Product[]          @relation("PrimarySupplier")
+  goodsReceipts         GoodsReceipt[]
+  purchaseOrders        PurchaseOrder[]
+
+  @@schema("inventory")
+}
+
+model PurchaseOrder {
+  id            String              @id @default(uuid()) @db.Uuid
+  orderNumber   String              @unique
+  supplierId    String
+  status        PurchaseOrderStatus @default(DRAFT)
+  orderDate     DateTime            @default(now())
+  expectedDate  DateTime?
+  receivedDate  DateTime?
+  reference     String?
+  notes         String?
+  subtotal      Decimal?            @db.Decimal(12, 2)
+  gst           Decimal?            @db.Decimal(12, 2)
+  total         Decimal?            @db.Decimal(12, 2)
+  createdAt     DateTime            @default(now())
+  updatedAt     DateTime            @updatedAt
+  deletedAt     DateTime?
+  orderType     PurchaseOrderType   @default(DAILY)
+  goodsReceipts GoodsReceipt[]
+  supplier      InvSupplier         @relation(fields: [supplierId], references: [id])
+  lines         PurchaseOrderLine[]
+
+  @@schema("inventory")
+}
+
+model PurchaseOrderLine {
+  id              String        @id @default(uuid()) @db.Uuid
+  purchaseOrderId String        @db.Uuid
+  productId       String
+  description     String
+  orderedQty      Decimal       @db.Decimal(12, 3)
+  receivedQty     Decimal       @default(0) @db.Decimal(12, 3)
+  unitCost        Decimal       @db.Decimal(12, 4)
+  lineTotal       Decimal?      @db.Decimal(12, 2)
+  sortOrder       Int           @default(0)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+  product         Product       @relation(fields: [productId], references: [id])
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+
+  @@schema("inventory")
+}
+
+model GoodsReceipt {
+  id              String             @id @default(uuid()) @db.Uuid
+  receiptNumber   String             @unique
+  supplierId      String
+  purchaseOrderId String?            @db.Uuid
+  status          GoodsReceiptStatus @default(DRAFT)
+  receiptDate     DateTime           @default(now())
+  reference       String?
+  notes           String?
+  postedAt        DateTime?
+  postedBy        String?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+  deletedAt       DateTime?
+  purchaseOrder   PurchaseOrder?     @relation(fields: [purchaseOrderId], references: [id])
+  supplier        InvSupplier        @relation(fields: [supplierId], references: [id])
+  lines           GoodsReceiptLine[]
+
+  @@schema("inventory")
+}
+
+model GoodsReceiptLine {
+  id             String       @id @default(uuid()) @db.Uuid
+  goodsReceiptId String       @db.Uuid
+  productId      String
+  description    String
+  receivedQty    Decimal      @db.Decimal(12, 3)
+  unitCost       Decimal      @db.Decimal(12, 4)
+  lineTotal      Decimal?     @db.Decimal(12, 2)
+  sortOrder      Int          @default(0)
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  goodsReceipt   GoodsReceipt @relation(fields: [goodsReceiptId], references: [id])
+  product        Product      @relation(fields: [productId], references: [id])
+
+  @@schema("inventory")
+}
+
+model StockMovement {
+  id              String              @id @default(uuid()) @db.Uuid
+  productId       String
+  movementType    StockMovementType
+  direction       StockDirection
+  qty             Decimal             @db.Decimal(12, 3)
+  unitCost        Decimal?            @db.Decimal(12, 4)
+  totalCost       Decimal?            @db.Decimal(12, 2)
+  balanceAfter    Decimal?            @db.Decimal(12, 3)
+  referenceModule InvReferenceModule?
+  referenceId     String?             @db.Uuid
+  referenceNo     String?
+  notes           String?
+  createdAt       DateTime            @default(now())
+  createdBy       String?
+  product         Product             @relation(fields: [productId], references: [id])
+
+  @@index([productId, createdAt])
+  @@schema("inventory")
+}
+
+model ImportBatch {
+  id            String            @id @default(uuid()) @db.Uuid
+  fileName      String
+  importMode    ImportMode
+  status        ImportBatchStatus @default(PENDING)
+  totalRows     Int               @default(0)
+  processedRows Int               @default(0)
+  addedRows     Int               @default(0)
+  updatedRows   Int               @default(0)
+  skippedRows   Int               @default(0)
+  errorRows     Int               @default(0)
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  createdBy     String?
+  rows          ImportRow[]
+
+  @@schema("inventory")
+}
+
+model ImportRow {
+  id           String           @id @default(uuid()) @db.Uuid
+  batchId      String           @db.Uuid
+  rowNumber    Int
+  rawData      Json
+  result       ImportRowResult?
+  errorMessage String?
+  productId    String?
+  createdAt    DateTime         @default(now())
+  batch        ImportBatch      @relation(fields: [batchId], references: [id])
+  product      Product?         @relation(fields: [productId], references: [id])
+
+  @@schema("inventory")
+}
+
+model InvPriceGroup {
+  id             String           @id @db.Uuid
+  name           String
+  type           PriceGroupType
+  mode           PriceGroupMode
+  level          Int
+  retailFactor   Decimal?         @db.Decimal(8, 4)
+  tradeFactor    Decimal?         @db.Decimal(8, 4)
+  threshold      Decimal?         @db.Decimal(12, 2)
+  roundAt        Decimal?         @db.Decimal(8, 2)
+  priceOffset    Decimal?         @db.Decimal(8, 2)
+  minPrice       Decimal?         @db.Decimal(12, 2)
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime
+  PriceGroupItem PriceGroupItem[]
+
+  @@schema("inventory")
+}
+
+model PriceGroupItem {
+  id            String        @id @db.Uuid
+  groupId       String        @db.Uuid
+  productId     String
+  overridePct   Decimal?      @db.Decimal(5, 2)
+  createdAt     DateTime      @default(now())
+  InvPriceGroup InvPriceGroup @relation(fields: [groupId], references: [id])
+  product       Product       @relation(fields: [productId], references: [id])
+
+  @@unique([groupId, productId])
+  @@schema("inventory")
+}
+
+model ProductAlias {
+  id              String               @id @default(cuid())
+  sourceProductId String
+  targetProductId String
+  action          InventoryAliasAction
+  notes           String?
+  createdAt       DateTime             @default(now())
+  updatedAt       DateTime             @updatedAt
+  sourceProduct   Product              @relation("SourceProduct", fields: [sourceProductId], references: [id])
+  targetProduct   Product              @relation("TargetProduct", fields: [targetProductId], references: [id])
+
+  @@unique([sourceProductId, targetProductId])
+  @@schema("admin")
+}
+
+model ProductBogLine {
+  id               String   @id @default(cuid())
+  parentProductId  String
+  componentId      String
+  quantity         Decimal  @db.Decimal(12, 3)
+  uom              String   @default("Each")
+  sortOrder        Int      @default(0)
+  notes            String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  componentProduct Product  @relation("BogComponent", fields: [componentId], references: [id])
+  parentProduct    Product  @relation("BogParent", fields: [parentProductId], references: [id])
+
+  @@schema("admin")
+}
+
+model XeroConfig {
+  id           String    @id @default(cuid())
+  clientId     String
+  clientSecret String
+  tenantId     String?
+  redirectUri  String?
+  isActive     Boolean   @default(false)
+  accessToken  String?
+  refreshToken String?
+  tokenExpiry  DateTime?
+  isAuthorized Boolean   @default(false)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@schema("admin")
+}
+
+model Dispatch {
+  id                 String               @id @default(cuid())
+  customerId         String
+  dispatchDate       DateTime             @db.Date
+  dispatchMethod     String
+  conNote            String
+  freightCost        String
+  freightCharge      String
+  shippingAddress    String
+  dispatchNumber     String
+  Customer           Customer             @relation(fields: [customerId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Customer")
+  DispatchedInvoices DispatchedInvoices[]
+
+  @@schema("admin")
+}
+
+model DispatchedInvoices {
+  id             String         @id @default(cuid())
+  dispatchId     String
+  invoiceId      String
+  dispatchCode   String
+  salesPersonId  String?
+  Dispatch       Dispatch       @relation(fields: [dispatchId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Dispatch")
+  DispatchMethod DispatchMethod @relation(fields: [dispatchCode], references: [code], onDelete: NoAction, onUpdate: NoAction, map: "DispatchMethod")
+  Invoice        Invoice        @relation(fields: [invoiceId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "Invoice")
+  User           User?          @relation(fields: [salesPersonId], references: [id], onDelete: NoAction, onUpdate: NoAction, map: "SalesPerson")
+
+  @@schema("admin")
+}
+
+model FMSubscriptionReport {
+  id                    String                @id @default(cuid())
+  fmCustomerId          String
+  subscriptionNumber    String                @unique
+  name                  String?
+  invoicePeriodMonths   Int                   @default(1)
+  reportType            String                @default("SERVICE")
+  filterServiceCode     String?
+  filterOptionCode      String?
+  sortBy                String?
+  volumeOffsetMonths    Int                   @default(0)
+  isActive              Boolean               @default(true)
+  lastInvoicedPeriodEnd DateTime?
+  startDate             DateTime?
+  priceIncludesGst      Boolean               @default(false)
+  createdAt             DateTime              @default(now())
+  updatedAt             DateTime              @updatedAt
+  invoiceBy             invoice_by?
+  listBy                list_by?
+  reportTarget          report_target?
+  listSpace             Decimal               @default(10) @db.Decimal
+  listVol               Decimal               @default(0) @db.Decimal
+  fmCustomer            FMCustomer            @relation(fields: [fmCustomerId], references: [id])
+  invoices              Invoice[]
+  fmSubscriptionItems   fmSubscriptionItems[]
+
+  @@schema("admin")
+}
+
+model fmSubscriptionItems {
+  id                   String               @id @default(cuid())
+  subscriptionId       String
+  invoiceId            String
+  label                String
+  quantity             Int
+  rate                 Decimal              @default(0) @db.Decimal
+  total                Decimal              @default(0) @db.Decimal
+  invoicePeriodMonths  Int
+  Invoice              Invoice              @relation(fields: [invoiceId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "invoice")
+  FMSubscriptionReport FMSubscriptionReport @relation(fields: [subscriptionId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "subscription")
+
+  @@schema("admin")
+}
+
+model Depots {
+  id           String         @id @default(cuid())
+  code         String
+  name         String
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  customerId   String
+  deletedAt    DateTime?
+  Customer     Customer       @relation(fields: [customerId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "customer")
+  FMPreinstall FMPreinstall[]
+
+  @@schema("admin")
+}
+
+model organizations {
+  id                    String                  @id @default(cuid())
+  code                  String                  @unique
+  label                 String
+  isActive              Boolean                 @default(true)
+  sortOrder             Int?
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  FMCustomerOrgIds      FMCustomerOrgIds[]
+  fMInstallDetailOrgIds fMInstallDetailOrgIds[]
+
+  @@schema("admin")
+}
+
+model FMCustomerOrgIds {
+  id            String        @id @default(cuid())
+  fmId          String
+  orgId         String
+  FMCustomer    FMCustomer    @relation(fields: [fmId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fmCustomer")
+  organizations organizations @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organizations")
+
+  @@schema("admin")
+}
+
+model fMInstallDetailOrgIds {
+  id                String          @id @default(cuid())
+  fMInstallDetailId String
+  orgId             String
+  FMInstallDetail   FMInstallDetail @relation(fields: [fMInstallDetailId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fMInstallDetail")
+  organizations     organizations   @relation(fields: [orgId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "organizations")
+
+  @@schema("admin")
+}
+
+model ChecklistTemplate {
+  id            String                     @id @default(cuid())
+  name          String
+  hardwareType  String
+  hardwareModel HardwareModel
+  category      HardwareCategory
+  description   String
+  version       String                     @default("v1.0")
+  status        TemplateStatus             @default(ACTIVE)
+  lastUpdated   DateTime                   @default(now())
+  createdAt     DateTime                   @default(now())
+  updatedAt     DateTime                   @updatedAt
+  sections      ChecklistTemplateSection[]
+
+  @@index([hardwareModel])
+  @@index([status])
+  @@schema("admin")
+}
+
+model ChecklistTemplateSection {
+  id           String                  @id @default(cuid())
+  templateId   String
+  title        String
+  displayOrder Int                     @default(1)
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  items        ChecklistTemplateItem[]
+  template     ChecklistTemplate       @relation(fields: [templateId], references: [id], onDelete: Cascade)
+
+  @@unique([templateId, displayOrder])
+  @@index([templateId])
+  @@schema("admin")
+}
+
+model ChecklistTemplateItem {
+  id           String                   @id @default(cuid())
+  sectionId    String
+  title        String
+  description  String?
+  isRequired   Boolean                  @default(true)
+  displayOrder Int                      @default(1)
+  createdAt    DateTime                 @default(now())
+  updatedAt    DateTime                 @updatedAt
+  section      ChecklistTemplateSection @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  jobItems     JobChecklistItem[]
+
+  @@unique([sectionId, displayOrder])
+  @@index([sectionId])
+  @@schema("admin")
+}
+
+model JobChecklistItem {
+  id               String                 @id @default(cuid())
+  sectionId        String
+  templateItemId   String?
+  title            String
+  description      String?
+  section          String
+  hardwareModel    HardwareModel?
+  isRequired       Boolean                @default(true)
+  displayOrder     Int                    @default(1)
+  completed        Boolean                @default(false)
+  completedById    String?
+  completedByName  String?
+  completedAt      DateTime?
+  notes            String?
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+  checklistSection JobChecklistSection    @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+  templateItem     ChecklistTemplateItem? @relation(fields: [templateItemId], references: [id])
+
+  @@index([sectionId])
+  @@index([completed])
+  @@index([isRequired])
+  @@schema("admin")
+}
+
+model JobChecklistSection {
+  id            String             @id @default(cuid())
+  jobId         String
+  title         String
+  hardwareModel HardwareModel?
+  hardwareName  String?
+  displayOrder  Int                @default(1)
+  createdAt     DateTime           @default(now())
+  updatedAt     DateTime           @updatedAt
+  items         JobChecklistItem[]
+  job           InstallationJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@index([jobId])
+  @@schema("admin")
+}
+
+model InstallationJob {
+  id                String                @id
+  jobNumber         String                @unique
+  customerId        String
+  projectId         String
+  vehicleId         String
+  location          String
+  technicianId      String?
+  installationDate  DateTime?             @db.Date
+  startTime         String?
+  endTime           String?
+  isScheduled       Boolean               @default(false)
+  status            InstallationStatus    @default(NOT_ACTIONED)
+  canInvoice        Boolean               @default(false)
+  notes             String?
+  createdById       String?
+  createdAt         DateTime              @default(now())
+  updatedAt         DateTime              @updatedAt
+  invoiceId         String?
+  userId            String?
+  hardware          HardwareItem[]
+  createdBy         User?                 @relation("JobCreator", fields: [createdById], references: [id])
+  customer          Customer              @relation(fields: [customerId], references: [id])
+  invoice           Invoice?              @relation(fields: [invoiceId], references: [id])
+  user              User?                 @relation(fields: [userId], references: [id])
+  vehicle           Vehicle               @relation(fields: [vehicleId], references: [id])
+  checklistSections JobChecklistSection[]
+  timeline          JobTimelineEvent[]
+
+  @@index([status])
+  @@index([technicianId, installationDate])
+  @@index([installationDate])
+  @@index([customerId])
+  @@index([projectId])
+  @@index([vehicleId])
+  @@schema("admin")
+}
+
+model JobTimelineEvent {
+  id            String             @id @default(cuid())
+  jobId         String
+  status        InstallationStatus
+  timestamp     DateTime           @default(now())
+  updatedById   String?
+  updatedByName String
+  note          String?
+  userId        String?
+  job           InstallationJob    @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  updatedBy     User?              @relation("TimelineActor", fields: [updatedById], references: [id])
+  user          User?              @relation(fields: [userId], references: [id])
+
+  @@index([jobId])
+  @@index([timestamp])
+  @@schema("admin")
+}
+
+model HardwareItem {
+  id              String                  @id @default(cuid())
+  model           HardwareModel
+  name            String
+  category        HardwareCategory
+  serialNumber    String                  @unique
+  imei            String?                 @unique
+  iccid           String?
+  macAddress      String?
+  firmwareVersion String?
+  status          HardwareInventoryStatus @default(IN_STOCK)
+  depotLocation   String?
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  allocatedJobId  String?
+  job             InstallationJob?        @relation(fields: [allocatedJobId], references: [id])
+
+  @@index([model])
+  @@index([category])
+  @@index([status])
+  @@index([allocatedJobId])
+  @@schema("admin")
+}
+
+model Vehicle {
+  id              String            @id @default(cuid())
+  customerId      String
+  rego            String
+  fleetNumber     String
+  vin             String            @unique
+  makeModel       String
+  year            Int?
+  fuelType        String?
+  odometerReading Int?
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+  jobs            InstallationJob[]
+  customer        Customer          @relation(fields: [customerId], references: [id], onDelete: Cascade)
+
+  @@index([customerId])
+  @@index([rego])
+  @@index([fleetNumber])
+  @@schema("admin")
+}
+
+enum PickingSlipStatus {
+  DRAFT
+  COMPLETED
+  CANCELLED
+
+  @@schema("admin")
+}
+
+enum InvoiceType {
+  FREEHAND
+  JOBBOOK
+  SALESORDER
+  CREDIT
+  REVERSAL
+  SUBSCRIPTION
+  FMPREINSTALL
+
+  @@schema("admin")
+}
+
+enum FMServiceType {
+  CAMERA
+  SIM_TYPE
+  MIX_SIM
+  MIX_VISION
+  MIX_UNIT
+
+  @@schema("admin")
+}
+
+enum PoAttachmentType {
+  PDF
+  EXCEL
+  BOTH
+
+  @@schema("inventory")
+}
+
+enum PurchaseOrderType {
+  DAILY
+  MONTHLY
+
+  @@schema("inventory")
+}
+
+enum TokenType {
+  PASSWORD_RESET
+  ACCOUNT_ACTIVATION
+
+  @@schema("auth")
+}
+
+enum CustomerStatus {
+  ACTIVE
+  INACTIVE
+  OVERDUE
+  STOP_CREDIT
+  CLOSED
+
+  @@schema("admin")
+}
+
+enum AddressType {
+  SHIPPING
+  POSTAL
+  STATEMENT
+  CHARGE
+
+  @@schema("admin")
+}
+
+enum ContactRole {
+  GENERAL
+  INVOICE
+  STATEMENT
+
+  @@schema("admin")
+}
+
+enum PriceLevel {
+  RETAIL
+  TRADE
+  SALES_PARTNER
+  AGENT
+  LANDED
+
+  @@schema("admin")
+}
+
+enum PaymentTerms {
+  DAYS_14
+  DAYS_30
+  DAYS_60
+  DAYS_90
+  PAY_NOW
+  COD
+
+  @@schema("admin")
+}
+
+enum SalesOrderType {
+  STANDARD
+  DIRECT_TO_CUSTOMER
+  WORKSHOP
+  FM_WEB
+  SPECIAL_ORDER
+  FORWARD
+  WITH_OTHER_GOODS
+
+  @@schema("admin")
+}
+
+enum SalesOrderStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+
+  @@schema("admin")
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  REVERSED
+
+  @@schema("admin")
+}
+
+enum CommentType {
+  COMMENT
+  SYSTEM
+
+  @@schema("admin")
+}
+
+enum QuoteItemGroup {
+  PREMIUM
+  ESSENTIAL
+  ONGOING
+  GENERAL
+
+  @@schema("admin")
+}
+
+enum QuotationStatus {
+  DRAFT
+  SENT
+  APPROVED
+  REJECTED
+
+  @@schema("admin")
+}
+
+enum InventoryAliasAction {
+  SUBSTITUTE
+  SUPERSEDE
+  ALIAS
+
+  @@schema("inventory")
+}
+
+enum InvSupplierStatus {
+  ACTIVE
+  ON_HOLD
+  INACTIVE
+  SUSPENDED
+
+  @@schema("inventory")
+}
+
+enum InvOrderMethod {
+  EMAIL
+  PHONE
+  EDI
+  PORTAL
+  POST
+
+  @@schema("admin")
+}
+
+enum PreinstallStatus {
+  NOT_ACTIONED
+  WORKSHOP_SETUP
+  WAITING_INSTALL
+  INSTALLED
+  INVOICED
+  COMPLETED
+
+  @@schema("admin")
+}
+
+enum PreinstallType {
+  NEW_INSTALL
+  WARRANTY
+  REPLACEMENT
+  MODIFIED_INSTALL
+  TRANSFER_UNIT
+
+  @@schema("admin")
+}
+
+enum InstallStatus {
+  ACTIVE
+  DECOMMISSIONED
+  INSTALL
+  ON_HOLD
+
+  @@schema("admin")
+}
+
+enum InvDispatchMethod {
+  SUPPLIER_CARRIER
+  OWN_FLEET
+  CUSTOMER_PICKUP
+  THIRD_PARTY
+  AIRCO_CARRIER
+
+  @@schema("admin")
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  SUBMITTED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+
+  @@schema("inventory")
+}
+
+enum GoodsReceiptStatus {
+  DRAFT
+  POSTED
+  CANCELLED
+
+  @@schema("inventory")
+}
+
+enum StockMovementType {
+  PURCHASE
+  SALE
+  ADJUSTMENT
+  TRANSFER
+  STOCKTAKE
+  RETURN
+  WRITE_OFF
+
+  @@schema("inventory")
+}
+
+enum StockDirection {
+  IN
+  OUT
+
+  @@schema("inventory")
+}
+
+enum ImportMode {
+  ADD_ONLY
+  UPDATE_ONLY
+  ADD_OR_UPDATE
+
+  @@schema("inventory")
+}
+
+enum ImportBatchStatus {
+  PENDING
+  PROCESSING
+  COMPLETED
+  FAILED
+
+  @@schema("inventory")
+}
+
+enum ImportRowResult {
+  ADDED
+  UPDATED
+  SKIPPED
+  ERROR
+
+  @@schema("inventory")
+}
+
+enum InvReferenceModule {
+  SALES_ORDER
+  INVOICE
+  PURCHASE_ORDER
+  GOODS_RECEIPT
+  JOB
+  ADJUSTMENT
+
+  @@schema("inventory")
+}
+
+enum PriceGroupType {
+  AIRCO
+  XGROUP
+  VARIABLE
+
+  @@schema("inventory")
+}
+
+enum PriceGroupMode {
+  FACTOR
+  MARGIN
+  FIXED
+
+  @@schema("inventory")
+}
+
+enum contactCategory {
+  ACCOUNT
+  SHIPPING
+
+  @@schema("admin")
+}
+
+enum invoice_by {
+  All_Units
+  Depot
+  FM_Service
+  Option
+
+  @@schema("admin")
+}
+
+enum list_by {
+  Not_Listed
+  Rego_Number
+  Fleet_Number
+
+  @@schema("admin")
+}
+
+enum report_target {
+  Invoice
+  Excel
+  PDF
+  N_A
+
+  @@schema("admin")
+}
+
+enum HardwareModel {
+  MIX4000
+  FM3306
+  HD_CAMERA
+  STANDARD_CAMERA
+  BASE_UNIT
+  SIM
+  GPS_UNIT
+  CAN_BUS_INTERFACE
+  DRIVER_ID_KEYPAD
+
+  @@schema("admin")
+}
+
+enum HardwareCategory {
+  TELEMATICS_UNIT
+  CAMERA_AND_VIDEO
+  CONNECTIVITY
+  SENSORS
+  CORE_UNIT
+  ACCESSORIES
+
+  @@schema("admin")
+}
+
+enum TemplateStatus {
+  ACTIVE
+  DRAFT
+  ARCHIVED
+
+  @@schema("admin")
+}
+
+enum InstallationStatus {
+  NOT_ACTIONED
+  WORKSHOP_SETUP
+  WAITING_INSTALL
+  INSTALLED
+  INVOICED
+  COMPLETED
+
+  @@schema("admin")
+}
+
+enum HardwareInventoryStatus {
+  IN_STOCK
+  ALLOCATED
+  INSTALLED
+  DEFECTIVE
+  DECOMMISSIONED
+
+  @@schema("admin")
+}
+
+enum userStatus {
+  Available
+  Assigned
+  Busy
+  On_Leave
+  Inactive
+
+  @@schema("auth")
+}

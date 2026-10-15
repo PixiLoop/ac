@@ -1,0 +1,1 @@
+ALTER TYPE "admin"."InvoiceStatus" ADD VALUE IF NOT EXISTS 'REVERSED';

@@ -1,0 +1,15 @@
+-- AlterTable
+ALTER TABLE "admin"."SalesOrder" ADD COLUMN     "billingAddress1" TEXT,
+ADD COLUMN     "billingAddress2" TEXT,
+ADD COLUMN     "billingAddress3" TEXT,
+ADD COLUMN     "billingCity" TEXT,
+ADD COLUMN     "billingCountry" TEXT,
+ADD COLUMN     "billingName" TEXT,
+ADD COLUMN     "billingPostcode" TEXT,
+ADD COLUMN     "billingState" TEXT,
+ADD COLUMN     "labour" DECIMAL(10,2),
+ADD COLUMN     "rounding" DECIMAL(10,2),
+ADD COLUMN     "shippingCity" TEXT,
+ADD COLUMN     "shippingCountry" TEXT,
+ADD COLUMN     "shippingPostcode" TEXT,
+ADD COLUMN     "shippingState" TEXT;

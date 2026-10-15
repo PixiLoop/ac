@@ -1,0 +1,1 @@
+ALTER TABLE "admin"."ProductBogLine" ADD COLUMN IF NOT EXISTS "uom" TEXT NOT NULL DEFAULT 'Each';

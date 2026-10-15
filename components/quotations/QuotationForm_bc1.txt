@@ -1,0 +1,389 @@
+'use client';
+
+import { useState, useEffect } from 'react';
+import { Button } from '../../components/ui/button';
+import { Checkbox } from '../../components/ui/checkbox';
+import { QuotationDetailsSection } from './sections/QuotationDetailsSection'
+import { SalesOrderItemsSection } from '../../components/salesorders/sections/SalesOrderItemsSection';
+import { SalesOrderCharges } from '../../components/salesorders/SalesOrderCharges';
+import { ShippingDetailsSection } from '../salesorders/sections/ShippingDetailsSection'
+import { AccountDetailsSection } from '../salesorders/sections/AccountDetailsSection'
+import { useToast } from '../../components/ui/toast';
+import { api } from '../../lib/api-client';
+
+export function QuotationForm({ mode = 'create', initialData }: any) {
+  const { showToast } = useToast();
+  const isView = mode === 'view';
+
+  const [generalCharges, setGeneralCharges] = useState({ sundries: 0, labour: 0, rounding: 0 });
+  const [premiumCharges, setPremiumCharges] = useState({ sundries: 0, labour: 0, rounding: 0 });
+  const [essentialCharges, setEssentialCharges] = useState({ sundries: 0, labour: 0, rounding: 0 });
+  const [ongoingCharges, setOngoingCharges] = useState({ sundries: 0, labour: 0, rounding: 0 });
+
+  const [form, setForm] = useState(
+    initialData || {
+
+      customerId: '',
+      shippingName: '',
+      shippingAddress1: '',
+      shippingCity: '',
+      shippingState: '',
+      shippingPostcode: '',
+
+      accountName: '',
+      accountAddress1: '',
+      accountCity: '',
+      accountState: '',
+      accountPostcode: '',
+
+      quotationDate: '',
+      expiryDate: '',
+      salesFactor: 1,
+
+      priceLevel: 'RETAIL',
+      paymentTerms: 'DAYS_30',
+
+      hasGeneral: true,
+      hasPremium: false,
+      hasEssential: false,
+      hasOngoing: false
+    }
+  )
+
+  useEffect(() => {
+    if (!initialData) return;
+    setForm({
+      ...initialData,
+
+      quotationDate: initialData.quotationDate
+        ? initialData.quotationDate.substring(0, 10)
+        : '',
+
+      expiryDate: initialData.expiryDate
+        ? initialData.expiryDate.substring(0, 10)
+        : '',
+    });
+  }, [initialData]);
+
+  const update = (key: string, value: any) => {
+    setForm(prev => ({ ...prev, [key]: value }));
+  };
+
+  const EMPTY_ROW = {
+    itemId: '',
+    description: '',
+    qty: 1,
+    unitPrice: 0,
+    discountPct: 0,
+  };
+
+  const mapItems = (groupType: string) => {
+    if (!initialData?.groups) return [{ ...EMPTY_ROW }];
+
+    const group = initialData.groups.find(
+      (g: any) => g.groupType === groupType
+    );
+
+    if (!group || !group.items?.length)
+      return [{ ...EMPTY_ROW }];
+
+    return [
+      ...group.items.map((i: any) => ({
+        id: i.id,
+        itemId: i.productId,
+        description: i.description,
+        qty: i.quantity,
+        unitPrice: Number(i.unitPrice),
+        discountPct: Number(i.discountPct ?? 0),
+      })),
+      { ...EMPTY_ROW },
+    ];
+  };
+
+  const [generalItems, setGeneralItems] = useState([{ ...EMPTY_ROW }]);
+  const [premiumItems, setPremiumItems] = useState([{ ...EMPTY_ROW }]);
+  const [essentialItems, setEssentialItems] = useState([{ ...EMPTY_ROW }]);
+  const [ongoingItems, setOngoingItems] = useState([{ ...EMPTY_ROW }]);
+
+  const premiumHasItems = premiumItems.some(i => i.itemId);
+  const essentialHasItems = essentialItems.some(i => i.itemId);
+  const ongoingHasItems = ongoingItems.some(i => i.itemId);
+
+  useEffect(() => {
+    if (!initialData?.groups) return;
+
+    setGeneralItems(mapItems('GENERAL'));
+    setPremiumItems(mapItems('PREMIUM'));
+    setEssentialItems(mapItems('ESSENTIAL'));
+    setOngoingItems(mapItems('ONGOING'));
+  }, [initialData]);
+
+  const handleSubmit = async () => {
+    try {
+      console.log('FORM:', form);
+      const res =
+        mode === 'create'
+          ? await api.post('/quotations', form)
+          : await api.patch(`/quotations/${form.id}`, form);
+
+      const quotationId = res.data?.data?.id ?? res.data.id;
+
+      const saveGroup = async (
+        group: string,
+        items: any[],
+        enabled: boolean
+      ) => {
+        if (!enabled) return;
+        const realItems = items.filter(i => i.itemId);
+        if (!realItems.length) return;
+
+        await api.patch(
+          `/quotations/${quotationId}/groups/${group}/items`,
+          {
+            items: realItems.map(i => ({
+              id: i.id,
+              productId: i.itemId,
+              description: i.description,
+              quantity: i.qty,
+              unitPrice: i.unitPrice,
+              discountPct: i.discountPct,
+            })),
+          }
+        );
+      };
+
+      await saveGroup('GENERAL', generalItems, true); //form.hasGeneral
+      await saveGroup('PREMIUM', premiumItems, form.hasPremium);
+      await saveGroup('ESSENTIAL', essentialItems, form.hasEssential);
+      await saveGroup('ONGOING', ongoingItems, form.hasOngoing);
+
+      showToast({
+        type: 'success',
+        title: 'Success',
+        message: 'Quotation saved successfully.',
+      });
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: 'Error',
+        message: err?.response?.data?.message || 'Save failed',
+      });
+    }
+  };
+
+  return (
+    <div className="space-y-6">
+
+      <div className="flex justify-end gap-2 mb-4">
+        <Button
+          variant="outline"
+          onClick={() => window.history.back()}
+        >
+          Back
+        </Button>
+
+        {!isView && (
+          <Button onClick={handleSubmit}>
+            Save
+          </Button>
+        )}
+      </div>
+
+
+      <div className="grid grid-cols-12 gap-4">
+        <div className="col-span-12 lg:col-span-5">
+          <QuotationDetailsSection
+            value={form}
+            update={update}
+            readOnly={isView}
+          />
+        </div>
+
+        <div className="col-span-12 lg:col-span-4">
+          <ShippingDetailsSection
+            value={form}
+            update={update}
+            defaultOpen
+            readOnly={isView}
+          />
+        </div>
+
+        <div className="col-span-12 lg:col-span-3">
+          <AccountDetailsSection
+            value={{
+              billingName: form.accountName,
+              address1: form.accountAddress1,
+              city: form.accountCity,
+              state: form.accountState,
+              postcode: form.accountPostcode,
+            }}
+            update={(key, val) => {
+              const map: Record<string, string> = {
+                billingName: 'accountName',
+                address1: 'accountAddress1',
+                address2: 'accountAddress2',
+                city: 'accountCity',
+                state: 'accountState',
+                postcode: 'accountPostcode',
+              }
+              update(map[key] ?? key, val)
+            }}
+            defaultOpen
+            readOnly={isView}
+          />
+        </div>
+
+      </div>
+
+
+      {/* <div className="border rounded p-4">
+        <h3 className="font-semibold mb-3">Quote Sections</h3>
+
+        <div className="flex gap-8 flex-wrap">
+          <Checkbox
+            label="Hardware (Premium)"
+            checked={form.hasPremium}
+            disabled={isView}
+            onChange={(checked: boolean) => {
+              if (isView) return;
+
+              if (!checked && premiumHasItems) {
+                showToast({
+                  type: 'error',
+                  title: 'Cannot Remove Section',
+                  message: 'Remove all Premium items first.',
+                });
+                return;
+              }
+              update('hasPremium', checked);
+            }}
+          />
+
+          <Checkbox
+            label="Hardware (Essential)"
+            checked={form.hasEssential}
+            disabled={isView}
+            onChange={(checked: boolean) => {
+              if (isView) return;
+
+              if (!checked && essentialHasItems) {
+                showToast({
+                  type: 'error',
+                  title: 'Cannot Remove Section',
+                  message: 'Remove all Essential items first.',
+                });
+                return;
+              }
+              update('hasEssential', checked);
+            }}
+          />
+
+          <Checkbox
+            label="Ongoing"
+            checked={form.hasOngoing}
+            disabled={isView}
+            onChange={(checked: boolean) => {
+              if (isView) return;
+
+              if (!checked && ongoingHasItems) {
+                showToast({
+                  type: 'error',
+                  title: 'Cannot Remove Section',
+                  message: 'Remove all Ongoing items first.',
+                });
+                return;
+              }
+
+              update('hasOngoing', checked);
+            }}
+          />
+        </div>  
+      </div> */}
+
+
+      <GroupSection
+        title="General"
+        items={generalItems}
+        setItems={setGeneralItems}
+        charges={generalCharges}
+        setCharges={setGeneralCharges}
+        category={null}
+        disabled={isView}
+      />
+
+
+      {form.hasPremium && (
+        <GroupSection
+          title="Premium Hardware"
+          items={premiumItems}
+          setItems={setPremiumItems}
+          category="K3"
+          disabled={isView}
+        />
+      )}
+
+      {form.hasEssential && (
+        <GroupSection
+          title="Essential Hardware"
+          items={essentialItems}
+          setItems={setEssentialItems}
+          category="A1"
+          disabled={isView}
+        />
+      )}
+
+      {form.hasOngoing && (
+        <GroupSection
+          title="Ongoing"
+          items={ongoingItems}
+          setItems={setOngoingItems}
+          category="X1"
+          disabled={isView}
+        />
+      )}
+
+      <div className="flex justify-end gap-2 mb-4">
+        <Button
+          variant="outline"
+          onClick={() => window.history.back()} className='gap-4'
+        >
+          Back
+        </Button>
+
+        {!isView && (
+          <Button onClick={handleSubmit}>
+            Save
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GroupSection({ title, items, setItems, charges, setCharges, category, disabled }: any) {
+  return (
+    <div className="grid grid-cols-12 gap-4">
+      <div className="col-span-12 lg:col-span-9">
+        <SalesOrderItemsSection
+          items={items}
+          setItems={setItems}
+          freight={0}
+          category={category}
+          disabled={disabled}
+          defaultOpen
+        />
+      </div>
+      <div className="col-span-12 lg:col-span-3">
+        <SalesOrderCharges
+          items={items}
+          freight={0}
+          sundries={charges.sundries}
+          labour={charges.labour}
+          rounding={charges.rounding}
+          update={(key, val) => setCharges(prev => ({ ...prev, [key]: val }))}
+          readOnly={disabled}
+        />
+      </div>
+    </div>
+  );
+}

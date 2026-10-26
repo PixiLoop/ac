@@ -127,6 +127,8 @@ export interface InstallationJob {
   createdAt: string;
   canInvoice: boolean;
   invoiceId?: string;
+  preinstallId?: string;
+  preinstallNo?: string;
 }
 
 export interface Technician {

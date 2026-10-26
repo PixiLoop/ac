@@ -4,6 +4,7 @@ import { StatusBadge, ScheduleBadge } from './shared/StatusBadge';
 import { ChecklistProgress } from './shared/ChecklistProgress';
 import { ScheduleJobDialog } from './ScheduleJobDialog';
 import { StatusChangeDialog } from './StatusChangeDialog';
+import Link from 'next/link';
 import {
   ArrowLeft,
   Calendar,
@@ -23,6 +24,7 @@ import {
   Edit3,
   CalendarCheck,
   Send,
+  Wrench,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
 
@@ -192,6 +194,16 @@ export const InstallationDetail: React.FC = () => {
               </span>
               <StatusBadge status={selectedJob.status} />
               <ScheduleBadge isScheduled={selectedJob.isScheduled} />
+              {selectedJob.preinstallNo && (
+                <Link
+                  href={selectedJob.preinstallId ? `/fm-preinstall/${selectedJob.preinstallId}` : '/fm-preinstall'}
+                  className="inline-flex items-center gap-1.5 text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
+                  title="View linked FM Preinstall"
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  Preinstall: {selectedJob.preinstallNo}
+                </Link>
+              )}
             </div>
 
             <h1 className="text-xl font-bold text-slate-800">

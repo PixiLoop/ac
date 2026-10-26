@@ -77,7 +77,9 @@ export default function Page() {
         invoiceId: data.invoiceId ?? null,
         installId: data.installId ?? null,
         targetInstallId: data.targetInstallId,
-        depotId: data?.depotId ?? ""
+        depotId: data?.depotId ?? "",
+        preinstallNo: data.preinstallNo ?? '',
+        installJobId: data.installJobId ?? null,
       });
 
       setShipping({
@@ -240,6 +242,17 @@ export default function Page() {
             Create FM Install
           </Button>
         )} */}
+
+        <Button
+          variant="outline"
+          onClick={() => {
+            const targetId = form.installJobId || `INSTALL-${(form.preinstallNo || id).replace(/[^0-9]/g, '')}`;
+            router.push(`/job-boards/job/${targetId}`);
+          }}
+          className="border-indigo-200 text-indigo-700 hover:bg-indigo-50"
+        >
+          View in Job Book
+        </Button>
 
         {(savedStatus === 'INSTALLED' || savedStatus === "WAITING_INSTALL") && !invoiceId && (
           <Button

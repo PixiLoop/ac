@@ -187,6 +187,8 @@ export function FMPreinstallForm({
           <FMPreinstallItemsSection
             items={items}
             setItems={setItems}
+            installDetail={installDetail}
+            setInstallDetail={setInstallDetail}
             onSelectItem={(item: any) => {
               if (!item) return;
               setActiveItem(item);

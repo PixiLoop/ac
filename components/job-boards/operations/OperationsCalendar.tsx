@@ -35,6 +35,7 @@ export const OperationsCalendar: React.FC = () => {
 
   // Filters (Requirement #21 & #22)
   const [selectedStatuses, setSelectedStatuses] = useState<InstallationStatus[]>([
+    'Not Actioned',
     'Waiting Install',
     'Workshop Setup',
     'Installed',

@@ -12,6 +12,8 @@ export function FMPreinstallItemsTable({
   setItems,
   onSelectItem,
   activeItemIndex,
+  installDetail,
+  setInstallDetail,
 }: any) {
   const [productOptions, setProductOptions] = useState<
     { label: string; value: string }[]
@@ -19,19 +21,98 @@ export function FMPreinstallItemsTable({
   const [rawProducts, setRawProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    // Only load items where FM Hardware is checked (FM Preinstall is for hardware)
-    api.get('/products?isFmHardware=true').then(res => {
-      const list = res.data?.data ?? res.data ?? [];
-      setRawProducts(list);
-      const options = [
-        { label: 'Select hardware item', value: '' },
-        ...list.map((p: any) => ({
-          label: p.name ? `${p.productCode} — ${p.name}` : `${p.productCode} (FM Hardware)`,
-          value: p.id,
-        })),
-      ];
-      setProductOptions(options);
-    });
+    const loadHardware = async () => {
+      try {
+        const [prodRes, itemsRes, allItemsRes, segRes] = await Promise.allSettled([
+          api.get('/products?isFmHardware=true'),
+          api.get('/inventory/items', { params: { isFmHardware: 'true', take: 500 } }),
+          api.get('/inventory/items', { params: { take: 500 } }),
+          api.get('/fm-segments'),
+        ]);
+
+        const prodList = prodRes.status === 'fulfilled' ? (prodRes.value.data?.data ?? prodRes.value.data ?? []) : [];
+        const itemsList = itemsRes.status === 'fulfilled' ? (itemsRes.value.data?.data?.items ?? itemsRes.value.data?.items ?? itemsRes.value.data ?? []) : [];
+        const allItemsList = allItemsRes.status === 'fulfilled' ? (allItemsRes.value.data?.data?.items ?? allItemsRes.value.data?.items ?? allItemsRes.value.data ?? []) : [];
+        const segList = segRes.status === 'fulfilled' ? (segRes.value.data?.data ?? segRes.value.data ?? []) : [];
+
+        // Combine products uniquely by id
+        const map = new Map<string, any>();
+
+        // 1. Add segments from fmsegments table
+        for (const s of (Array.isArray(segList) ? segList : [])) {
+          if (s.Product) {
+            map.set(s.Product.id, {
+              ...s.Product,
+              isFmHardware: true,
+              fmUnitCode: s.code || s.Product.fmUnitCode || s.Product.productCode,
+              fmMixCode: s.mixCode || s.Product.fmMixCode,
+              source: 'fm-segments',
+            });
+          } else if (s.code && s.type !== 'BASE_UNIT') {
+            map.set(s.id || s.code, {
+              id: s.productId || s.id,
+              productCode: s.code,
+              name: s.label || s.code,
+              retailPrice: 0,
+              onHand: 10,
+              committed: 0,
+              isFmHardware: true,
+              fmUnitCode: s.code,
+              fmMixCode: s.mixCode,
+              source: 'fm-segments',
+            });
+          }
+        }
+
+        // 2. Add inventory items marked as FM Hardware
+        const combinedItems = [
+          ...(Array.isArray(itemsList) ? itemsList : []),
+          ...(Array.isArray(allItemsList) ? allItemsList : []),
+        ];
+        for (const item of combinedItems) {
+          if (item && (item.isFmHardware || item.status === 'FM Service')) {
+            const existing = map.get(item.id) || {};
+            map.set(item.id, {
+              ...existing,
+              ...item,
+              isFmHardware: true,
+              fmUnitCode: item.fmUnitCode || existing.fmUnitCode || item.productCode,
+              fmMixCode: item.fmMixCode || existing.fmMixCode,
+            });
+          }
+        }
+
+        // 3. Add products from /products?isFmHardware=true
+        for (const p of (Array.isArray(prodList) ? prodList : [])) {
+          if (p && (p.isFmHardware || p.status === 'FM Service')) {
+            const existing = map.get(p.id) || {};
+            map.set(p.id, {
+              ...existing,
+              ...p,
+              isFmHardware: true,
+              fmUnitCode: p.fmUnitCode || existing.fmUnitCode || p.productCode,
+              fmMixCode: p.fmMixCode || existing.fmMixCode,
+            });
+          }
+        }
+
+        const combined = Array.from(map.values());
+        setRawProducts(combined);
+
+        const options = [
+          { label: 'Select hardware item…', value: '' },
+          ...combined.map((p: any) => ({
+            label: p.name ? `${p.productCode} — ${p.name}` : `${p.productCode} (FM Hardware)`,
+            value: p.id,
+          })),
+        ];
+        setProductOptions(options);
+      } catch (err) {
+        console.warn('Failed loading FM hardware items:', err);
+      }
+    };
+
+    loadHardware();
   }, []);
 
   const updateRow = (i: number, patch: any) => {
@@ -75,16 +156,10 @@ export function FMPreinstallItemsTable({
             onClick={() => onSelectItem({ ...row, index: i })}
           >
             <div className="grid gap-3 items-end grid-cols-[2fr_1fr_1fr_3fr_1fr_1fr_1fr_1fr_auto]">
-              {/* Item # */}
-              {/* <div className="h-10 flex items-center justify-center text-sm font-medium text-slate-500">
-                {i + 1}
-              </div> */}
-
               {/* Part Number */}
               <div onClick={e => e.stopPropagation()}>
-                {/* {i === 0 && <label className="text-sm font-medium">Part Number</label>} */}
                 <SearchSelect
-                  placeholder={i === 0 ? 'Select item' : ''}
+                  placeholder={i === 0 ? 'Select hardware item' : ''}
                   value={row.productId || ''}
                   options={productOptions}
                   onChange={id => {
@@ -108,8 +183,6 @@ export function FMPreinstallItemsTable({
                     const committed = Number(product.committed ?? 0);
                     const availQty = Math.max(0, onHand - committed);
 
-                    console.log(product, 'prd');
-                    
                     updateRow(i, {
                       productId: product.id,
                       partNumber: product.productCode,
@@ -119,6 +192,19 @@ export function FMPreinstallItemsTable({
                       cost: Number(product.netSupplierBuyPrice || 0),
                       availQty,
                     });
+
+                    // Sync hardware attributes with installDetail
+                    if (setInstallDetail) {
+                      setInstallDetail((prev: any) => ({
+                        ...prev,
+                        fmUnitCode: prev?.fmUnitCode || product.fmUnitCode || product.productCode,
+                        mixCode: prev?.mixCode || product.fmMixCode || null,
+                        modem4G: prev?.modem4G ?? product.fourGUnitModem ?? false,
+                        mixSim1: prev?.mixSim1 ?? product.mixUnitSim ?? false,
+                        visionType: prev?.visionType || (product.isVision ? 'STD' : null),
+                      }));
+                    }
+
                     onSelectItem({ ...row, productId: product.id, index: i });
 
                     // Auto-add next row only if this was the last row

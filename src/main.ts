@@ -58,7 +58,7 @@ console.log('API_BASE_URL  sss:', process.env.NEXT_PUBLIC_API_BASE_URL);
   // Ensure Prisma closes gracefully
   await prisma.enableShutdownHooks(app);
 
-  const port = process.env.PORT || 4000;
+  const port = process.env.API_PORT || 4000;
   const uploadsDir = join(process.cwd(), 'apps', 'api', 'public', 'uploads');
   app.use('/api/uploads', express.static(uploadsDir));
   

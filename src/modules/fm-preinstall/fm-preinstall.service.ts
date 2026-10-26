@@ -355,8 +355,50 @@ export class FMPreinstallService {
           isScheduled: !!(i.installer && installDate),
           status: 'NOT_ACTIONED',
           notes: `Created from FM Preinstall ${preinstall.preinstallNo}. Location: ${i.installLocation || 'Main Workshop'}. Unit Code: ${i.fmUnitCode || 'N/A'}.`,
+          timeline: {
+            create: {
+              status: 'NOT_ACTIONED',
+              updatedByName: 'Operations Dispatch',
+              note: `Installation job created from FM Preinstall ${preinstall.preinstallNo}.`,
+            },
+          },
         },
       });
+
+      // Also create default checklist sections and hardware items on DB
+      try {
+        await (this.prisma as any).jobChecklistSection.create({
+          data: {
+            jobId: installationJob.id,
+            title: 'Hardware & Harness Pre-Check',
+            hardwareName: i.fmUnitCode || 'Telematics Hardware',
+            displayOrder: 1,
+            items: {
+              create: [
+                { title: 'Verify serial and IMEI against preinstall sheet', isRequired: true, displayOrder: 1, section: 'Hardware & Harness Pre-Check' },
+                { title: 'Inspect harness cables and inline fuses', isRequired: true, displayOrder: 2, section: 'Hardware & Harness Pre-Check' },
+              ],
+            },
+          },
+        });
+        await (this.prisma as any).jobChecklistSection.create({
+          data: {
+            jobId: installationJob.id,
+            title: 'Vehicle Installation & Telemetry Verification',
+            hardwareName: i.fmUnitCode || 'Telematics Hardware',
+            displayOrder: 2,
+            items: {
+              create: [
+                { title: 'Secure mounting in cabin away from moving linkages', isRequired: true, displayOrder: 1, section: 'Vehicle Installation & Telemetry Verification' },
+                { title: 'Connect ignition and continuous 12V/24V power lines', isRequired: true, displayOrder: 2, section: 'Vehicle Installation & Telemetry Verification' },
+                { title: 'Confirm GPS fix and telematics cellular heartbeat', isRequired: true, displayOrder: 3, section: 'Vehicle Installation & Telemetry Verification' },
+              ],
+            },
+          },
+        });
+      } catch (chkErr) {
+        console.warn('Checklist section creation note:', chkErr);
+      }
 
       await this.prisma.fMPreinstall.update({
         where: { id: preinstall.id },
@@ -688,6 +730,54 @@ export class FMPreinstallService {
   async getSegments(query: any) {
     const { type, dependsOn } = query;
 
+    // Self-heal: ensure all inventory items with isFmHardware: true have a corresponding FMServiceSegment
+    try {
+      const hardwareItems = await this.prisma.product.findMany({
+        where: {
+          OR: [
+            { isFmHardware: true },
+            { status: 'FM Service' },
+          ],
+          deletedAt: null,
+        },
+      });
+
+      for (const item of hardwareItems) {
+        const itemCode = item.fmUnitCode || item.productCode;
+        const existing = await this.prisma.fMServiceSegment.findFirst({
+          where: {
+            OR: [
+              { productId: item.id },
+              { code: itemCode },
+            ],
+          },
+        });
+
+        if (!existing) {
+          await this.prisma.fMServiceSegment.create({
+            data: {
+              segment: item.isVision ? 3 : 1,
+              type: item.isVision ? 'VISION' : 'UNIT_CODE',
+              code: itemCode,
+              label: item.name ? `${item.productCode} - ${item.name}` : item.productCode,
+              mixCode: item.fmMixCode || null,
+              dependsOn: null,
+              productId: item.id,
+              isActive: true,
+              sortOrder: 100,
+            },
+          });
+        } else if (!existing.productId) {
+          await this.prisma.fMServiceSegment.update({
+            where: { id: existing.id },
+            data: { productId: item.id, isActive: true },
+          });
+        }
+      }
+    } catch (err) {
+      console.warn('Sync segments notice:', err);
+    }
+
     return this.prisma.fMServiceSegment.findMany({
       where: {
         isActive: true,
@@ -700,6 +790,9 @@ export class FMPreinstallService {
             { dependsOn: null },
           ],
         }),
+      },
+      include: {
+        Product: true,
       },
       orderBy: {
         sortOrder: 'asc',

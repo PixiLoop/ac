@@ -10,6 +10,7 @@ export interface ItemListQuery {
   productCategory?: string;
   productCode?: string;
   vendorNumber?: string;
+  isFmHardware?: boolean | string;
   skip?: number;
   take?: number;
   sortKey?: string;
@@ -23,7 +24,14 @@ export class ItemsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async list(query: ItemListQuery = {}) {
-    const { search, status, productCategory, productCode, vendorNumber, skip = 0, take = 20, sortKey = 'createdAt', sortDir = 'desc' } = query;
+    const { search, status, productCategory, productCode, vendorNumber, isFmHardware, skip = 0, take = 20, sortKey = 'createdAt', sortDir = 'desc' } = query;
+
+    const isFmBool =
+      isFmHardware === true || isFmHardware === 'true'
+        ? true
+        : isFmHardware === false || isFmHardware === 'false'
+        ? false
+        : undefined;
 
     const where: Record<string, any> = {
       deletedAt: null,
@@ -31,6 +39,7 @@ export class ItemsService {
       ...(productCategory && { productCategory }),
       ...(productCode && { productCode: { contains: productCode, mode: 'insensitive' } }),
       ...(vendorNumber && { vendorNumber }),
+      ...(isFmBool !== undefined && { isFmHardware: isFmBool }),
       ...(search && {
         OR: [
           { productCode: { contains: search, mode: 'insensitive' } },
@@ -67,6 +76,15 @@ export class ItemsService {
           minStock: true,
           maxStock: true,
           committed: true,
+          isFmHardware: true,
+          fmUnitCode: true,
+          fmMixCode: true,
+          isVision: true,
+          isMonitor: true,
+          fourGUnitModem: true,
+          mixUnitSim: true,
+          description: true,
+          extendedDescription: true,
         },
       }),
       db(this.prisma).count({ where }),
@@ -211,23 +229,22 @@ export class ItemsService {
 
     await db(this.prisma).update({ where: { id }, data });
 
-    if (data.isFmHardware !== undefined) {
-      if (data.isFmHardware) {
-        const currentItem = await db(this.prisma).findUnique({ where: { id } });
-        await this.syncFmServiceSegment(id, {
-          productCode: currentItem.productCode,
-          name: currentItem.name,
-          fmUnitCode: currentItem.fmUnitCode,
-          fmMixCode: currentItem.fmMixCode,
-          isVision: currentItem.isVision,
-          isActive: true,
-        });
-      } else {
-        await (this.prisma as any).fMServiceSegment.updateMany({
-          where: { productId: id },
-          data: { isActive: false },
-        });
-      }
+    const currentItem = await db(this.prisma).findUnique({ where: { id } });
+
+    if (data.isFmHardware === true || (currentItem?.isFmHardware && data.isFmHardware !== false)) {
+      await this.syncFmServiceSegment(id, {
+        productCode: currentItem.productCode,
+        name: currentItem.name,
+        fmUnitCode: currentItem.fmUnitCode,
+        fmMixCode: currentItem.fmMixCode,
+        isVision: currentItem.isVision,
+        isActive: true,
+      });
+    } else if (data.isFmHardware === false) {
+      await (this.prisma as any).fMServiceSegment.updateMany({
+        where: { productId: id },
+        data: { isActive: false },
+      });
     }
 
     if (bogLines !== undefined) {
@@ -256,18 +273,25 @@ export class ItemsService {
 
     try {
       const existing = await (this.prisma as any).fMServiceSegment.findFirst({
-        where: { productId },
+        where: {
+          OR: [
+            { productId },
+            { code },
+          ],
+        },
       });
 
       if (existing) {
         await (this.prisma as any).fMServiceSegment.update({
           where: { id: existing.id },
           data: {
+            productId,
             code,
             label,
             type,
             segment,
             mixCode: itemData.fmMixCode || null,
+            dependsOn: null,
             isActive: true,
           },
         });
@@ -279,6 +303,7 @@ export class ItemsService {
             code,
             label,
             mixCode: itemData.fmMixCode || null,
+            dependsOn: null,
             productId,
             isActive: true,
             sortOrder: 100,

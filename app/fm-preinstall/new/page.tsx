@@ -117,6 +117,8 @@ export default function Page() {
         const newJob = {
           id: `INSTALL-${preinstallNo.replace(/[^0-9]/g, '') || Date.now().toString().slice(-4)}`,
           jobNumber: `JOB-${preinstallNo}`,
+          preinstallId: id,
+          preinstallNo,
           customerId: form.customerId,
           customerName: account?.name || form.shippingName || 'FM Customer',
           customerContact: form.shippingName || 'Fleet Manager',
@@ -181,6 +183,12 @@ export default function Page() {
           createdAt: new Date().toISOString(),
           canInvoice: false,
         };
+
+        try {
+          await api.post('/installations', newJob);
+        } catch (apiErr) {
+          console.warn('Installations API post note:', apiErr);
+        }
 
         if (typeof window !== 'undefined') {
           const raw = localStorage.getItem('operations_installation_jobs');

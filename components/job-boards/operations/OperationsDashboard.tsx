@@ -33,12 +33,13 @@ export const OperationsDashboard: React.FC = () => {
 
   const [schedulingJob, setSchedulingJob] = useState<InstallationJob | null>(null);
 
-  // Today is 2026-10-05 in mock data
+  // Today's date (supports mock data date and current date)
   const todayDate = '2026-10-05';
+  const todayStr = new Date().toISOString().split('T')[0];
 
   // Today's Installations (Requirement #35)
   const todayJobs = jobs
-    .filter((j) => j.installationDate === todayDate)
+    .filter((j) => j.installationDate === todayDate || j.installationDate === todayStr)
     .sort((a, b) => (a.startTime || '').localeCompare(b.startTime || ''));
 
   // Unscheduled jobs

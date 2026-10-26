@@ -349,6 +349,9 @@ export class InstallationsService {
       createdAt: j.createdAt ? new Date(j.createdAt).toISOString() : new Date().toISOString(),
       canInvoice: j.canInvoice,
       invoiceId: j.invoiceId,
+      preinstallNo: j.jobNumber?.startsWith('JOB-PI-')
+        ? j.jobNumber.replace('JOB-', '')
+        : (j.notes?.match(/PI-\d+/)?.[0] || undefined),
     };
   }
 

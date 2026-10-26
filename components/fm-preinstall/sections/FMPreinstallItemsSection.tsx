@@ -7,6 +7,8 @@ export function FMPreinstallItemsSection({
   setItems,
   onSelectItem,
   activeItemIndex,
+  installDetail,
+  setInstallDetail,
 }: any) {
   const addRow = () => {
     const last = items[items.length - 1];
@@ -40,6 +42,8 @@ export function FMPreinstallItemsSection({
           setItems={setItems}
           onSelectItem={onSelectItem}
           activeItemIndex={activeItemIndex}
+          installDetail={installDetail}
+          setInstallDetail={setInstallDetail}
         />
       </div>
     </FormSection>

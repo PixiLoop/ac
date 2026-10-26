@@ -21,8 +21,10 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
+import { useRouter } from 'next/navigation';
 
 export const InstallationList: React.FC = () => {
+  const router = useRouter();
   const {
     jobs,
     technicians,
@@ -303,7 +305,10 @@ export const InstallationList: React.FC = () => {
                     return (
                       <tr
                         key={job.id}
-                        onClick={() => setSelectedJobId(job.id)}
+                        onClick={() => {
+                          setSelectedJobId(job.id);
+                          router.push(`/job-boards/job/${job.id}`);
+                        }}
                         className="hover:bg-slate-50/70 cursor-pointer transition-colors group"
                       >
                         {/* Job ID & Vehicle */}
@@ -313,6 +318,11 @@ export const InstallationList: React.FC = () => {
                               {job.id}
                             </span>
                             <ScheduleBadge isScheduled={job.isScheduled} />
+                            {job.preinstallNo && (
+                              <span className="text-[10px] font-mono font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                {job.preinstallNo}
+                              </span>
+                            )}
                           </div>
                           <p className="font-mono text-[11px] text-slate-500 mt-0.5">
                             {job.vehicle.rego} • {job.vehicle.makeModel}
@@ -393,7 +403,10 @@ export const InstallationList: React.FC = () => {
                               <ArrowRight className="w-4 h-4" />
                             </button>
                             <button
-                              onClick={() => setSelectedJobId(job.id)}
+                              onClick={() => {
+                                setSelectedJobId(job.id);
+                                router.push(`/job-boards/job/${job.id}`);
+                              }}
                               className="p-1.5 rounded-lg text-slate-400 hover:text-slate-800 hover:bg-slate-100"
                             >
                               <ChevronRight className="w-4 h-4" />

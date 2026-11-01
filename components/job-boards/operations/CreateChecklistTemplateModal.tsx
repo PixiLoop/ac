@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ChecklistTemplate, ChecklistTemplateSection, HardwareModel } from '../types/installation';
 import {
     CheckSquare,
@@ -17,6 +17,8 @@ import {
     Sliders,
     Library,
     FilePlus2,
+    Search,
+    ChevronDown,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
 
@@ -48,244 +50,6 @@ function deepCloneSectionsFromTemplate(tmpl: ChecklistTemplate): BuilderSection[
     }));
 }
 
-interface StarterPreset {
-    name: string;
-    hardwareModel: HardwareModel;
-    hardwareType: string;
-    category: string;
-    version: string;
-    description: string;
-    icon: any;
-    sections: {
-        title: string;
-        items: { title: string; description?: string; isRequired: boolean }[];
-    }[];
-}
-
-const STARTER_PRESETS: StarterPreset[] = [
-    {
-        name: 'MIX4000 Installation Checklist',
-        hardwareModel: 'MIX4000',
-        hardwareType: 'Telematics Gateway',
-        category: 'Telematics Unit',
-        version: 'v1.0',
-        description: 'Comprehensive installation, CAN-Bus integration, diagnostic checks and supervisor signoff for MIX4000 units.',
-        icon: Cpu,
-        sections: [
-            {
-                title: 'Device Setup',
-                items: [
-                    { title: 'Mount unit securely in cabin away from heat & airbags', description: 'Mount behind lower dash fascia using heavy-duty bracket.', isRequired: true },
-                    { title: 'Connect constant power (12V/24V) with inline 3A fuse', description: 'Solder and heat-shrink terminal connection.', isRequired: true },
-                    { title: 'Connect true ignition sense line', description: 'Measure voltage drop between ACC and IGN states.', isRequired: true },
-                    { title: 'Secure wiring loom with nylon ties', description: 'Route along factory wiring troughs.', isRequired: false },
-                ],
-            },
-            {
-                title: 'Testing',
-                items: [
-                    { title: 'Power-on diagnostic LED sequence check', description: 'Confirm solid green status LED within 45s.', isRequired: true },
-                    { title: 'Cellular communication packet transmission test', description: 'Verify gateway ACK in dispatch terminal.', isRequired: true },
-                    { title: 'GPS lock & satellite fix verification', description: 'Ensure minimum 8 satellite locks with HDOP < 1.8.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Verification',
-                items: [
-                    { title: 'Scan and match IMEI & Serial Number barcode', description: 'Verify match with installation work order.', isRequired: true },
-                    { title: 'Confirm vehicle odometer calibration', description: 'Cross-check against vehicle digital odometer reading.', isRequired: true },
-                    { title: 'Apply tamper-evident security seal on loom', description: 'Document seal number in installation notes.', isRequired: false },
-                ],
-            },
-            {
-                title: 'Installation Confirmation',
-                items: [
-                    { title: 'Technician cabin cleanup & cosmetic inspection', description: 'Ensure driver area is left completely clean.', isRequired: true },
-                    { title: 'Customer representative physical signoff', description: 'Authorized contact inspects and approves work.', isRequired: true },
-                ],
-            },
-        ],
-    },
-    {
-        name: 'FM3306 CAN-Bus Tracker Checklist',
-        hardwareModel: 'FM3306',
-        hardwareType: 'CAN-Bus Telematics Terminal',
-        category: 'Telematics Unit',
-        version: 'v1.0',
-        description: 'CAN-Bus vehicle telemetry wiring, baud rate auto-negotiation, and live telemetry validation.',
-        icon: Sliders,
-        sections: [
-            {
-                title: 'Hardware Mounting & Power',
-                items: [
-                    { title: 'Mount FM3306 unit securely in dry area', description: 'Ensure unit is insulated against vibration and moisture.', isRequired: true },
-                    { title: 'Tap CAN High and CAN Low wires into vehicle CAN bus', description: 'Use non-intrusive contactless CAN click if available.', isRequired: true },
-                    { title: 'Connect vehicle ground to chassis stud', description: 'Clean contact area and use star washer.', isRequired: true },
-                ],
-            },
-            {
-                title: 'CAN Telemetry Testing',
-                items: [
-                    { title: 'Verify CAN bus synchronization and baud rate', description: 'Check green CAN LED pulses indicating telemetry flow.', isRequired: true },
-                    { title: 'Confirm engine RPM & speed telemetry in live feed', description: 'Run engine at idle and confirm RPM reporting.', isRequired: true },
-                    { title: 'Confirm fuel level and odometer telemetry packets', description: 'Validate reading against dashboard gauge.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Signoff',
-                items: [
-                    { title: 'Record CAN profile version and firmware ID', description: 'Enter into commissioning tablet.', isRequired: true },
-                    { title: 'Installer final verification signoff', description: 'Signed by certified installer.', isRequired: true },
-                ],
-            },
-        ],
-    },
-    {
-        name: 'Dual-Facing AI Dashcam Checklist',
-        hardwareModel: 'HD Camera',
-        hardwareType: 'Dual-Lens AI Dashcam',
-        category: 'Camera & Video',
-        version: 'v1.0',
-        description: 'Road and driver video telematics setup, windshield angling, ADAS calibration, and cloud sync.',
-        icon: Camera,
-        sections: [
-            {
-                title: 'Camera Mount & Loom',
-                items: [
-                    { title: 'Clean windshield surface with isopropyl alcohol', description: 'Mount camera behind rearview mirror without blocking driver vision.', isRequired: true },
-                    { title: 'Affix 3M high-temperature VHB adhesive bracket', description: 'Apply firm pressure for 30 seconds.', isRequired: true },
-                    { title: 'Tuck power loom behind A-pillar trim', description: 'Ensure cable does not cross side curtain airbag deployment path.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Camera Calibration & Testing',
-                items: [
-                    { title: 'Level road-facing lens with horizon guide', description: 'Horizon line at 50% screen height via installer preview app.', isRequired: true },
-                    { title: 'Calibrate driver-facing lens for face detection', description: 'Ensure full face & steering wheel in frame.', isRequired: true },
-                    { title: 'Format high-endurance SD card (V30/U3)', description: 'Initialize card through camera system menu.', isRequired: true },
-                    { title: 'Trigger manual panic event and verify video upload', description: 'Confirm 20-second video clip is visible in cloud portal.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Confirmation',
-                items: [
-                    { title: 'Remove protective lens film covers', description: 'Wipe lens clean with microfiber cloth.', isRequired: true },
-                    { title: 'Customer supervisor camera viewing demonstration', description: 'Show authorized client live feed playback.', isRequired: true },
-                ],
-            },
-        ],
-    },
-    {
-        name: 'M2M SIM Connectivity Checklist',
-        hardwareModel: 'SIM',
-        hardwareType: 'M2M Cellular SIM Card',
-        category: 'Connectivity',
-        version: 'v1.0',
-        description: 'Multi-carrier SIM provisioning, APN verification, carrier lock testing, and cellular signal benchmarking.',
-        icon: Radio,
-        sections: [
-            {
-                title: 'SIM Installation',
-                items: [
-                    { title: 'Insert Micro-SIM into device slot until click', description: 'Ensure correct notch orientation.', isRequired: true },
-                    { title: 'Fasten SIM protective rubber cover or screw flap', description: 'Ensure IP67 moisture seal is seated.', isRequired: true },
-                ],
-            },
-            {
-                title: 'SIM Verification',
-                items: [
-                    { title: 'Confirm network registration on 4G/LTE band', description: 'Verify RSRP signal quality is better than -95 dBm.', isRequired: true },
-                    { title: 'Verify ICCID matches job manifest', description: 'Scan 19-digit ICCID barcode into device record.', isRequired: true },
-                    { title: 'Validate private APN IP address assignment', description: 'Confirm static/dynamic APN IP received from carrier gateway.', isRequired: true },
-                ],
-            },
-        ],
-    },
-    {
-        name: 'External GPS Antenna Checklist',
-        hardwareModel: 'GPS Unit',
-        hardwareType: 'External GNSS Antenna',
-        category: 'Sensors',
-        version: 'v1.0',
-        description: 'Active GNSS antenna placement, sky clearance, FAKRA coaxial termination, and satellite fix benchmarking.',
-        icon: Navigation,
-        sections: [
-            {
-                title: 'Antenna Mounting',
-                items: [
-                    { title: 'Mount GPS antenna with clear sky view', description: 'Under plastic dash deck or exterior roof with magnetic/adhesive base.', isRequired: true },
-                    { title: 'Ensure antenna is mounted horizontal and face-up', description: 'Must have at least 120-degree unobstructed upward view cone.', isRequired: true },
-                    { title: 'Tighten SMA/FAKRA coaxial connector firmly', description: 'Finger-tight plus 1/4 turn, or audible Fakra snap.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Signal Acquisition',
-                items: [
-                    { title: 'Acquire 3D GNSS fix in under 120 seconds', description: 'Minimum 8 active satellite locks (GPS + GLONASS/Galileo).', isRequired: true },
-                    { title: 'Verify HDOP (Horizontal Dilution of Precision) < 1.8', description: 'Check accuracy metric on commissioning interface.', isRequired: true },
-                    { title: 'Confirm map pin accurately reflects depot bay coordinates', description: 'Cross-check latitude/longitude against physical address.', isRequired: true },
-                ],
-            },
-        ],
-    },
-    {
-        name: 'Driver ID Keypad / Dallas Key Checklist',
-        hardwareModel: 'Driver ID Keypad',
-        hardwareType: 'Driver Authentication Module',
-        category: 'Accessories',
-        version: 'v1.0',
-        description: 'Driver identification buzzer, 1-Wire Dallas key reader or numeric keypad mounting and buzzer test.',
-        icon: ShieldCheck,
-        sections: [
-            {
-                title: 'Hardware Setup',
-                items: [
-                    { title: 'Mount keypad or RFID reader within easy driver reach', description: 'Beside steering column or centre console using trim screws.', isRequired: true },
-                    { title: 'Wire 1-Wire data and LED indicator to telematics unit', description: 'Ensure firm solder connection on green/yellow loom.', isRequired: true },
-                ],
-            },
-            {
-                title: 'Functional Testing',
-                items: [
-                    { title: 'Test starter-interrupt relay lockout without auth', description: 'Confirm vehicle will not crank until valid ID is presented.', isRequired: true },
-                    { title: 'Tap authorized RFID fob and confirm authorization chirp', description: 'Buzzer chirps once and green indicator illuminates.', isRequired: true },
-                    { title: 'Confirm driver ID tag reports in dispatch terminal', description: 'Check server log for driver tag match.', isRequired: true },
-                ],
-            },
-        ],
-    },
-];
-
-const PREDEFINED_MODELS: HardwareModel[] = [
-    'MIX4000',
-    'FM3306',
-    'HD Camera',
-    'Standard Camera',
-    'Base Unit',
-    'SIM',
-    'GPS Unit',
-    'CAN Bus Interface',
-    'Driver ID Keypad',
-];
-
-const CATEGORIES = [
-    'Telematics Unit',
-    'Camera & Video',
-    'Connectivity',
-    'Sensors',
-    'Core Unit',
-    'Accessories',
-];
-
-
-const CATEGORY_TO_ENUM: Record<string, string> = {
-    'Telematics Unit': 'TELEMATICS_UNIT',
-    'Camera & Video': 'CAMERA_AND_VIDEO',
-    'Connectivity': 'CONNECTIVITY',
-    'Sensors': 'SENSORS',
-    'Core Unit': 'CORE_UNIT',
-    'Accessories': 'ACCESSORIES',
-};
 
 const STATUS_TO_ENUM: Record<string, string> = {
     'Active': 'ACTIVE',
@@ -299,37 +63,26 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     onCreated,
     reuseFrom = null,
 }) => {
-    const { createChecklistTemplate, setSelectedTemplateId, checklistTemplates } =
+    const { createChecklistTemplate, setSelectedTemplateId, checklistTemplates, fmSegments } =
         useOperations();
+
+    const [hardwareId, setHardwareId] = useState<string>("")
 
     // Selected Preset / blank / saved library clone
     const [activePresetIndex, setActivePresetIndex] = useState<number | null>(0);
     const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
 
-    // Form Fields
-    const [name, setName] = useState<string>(STARTER_PRESETS[0].name);
-    const [hardwareModel, setHardwareModel] = useState<string>(STARTER_PRESETS[0].hardwareModel);
-    const [isCustomModel, setIsCustomModel] = useState<boolean>(false);
-    const [customModelInput, setCustomModelInput] = useState<string>('');
-    const [hardwareType, setHardwareType] = useState<string>(STARTER_PRESETS[0].hardwareType);
-    const [category, setCategory] = useState<string>(STARTER_PRESETS[0].category);
-    const [version, setVersion] = useState<string>(STARTER_PRESETS[0].version);
-    const [status, setStatus] = useState<'Active' | 'Draft'>('Active');
-    const [description, setDescription] = useState<string>(STARTER_PRESETS[0].description);
+    // YouTube-style Search dropdown states
+    const [presetSearchQuery, setPresetSearchQuery] = useState<string>('');
+    const [isSearchDropdownOpen, setIsSearchDropdownOpen] = useState<boolean>(false);
+    const searchRef = useRef<HTMLDivElement>(null);
 
-    // Sections & Items builder (always local copies — never shared with library templates)
-    const [sections, setSections] = useState<BuilderSection[]>(
-        STARTER_PRESETS[0].sections.map((sec, secIdx) => ({
-            id: `sec-preset-${secIdx}`,
-            title: sec.title,
-            items: sec.items.map((it, itIdx) => ({
-                id: `it-preset-${secIdx}-${itIdx}`,
-                title: it.title,
-                description: it.description,
-                isRequired: it.isRequired,
-            })),
-        }))
-    );
+    // Form Fields
+    const [name, setName] = useState<string>("");
+    const [status, setStatus] = useState<'Active' | 'Draft'>('Active');
+
+    // Sections & Items builder
+    const [sections, setSections] = useState<BuilderSection[]>([])
 
     // Helper state for adding a new section in builder
     const [newSectionTitle, setNewSectionTitle] = useState<string>('');
@@ -345,93 +98,42 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+    // Filtered presets based on search query
+    const filteredPresets = fmSegments.filter((preset) =>
+        preset.label.toLowerCase().includes(presetSearchQuery.toLowerCase()) ||
+        preset.code.toLowerCase().includes(presetSearchQuery.toLowerCase()) ||
+        preset.type.toLowerCase().includes(presetSearchQuery.toLowerCase())
+    );
+
+    // Close search menu when clicking outside
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+                setIsSearchDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
     // Apply a saved library template as an independent clone
     const handleSelectLibraryTemplate = (tmpl: ChecklistTemplate) => {
         setActivePresetIndex(null);
         setActiveLibraryId(tmpl.id);
         setName(`${tmpl.name} (Custom)`);
-        setHardwareModel(tmpl.hardwareModel);
-        setIsCustomModel(!PREDEFINED_MODELS.includes(tmpl.hardwareModel as HardwareModel));
-        setCustomModelInput(
-            PREDEFINED_MODELS.includes(tmpl.hardwareModel as HardwareModel)
-                ? ''
-                : tmpl.hardwareModel
-        );
-        setHardwareType(tmpl.hardwareType);
-        // UI category labels (reverse of CATEGORY_TO_ENUM when needed)
-        const catLabel =
-            Object.entries(CATEGORY_TO_ENUM).find(([, v]) => v === tmpl.category)?.[0] ||
-            tmpl.category;
-        setCategory(CATEGORIES.includes(catLabel) ? catLabel : CATEGORIES[0]);
-        setVersion(tmpl.version || 'v1.0');
+
+
         setStatus('Draft');
-        setDescription(tmpl.description || '');
         setSections(deepCloneSectionsFromTemplate(tmpl));
     };
 
-    // When opened via "Reuse" from the list, seed a deep clone once
     useEffect(() => {
         if (!isOpen || !reuseFrom) return;
         handleSelectLibraryTemplate(reuseFrom);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [isOpen, reuseFrom?.id]);
 
     if (!isOpen) return null;
 
-    // Apply a starter preset
-    const handleSelectPreset = (idx: number | null) => {
-        setActivePresetIndex(idx);
-        setActiveLibraryId(null);
-        if (idx !== null) {
-            const preset = STARTER_PRESETS[idx];
-            setName(preset.name);
-            setHardwareModel(preset.hardwareModel);
-            setIsCustomModel(false);
-            setCustomModelInput('');
-            setHardwareType(preset.hardwareType);
-            setCategory(preset.category);
-            setVersion(preset.version);
-            setDescription(preset.description);
-            setSections(
-                preset.sections.map((sec, sIdx) => ({
-                    id: `sec-preset-${sIdx}-${Date.now()}`,
-                    title: sec.title,
-                    items: sec.items.map((it, iIdx) => ({
-                        id: `it-preset-${sIdx}-${iIdx}-${Date.now()}`,
-                        title: it.title,
-                        description: it.description,
-                        isRequired: it.isRequired,
-                    })),
-                }))
-            );
-        } else {
-            // Blank custom template
-            setName('');
-            setHardwareModel(PREDEFINED_MODELS[0]);
-            setIsCustomModel(false);
-            setHardwareType('');
-            setCategory(CATEGORIES[0]);
-            setVersion('v1.0');
-            setDescription('');
-            setSections([
-                {
-                    id: `sec-custom-1-${Date.now()}`,
-                    title: 'Device Setup',
-                    items: [],
-                },
-                {
-                    id: `sec-custom-2-${Date.now()}`,
-                    title: 'Testing & Verification',
-                    items: [],
-                },
-                {
-                    id: `sec-custom-3-${Date.now()}`,
-                    title: 'Installation Sign-off',
-                    items: [],
-                },
-            ]);
-        }
-    };
 
     // Add section
     const handleAddSection = () => {
@@ -512,18 +214,13 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     const saveTemplate = async (saveStatus: 'Active' | 'Draft') => {
         setErrorMessage(null);
 
-        const finalModel = isCustomModel ? customModelInput.trim() : hardwareModel;
-
-        if (!name.trim()) {
-            setErrorMessage('Please enter a Template Name.');
-            return;
-        }
-        if (!finalModel) {
+        if (!hardwareId) {
             setErrorMessage('Please select or specify a Hardware Model.');
             return;
         }
-        if (!hardwareType.trim()) {
-            setErrorMessage('Please enter the Hardware Type (e.g. Telematics Gateway, CAN Tracker, Dashcam).');
+
+        if (!name.trim()) {
+            setErrorMessage('Please enter a Template Name.');
             return;
         }
         if (sections.length === 0) {
@@ -539,7 +236,6 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
             setIsSubmitting(true);
             setStatus(saveStatus);
 
-            // Fresh ids every save — never reuse source template section/item ids
             const stamp = Date.now();
             const formattedSections: ChecklistTemplateSection[] = sections.map((sec, secIdx) => ({
                 id: `sec-${secIdx + 1}-${stamp}`,
@@ -556,11 +252,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
 
             const newTemplateId = await createChecklistTemplate({
                 name: name.trim(),
-                hardwareModel: finalModel as HardwareModel,
-                hardwareType: hardwareType.trim(),
-                category: CATEGORY_TO_ENUM[category] || category,
-                description: description.trim(),
-                version: version.trim() || 'v1.0',
+                hardwareId: hardwareId,
                 status: (STATUS_TO_ENUM[saveStatus] || saveStatus) as any,
                 sections: formattedSections,
             });
@@ -615,57 +307,105 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
 
                 {/* Content Body - Scrollable */}
                 <div className="p-6 overflow-y-auto space-y-6 flex-1 bg-slate-50/50">
-                    {/* Preset Selector Banner */}
-                    <div>
-                        <div className="flex items-center justify-between mb-2">
+                    {/* YouTube-Style Searchable Starter Preset Dropdown */}
+                    <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+                        <div className="flex items-center justify-between">
                             <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
                                 <Sparkles className="w-3.5 h-3.5 text-blue-600" />
                                 Select a Starter Preset or Build Custom
                             </label>
-                            <button
+                            {/* <button
                                 type="button"
                                 onClick={() => handleSelectPreset(null)}
-                                className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1 ${
-                                    activePresetIndex === null && !activeLibraryId
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                                }`}
+                                className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1 ${activePresetIndex === null && !activeLibraryId
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                                    }`}
                             >
                                 <FilePlus2 className="w-3.5 h-3.5" />
                                 Blank Custom Template
-                            </button>
+                            </button> */}
                         </div>
 
-                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
-                            {STARTER_PRESETS.map((preset, idx) => {
-                                const Icon = preset.icon;
-                                const isSelected = activePresetIndex === idx && !activeLibraryId;
-                                return (
+                        {/* YouTube Search Bar Input Container */}
+                        <div className="relative" ref={searchRef}>
+                            <div className="relative flex items-center">
+                                <span className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+                                    <Search className="w-4 h-4" />
+                                </span>
+                                <input
+                                    type="text"
+                                    value={presetSearchQuery}
+                                    onFocus={() => setIsSearchDropdownOpen(true)}
+                                    onChange={(e) => {
+                                        setPresetSearchQuery(e.target.value);
+                                        setIsSearchDropdownOpen(true);
+                                        setHardwareId("")
+                                    }}
+                                    placeholder="Search presets (e.g. MIX4000, Dashcam, CAN-Bus)..."
+                                    className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-10 pr-10 py-2.5 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white shadow-xs transition-all"
+                                />
+                                {presetSearchQuery ? (
                                     <button
-                                        key={preset.name}
                                         type="button"
-                                        onClick={() => handleSelectPreset(idx)}
-                                        className={`p-2.5 rounded-xl border text-left transition-all flex flex-col justify-between ${isSelected
-                                                ? 'bg-blue-50/80 border-blue-500 ring-2 ring-blue-500/20 shadow-xs'
-                                                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                                            }`}
+                                        onClick={() => {
+                                            setPresetSearchQuery('');
+                                            setIsSearchDropdownOpen(true);
+                                        }}
+                                        className="absolute right-3 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
                                     >
-                                        <div>
-                                            <div className="flex items-center justify-between mb-1.5">
-                                                <div
-                                                    className={`p-1.5 rounded-lg ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'
-                                                        }`}
-                                                >
-                                                    <Icon className="w-3.5 h-3.5" />
-                                                </div>
-                                                {isSelected && <Check className="w-3.5 h-3.5 text-blue-600 font-bold" />}
-                                            </div>
-                                            <p className="font-bold text-[11px] text-slate-900 line-clamp-1">{preset.hardwareModel}</p>
-                                            <p className="text-[10px] text-slate-500 line-clamp-1">{preset.category}</p>
-                                        </div>
+                                        <X className="w-3.5 h-3.5" />
                                     </button>
-                                );
-                            })}
+                                ) : (
+                                    <ChevronDown className="absolute right-3.5 w-4 h-4 text-slate-400 pointer-events-none" />
+                                )}
+                            </div>
+
+                            {/* Floating YouTube-style Results Menu */}
+                            {isSearchDropdownOpen && (
+                                <div className="absolute z-30 left-0 right-0 mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl overflow-hidden max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
+                                    {filteredPresets.length === 0 ? (
+                                        <div className="p-4 text-center text-xs text-slate-400">
+                                            No matching starter presets found.
+                                        </div>
+                                    ) : (
+                                        <div className="py-1 divide-y divide-slate-100">
+                                            {filteredPresets.map((preset) => {
+                                                const originalIndex = fmSegments.findIndex((p) => p.label === preset.label);
+                                                const isSelected = activePresetIndex === originalIndex && !activeLibraryId;
+                                                // const Icon = preset.icon;
+
+                                                return (
+                                                    <button
+                                                        key={preset.code}
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setHardwareId(preset.id)
+                                                            setPresetSearchQuery(preset.label)
+                                                            setIsSearchDropdownOpen(false)
+                                                        }}
+                                                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-blue-50/70 transition-colors ${isSelected ? 'bg-blue-50/90 font-semibold' : ''
+                                                            }`}
+                                                    >
+                                                        <div className="flex items-center gap-3">
+                                                            {/* <div className={`p-1.5 rounded-lg shrink-0 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                                                                <Icon className="w-4 h-4" />
+                                                            </div> */}
+                                                            <div>
+                                                                <p className="text-xs text-slate-900 font-bold">{preset.label}</p>
+                                                                <p className="text-[11px] text-slate-500">
+                                                                    {preset.code} · {preset.type}
+                                                                </p>
+                                                            </div>
+                                                        </div>
+                                                        {isSelected && <Check className="w-4 h-4 text-blue-600 font-bold shrink-0" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     </div>
 
@@ -695,11 +435,10 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                                             key={tmpl.id}
                                             type="button"
                                             onClick={() => handleSelectLibraryTemplate(tmpl)}
-                                            className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
-                                                selected
-                                                    ? 'bg-ink/5 border-ink ring-2 ring-ink/15'
-                                                    : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-white'
-                                            }`}
+                                            className={`text-left rounded-xl border px-3 py-2.5 transition-all ${selected
+                                                ? 'bg-ink/5 border-ink ring-2 ring-ink/15'
+                                                : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-white'
+                                                }`}
                                         >
                                             <div className="flex items-center justify-between gap-2">
                                                 <p className="text-[11px] font-bold text-slate-900 truncate">
@@ -710,7 +449,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                                                 )}
                                             </div>
                                             <p className="text-[10px] text-slate-500 mt-0.5 truncate">
-                                                {tmpl.hardwareModel} · {itemCount} items · {tmpl.status}
+                                                {itemCount} items · {tmpl.status}
                                             </p>
                                         </button>
                                     );
@@ -760,39 +499,15 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                                         <label className="text-xs font-bold text-slate-700">
                                             Hardware Model <span className="text-rose-500">*</span>
                                         </label>
-                                        <button
-                                            type="button"
-                                            onClick={() => {
-                                                setIsCustomModel(!isCustomModel);
-                                                if (!isCustomModel) setCustomModelInput('');
-                                            }}
-                                            className="text-[11px] font-semibold text-blue-600 hover:text-blue-700"
-                                        >
-                                            {isCustomModel ? '← Select Standard Model' : '+ Custom Model'}
-                                        </button>
                                     </div>
-                                    {isCustomModel ? (
-                                        <input
-                                            type="text"
-                                            required
-                                            value={customModelInput}
-                                            onChange={(e) => setCustomModelInput(e.target.value)}
-                                            placeholder="e.g. CAN-Sensor Pro, Dashcam 4K..."
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                                        />
-                                    ) : (
-                                        <select
-                                            value={hardwareModel}
-                                            onChange={(e) => setHardwareModel(e.target.value)}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                                        >
-                                            {PREDEFINED_MODELS.map((model) => (
-                                                <option key={model} value={model}>
-                                                    {model}
-                                                </option>
-                                            ))}
-                                        </select>
-                                    )}
+                                    <input
+                                        type="text"
+                                        required
+                                        value={fmSegments.find(segment => segment.id === hardwareId)?.label ?? ""}
+                                        disabled
+                                        placeholder="e.g. Remora"
+                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                    />
                                     <p className="text-[10px] text-slate-400 mt-1">
                                         Jobs containing this hardware model automatically inherit this checklist.
                                     </p>
@@ -806,64 +521,26 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                                     <input
                                         type="text"
                                         required
-                                        value={hardwareType}
-                                        onChange={(e) => setHardwareType(e.target.value)}
+                                        value={fmSegments.find(segment => segment.id === hardwareId)?.type ?? ""}
+                                        disabled
                                         placeholder="e.g. Telematics Gateway, Dual ADAS Dashcam..."
                                         className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                     />
                                 </div>
 
-                                {/* Category */}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 mb-1">Hardware Category</label>
-                                    <select
-                                        value={category}
-                                        onChange={(e) => setCategory(e.target.value)}
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                                    >
-                                        {CATEGORIES.map((c) => (
-                                            <option key={c} value={c}>
-                                                {c}
-                                            </option>
-                                        ))}
-                                    </select>
-                                </div>
 
                                 {/* Version & Status */}
                                 <div className="grid grid-cols-2 gap-2">
                                     <div>
-                                        <label className="block text-xs font-bold text-slate-700 mb-1">Version</label>
+                                        <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
                                         <input
                                             type="text"
-                                            value={version}
-                                            onChange={(e) => setVersion(e.target.value)}
-                                            placeholder="v1.0"
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
+                                            required
+                                            value={fmSegments.find(segment => segment.id === hardwareId)?.isActive ? "Active":"In-Active"}
+                                            disabled
+                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3.5 py-2 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
                                         />
                                     </div>
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
-                                        <select
-                                            value={status}
-                                            onChange={(e) => setStatus(e.target.value as any)}
-                                            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                                        >
-                                            <option value="Active">Active</option>
-                                            <option value="Draft">Draft</option>
-                                        </select>
-                                    </div>
-                                </div>
-
-                                {/* Description */}
-                                <div className="md:col-span-2">
-                                    <label className="block text-xs font-bold text-slate-700 mb-1">Description & Scope</label>
-                                    <textarea
-                                        rows={2}
-                                        value={description}
-                                        onChange={(e) => setDescription(e.target.value)}
-                                        placeholder="Provide overview of procedures, wiring standards, safety equipment, or tools required."
-                                        className="w-full bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:bg-white"
-                                    />
                                 </div>
                             </div>
                         </div>
@@ -1019,8 +696,8 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                                                                         type="button"
                                                                         onClick={() => handleToggleItemRequired(section.id, item.id)}
                                                                         className={`text-[10px] font-semibold px-2 py-0.5 rounded-full border transition-colors ${item.isRequired
-                                                                                ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
-                                                                                : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
+                                                                            ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                                                                            : 'bg-slate-100 text-slate-600 border-slate-200 hover:bg-slate-200'
                                                                             }`}
                                                                     >
                                                                         {item.isRequired ? 'Required' : 'Optional'}

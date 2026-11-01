@@ -204,9 +204,9 @@ export class FMInstallService {
     const serviceCode = String(dto.fmwService ?? dto.installDetail?.serviceCode ?? '').trim();
     const service = serviceCode
       ? await this.prisma.product.findFirst({
-          where: { productCode: { equals: serviceCode, mode: 'insensitive' }, isActive: true },
-          select: { id: true },
-        })
+        where: { productCode: { equals: serviceCode, mode: 'insensitive' }, isActive: true },
+        select: { id: true },
+      })
       : null;
     if (!service) throw new BadRequestException('Invalid Service');
     if (!mix || mix === '0_0_0_0_0_0') throw new BadRequestException('Invalid MIXService_Code');
@@ -264,9 +264,9 @@ export class FMInstallService {
     // Empty string from the form must fall back to existing / detail service code
     const fmwService = String(
       dto.fmwService ||
-        existing.fmwService ||
-        existing.installDetail?.serviceCode ||
-        '',
+      existing.fmwService ||
+      existing.installDetail?.serviceCode ||
+      '',
     ).trim();
     const mixCode = String(
       dto.mixCode || existing.mixCode || existing.installDetail?.mixCode || '',
@@ -277,13 +277,13 @@ export class FMInstallService {
       select: { id: true, customer: { select: { deletedAt: true } } },
     });
     if (!fm || fm.customer?.deletedAt) throw new BadRequestException('Invalid FMCusNum');
-    const service = fmwService
-      ? await this.prisma.product.findFirst({
-          where: { productCode: { equals: fmwService, mode: 'insensitive' }, isActive: true },
-          select: { id: true },
-        })
-      : null;
-    if (!service) throw new BadRequestException(`Invalid Service${fmwService ? ` — ${fmwService}` : ''}`);
+    // const service = fmwService
+    //   ? await this.prisma.product.findFirst({
+    //       where: { productCode: { equals: fmwService, mode: 'insensitive' }, isActive: true },
+    //       select: { id: true },
+    //     })
+    //   : null;
+    // if (!service) throw new BadRequestException(`Invalid Service${fmwService ? ` — ${fmwService}` : ''}`);
     if (!mixCode || mixCode === '0_0_0_0_0_0') throw new BadRequestException('Invalid MIXService_Code');
 
     const now = new Date();
@@ -400,9 +400,9 @@ export class FMInstallService {
       !detailData.installDate || detailData.installDate === ''
         ? null
         : (() => {
-            const d = new Date(detailData.installDate);
-            return Number.isNaN(d.getTime()) ? null : d;
-          })();
+          const d = new Date(detailData.installDate);
+          return Number.isNaN(d.getTime()) ? null : d;
+        })();
 
     const cleanScalars = {
       installType: detailData.installType ?? null,
@@ -439,12 +439,12 @@ export class FMInstallService {
       vinNumber: detailData.vinNumber ?? null,
       regoNumber: detailData.regoNumber ?? null,
       installLocation: detailData.installLocation ?? null,
-      installer: detailData.installer ?? null,
+      installerId: detailData.installer ?? null, // <-- Use scalar foreign key field here
       installStatus,
       installDate,
     };
 
-    // Create + link detail when missing (older / partial FM Install rows)
+    // Then remove `installerRelation` entirely and use cleanScalars directly:
     if (!install.installDetailId) {
       if (!install.preinstallId) {
         throw new BadRequestException('No install detail linked — open from a preinstall first');
@@ -454,8 +454,8 @@ export class FMInstallService {
         create: {
           preinstall: { connect: { id: install.preinstallId } },
           ...cleanScalars,
-        } satisfies Prisma.FMInstallDetailCreateInput,
-        update: cleanScalars satisfies Prisma.FMInstallDetailUpdateInput,
+        },
+        update: cleanScalars,
       });
       await this.prisma.fMInstall.update({
         where: { id: installId },

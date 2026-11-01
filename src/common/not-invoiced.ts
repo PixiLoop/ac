@@ -1,51 +1,41 @@
-export interface NotInvoicedResult {
-  byLine: Map<string, number>;
-  byProduct: Map<string, number>;
-}
+import { PrismaService } from '../prisma/prisma.service';
 
-export async function notInvoicedBySalesOrderLine(
-  prisma: any,
-  salesOrderId: string
-): Promise<NotInvoicedResult> {
+/** Quantity on each sales-order line that is not yet on a non-cancelled invoice. */
+export async function notInvoicedBySalesOrderLine(prisma: PrismaService, salesOrderId: string) {
+  const so = await prisma.salesOrder.findFirst({
+    where: { id: salesOrderId, deletedAt: null },
+    include: {
+      items: { where: { deletedAt: null }, orderBy: { createdAt: 'asc' } },
+    },
+  });
   const byLine = new Map<string, number>();
   const byProduct = new Map<string, number>();
+  if (!so) return { byLine, byProduct };
 
-  if (!salesOrderId) return { byLine, byProduct };
-
-  try {
-    const soItems = await prisma.salesOrderItem.findMany({
-      where: { salesOrderId, deletedAt: null },
-      select: { id: true, productId: true, quantity: true },
-    });
-
-    const invoices = await prisma.invoice.findMany({
-      where: { salesOrderId, deletedAt: null, status: { not: 'CANCELLED' } },
-      select: {
-        items: {
-          where: { deletedAt: null },
-          select: { productId: true, quantity: true },
-        },
-      },
-    });
-
-    const invoicedByProduct = new Map<string, number>();
-    for (const inv of invoices) {
-      for (const item of inv.items) {
-        const cur = invoicedByProduct.get(item.productId) ?? 0;
-        invoicedByProduct.set(item.productId, cur + Number(item.quantity || 0));
-      }
+  const invoices = await prisma.invoice.findMany({
+    where: { salesOrderId, deletedAt: null, status: { not: 'CANCELLED' } },
+    include: { items: { where: { deletedAt: null } } },
+  });
+  const invoiced = new Map<string, number>();
+  for (const invoice of invoices) {
+    for (const item of invoice.items) {
+      invoiced.set(item.productId, (invoiced.get(item.productId) ?? 0) + Number(item.quantity));
     }
+  }
 
-    for (const item of soItems) {
-      const soQty = Number(item.quantity || 0);
-      const invQty = invoicedByProduct.get(item.productId) ?? 0;
-      const remaining = Math.max(0, soQty - invQty);
-
-      byLine.set(item.id, remaining);
-      const prodRem = byProduct.get(item.productId) ?? 0;
-      byProduct.set(item.productId, prodRem + remaining);
-    }
-  } catch (e) {}
-
+  const left = new Map(invoiced);
+  for (const line of so.items) {
+    const qty = Number(line.quantity);
+    const used = Math.min(qty, left.get(line.productId) ?? 0);
+    left.set(line.productId, (left.get(line.productId) ?? 0) - used);
+    byLine.set(line.id, qty - used);
+  }
+  for (const line of so.items) {
+    const total = (byProduct.get(line.productId) ?? 0) + Number(line.quantity);
+    byProduct.set(line.productId, total);
+  }
+  for (const [productId, qty] of Array.from(byProduct)) {
+    byProduct.set(productId, Math.max(0, qty - (invoiced.get(productId) ?? 0)));
+  }
   return { byLine, byProduct };
 }

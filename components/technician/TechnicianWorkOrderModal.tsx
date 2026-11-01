@@ -59,10 +59,6 @@ interface TechnicianWorkOrderModalProps {
   technicianName: string;
 }
 
-/**
- * Client-side canvas image downscaler to ensure uploaded photos
- * fit into localStorage and render instantly without memory exhaustion.
- */
 const compressImageFile = (file: File, maxDimension = 1600, quality = 0.85): Promise<string> => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -70,6 +66,7 @@ const compressImageFile = (file: File, maxDimension = 1600, quality = 0.85): Pro
     reader.onload = (event) => {
       const img = new Image();
       img.onerror = () => {
+        // Fallback to direct raw base64 if not an HTML image renderable
         resolve(event.target?.result as string);
       };
       img.onload = () => {
@@ -146,19 +143,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   const storageKey = `technician_workorder_photos_${job.id}`;
   const signoffStorageKey = `technician_workorder_signoff_${job.id}`;
 
-  // Load photos from localStorage or initial setup
   useEffect(() => {
     if (typeof window === 'undefined') return;
 
     try {
-      const savedPhotos = localStorage.getItem(storageKey);
-      if (savedPhotos) {
-        const parsed = JSON.parse(savedPhotos);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setPhotos(parsed);
-          return;
-        }
-      }
 
       // Check if job checklist items already have photos
       const existingChecklistPhotos: WorkOrderPhoto[] = [];
@@ -189,36 +177,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
         setPhotos(existingChecklistPhotos);
       } else {
         // Initial illustrative mock installation photos for this specific work order
-        const initialMock: WorkOrderPhoto[] = [
-          {
-            id: `photo-init-1-${job.id}`,
-            url: 'https://images.unsplash.com/photo-1581092160607-ee22621dd758?auto=format&fit=crop&w=800&q=80',
-            fileName: 'telematics-mounting.jpg',
-            category: 'Unit Mounting',
-            timestamp: '08:45 AM',
-            notes: 'Telematics unit secured behind glove compartment bracket',
-          },
-          {
-            id: `photo-init-2-${job.id}`,
-            url: 'https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=800&q=80',
-            fileName: 'fuse-tap-wiring.jpg',
-            category: 'Power & Fuse Tap',
-            timestamp: '09:12 AM',
-            notes: 'Fused harness connected to constant 12V and ignition accessory rail',
-          },
-        ];
+        const initialMock: WorkOrderPhoto[] = [];
         setPhotos(initialMock);
-        localStorage.setItem(storageKey, JSON.stringify(initialMock));
       }
 
-      // Load saved sign-off info if present
-      const savedSignoff = localStorage.getItem(signoffStorageKey);
-      if (savedSignoff) {
-        const parsed = JSON.parse(savedSignoff);
-        if (parsed.notes) setNotes(parsed.notes);
-        if (parsed.signoffName) setSignoffName(parsed.signoffName);
-        if (parsed.signedOff !== undefined) setSignedOff(parsed.signedOff);
-      }
     } catch (e) {
       console.warn('Error loading photos from storage', e);
     }
@@ -227,14 +189,14 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   // Persist photos to localStorage whenever updated
   const savePhotos = useCallback(
     (updatedPhotos: WorkOrderPhoto[]) => {
-      setPhotos(updatedPhotos);
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(storageKey, JSON.stringify(updatedPhotos));
-        } catch (e) {
-          console.warn('Failed to persist photos to localStorage:', e);
-        }
-      }
+      // setPhotos(updatedPhotos);
+      // if (typeof window !== 'undefined') {
+      //   try {
+      //     localStorage.setItem(storageKey, JSON.stringify(updatedPhotos));
+      //   } catch (e) {
+      //     console.warn('Failed to persist photos to localStorage:', e);
+      //   }
+      // }
     },
     [storageKey]
   );
@@ -242,19 +204,19 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   // Persist signoff details
   const saveSignoffData = useCallback(
     (notesVal: string, nameVal: string, signedVal: boolean) => {
-      if (typeof window !== 'undefined') {
-        try {
-          localStorage.setItem(
-            signoffStorageKey,
-            JSON.stringify({
-              notes: notesVal,
-              signoffName: nameVal,
-              signedOff: signedVal,
-              updatedAt: new Date().toISOString(),
-            })
-          );
-        } catch (e) {}
-      }
+      // if (typeof window !== 'undefined') {
+      //   try {
+      //     localStorage.setItem(
+      //       signoffStorageKey,
+      //       JSON.stringify({
+      //         notes: notesVal,
+      //         signoffName: nameVal,
+      //         signedOff: signedVal,
+      //         updatedAt: new Date().toISOString(),
+      //       })
+      //     );
+      //   } catch (e) {}
+      // }
     },
     [signoffStorageKey]
   );
@@ -355,12 +317,14 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   const handleFileInputChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
       await processFiles(e.target.files, undefined, targetTaskForPhoto);
+      // Reset input value so same file can be re-selected if necessary
       e.target.value = '';
     }
   };
 
   const handleTaskPhotoTrigger = (sectionId: string, itemId: string, itemTitle: string) => {
     setTargetTaskForPhoto({ sectionId, itemId, itemTitle });
+    // Open camera / file picker
     if (taskCameraInputRef.current) {
       taskCameraInputRef.current.click();
     }

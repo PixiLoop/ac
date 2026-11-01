@@ -1,6 +1,7 @@
-export function availableStock(product: any): number {
-  if (!product) return 0;
-  const onHand = Number(product.onHand ?? product.quantityOnHand ?? product.stock ?? 0);
-  const allocated = Number(product.allocatedQty ?? product.allocated ?? 0);
-  return Math.max(0, onHand - allocated);
+/** Free-to-promise stock: on hand less committed, never below zero. */
+export function availableStock(
+  product?: { onHand?: unknown; committed?: unknown } | null,
+): number | null {
+  if (product?.onHand == null) return null;
+  return Math.max(0, Number(product.onHand) - Number(product.committed ?? 0));
 }

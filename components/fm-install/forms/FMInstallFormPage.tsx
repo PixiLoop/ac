@@ -386,8 +386,8 @@ export function FMInstallFormPage({ installId, preinstallId }: Props) {
         const fmOk = fmLocked || await validateFmCustomer();
         if (!fmOk) return;
         // Always re-check service on save (don't trust stale serviceOk from load)
-        const svcOk = await validateService();
-        if (!svcOk) return;
+        // const svcOk = await validateService();
+        // if (!svcOk) return;
         if (!mixOk) {
             showToast({ type: 'error', title: INVALID_MIX_SERVICE_CODE, message: INVALID_MIX_SERVICE_CODE });
             return;

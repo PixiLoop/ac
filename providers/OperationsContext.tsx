@@ -20,6 +20,21 @@ import {
 import { api, formatJobBookError } from '../lib/job-book-client';
 import { useAuth } from './auth-provider';
 
+export interface UnitCode {
+  id: string;
+  segment: number;
+  type: string;
+  code: string;
+  label: string;
+  mixCode: string;
+  mixIndex: number;
+  dependsOn: string;
+  sortOrder: number;
+  isActive: boolean;
+  createdAt: string; // ISO 8601 date string
+  updatedAt: string; // ISO 8601 date string
+  productId: string | null;
+}
 
 export interface UserContractor {
   id: string;
@@ -251,6 +266,8 @@ interface OperationsContextType {
   setSubContractors: React.Dispatch<React.SetStateAction<UserSubContractor[]>>;
   assignedJobs: InstallationJob[];
   setAssignedJobs: React.Dispatch<React.SetStateAction<InstallationJob[]>>;
+  fmSegments: UnitCode[];
+  setFmSegments: React.Dispatch<React.SetStateAction<UnitCode[]>>;
 }
 
 const OperationsContext = createContext<OperationsContextType | undefined>(undefined);
@@ -280,6 +297,23 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [subContractors, setSubContractors] = useState<UserSubContractor[]>([])
   const [assignedJobs, setAssignedJobs] = useState<InstallationJob[]>([])
 
+  const [fmSegments, setFmSegments] = useState<UnitCode[]>([])
+
+
+  const fetchFmSegments = useCallback(
+    async () => {
+      const res = await api.fmSegments.list()
+
+      if (res.data && (res.data as any).length > 0) {
+        setFmSegments(res.data as any)
+      }
+    },
+    [api.fmSegments],
+  )
+
+  useEffect(() => {
+    fetchFmSegments()
+  }, [fetchFmSegments, user])
 
   // sync contractors with backed
   const fetchAssignedJobs = useCallback(
@@ -861,7 +895,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     // Local fallback
-    const tmpl = checklistTemplates.find((t) => t.hardwareModel === hardware.model);
+    const tmpl = checklistTemplates.find((t) => t.FMServiceSegment?.label === hardware.model);
     setJobs((prev) =>
       prev.map((job) => {
         if (job.id !== jobId) return job;
@@ -872,7 +906,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
               id: `sec-${hardware.model.toLowerCase()}-${sec.id}-${Date.now().toString().slice(-4)}`,
               title: `${hardware.model} Checklist — ${sec.title}`,
               hardwareModel: hardware.model,
-              hardwareName: tmpl.hardwareType,
+              hardwareName: tmpl.FMServiceSegment?.label ?? "",
               items: sec.items.map((item, idx) => ({
                 id: `item-${hardware.model}-${sec.id}-${idx}-${Date.now().toString().slice(-4)}`,
                 templateItemId: item.id,
@@ -1374,7 +1408,9 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         subContractors,
         setSubContractors,
         assignedJobs,
-        setAssignedJobs
+        setAssignedJobs,
+        fmSegments,
+        setFmSegments
       }}
     >
       {children}

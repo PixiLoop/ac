@@ -309,7 +309,7 @@ export class JobsService {
     let lastError: any;
     for (const include of attempts) {
       try {
-        const jobs = await (this.prisma as any).installationJob.findMany({
+        const jobs = await (this.prisma as any ).installationJob.findMany({
           where: {
             technicianId: userId,
             ...where

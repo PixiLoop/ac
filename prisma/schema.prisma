@@ -35,6 +35,7 @@ model User {
   cardActivities          CardActivity[]
   cardMemberships         CardMember[]
   DispatchedInvoices      DispatchedInvoices[]
+  FMInstallDetail         FMInstallDetail[]
   createdInstallationJobs InstallationJob[]    @relation("JobCreator")
   installationJobs        InstallationJob[]
   jobBoards               JobBoard[]
@@ -1162,26 +1163,28 @@ model FMInstallDetail {
   updatedAt             DateTime                @updatedAt
   fmInstall             FMInstall?              @relation("FMInstallToDetail")
   preinstall            FMPreinstall            @relation(fields: [preinstallId], references: [id])
+  User                  User?                   @relation(fields: [installer], references: [id], onUpdate: NoAction, map: "installer")
   fMInstallDetailOrgIds fMInstallDetailOrgIds[]
 
   @@schema("admin")
 }
 
 model FMServiceSegment {
-  id        String   @id @default(cuid())
-  segment   Int
-  type      String
-  code      String
-  label     String
-  mixCode   String?
-  mixIndex  Int?
-  dependsOn String?
-  sortOrder Int?
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  productId String?
-  Product   Product? @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Product")
+  id                String              @id @default(cuid())
+  segment           Int
+  type              String
+  code              String
+  label             String
+  mixCode           String?
+  mixIndex          Int?
+  dependsOn         String?
+  sortOrder         Int?
+  isActive          Boolean             @default(true)
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+  productId         String?
+  ChecklistTemplate ChecklistTemplate[]
+  Product           Product?            @relation(fields: [productId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Product")
 
   @@unique([segment, type, code, label])
   @@index([type])
@@ -1699,20 +1702,16 @@ model fMInstallDetailOrgIds {
 }
 
 model ChecklistTemplate {
-  id            String                     @id @default(cuid())
-  name          String
-  hardwareType  String
-  hardwareModel HardwareModel
-  category      HardwareCategory
-  description   String
-  version       String                     @default("v1.0")
-  status        TemplateStatus             @default(ACTIVE)
-  lastUpdated   DateTime                   @default(now())
-  createdAt     DateTime                   @default(now())
-  updatedAt     DateTime                   @updatedAt
-  sections      ChecklistTemplateSection[]
+  id               String                     @id @default(cuid())
+  name             String
+  status           TemplateStatus             @default(ACTIVE)
+  lastUpdated      DateTime                   @default(now())
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  fmSegmentId      String?
+  FMServiceSegment FMServiceSegment?          @relation(fields: [fmSegmentId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "fmSegment")
+  sections         ChecklistTemplateSection[]
 
-  @@index([hardwareModel])
   @@index([status])
   @@schema("admin")
 }

@@ -1,40 +1,62 @@
 'use client';
 
-import React, { useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
+import ConfirmModal from '../components/ui/ConfirmModal';
+import { AccountContext, accountStatusGate } from '../lib/account-status';
+
+type Prompt = {
+  message: string;
+  block: boolean;
+  resolve: (ok: boolean) => void;
+};
 
 export function useAccountStatusGate() {
-  const [isOpen, setIsOpen] = useState(false);
-  const [errorMessage, setErrorMessage] = useState('');
+  const [prompt, setPrompt] = useState<Prompt | null>(null);
+  const acknowledged = useRef(new Set<string>());
 
-  const check = async (
-    customerId?: string,
-    customerStatus?: string,
-    action?: string
-  ): Promise<boolean> => {
-    if (customerStatus === 'SUSPENDED' || customerStatus === 'ON_HOLD') {
-      setErrorMessage(`Customer account is ${customerStatus}. Action cannot proceed.`);
-      setIsOpen(true);
-      return false;
+  const check = useCallback((
+    customerId: string | null | undefined,
+    status: string | null | undefined,
+    context: AccountContext,
+  ) => {
+    const result = accountStatusGate(status, context);
+    if (result.gate === 'allow' || !customerId) return Promise.resolve(true);
+
+    const key = `${context}:${customerId}:${result.gate}:${result.message}`;
+    if (result.gate === 'warn' && acknowledged.current.has(key)) {
+      return Promise.resolve(true);
     }
-    return true;
+
+    return new Promise<boolean>((resolve) => {
+      setPrompt({
+        message: result.message,
+        block: result.gate === 'block',
+        resolve: (ok) => {
+          if (ok) acknowledged.current.add(key);
+          resolve(ok);
+        },
+      });
+    });
+  }, []);
+
+  const close = (ok: boolean) => {
+    const current = prompt;
+    setPrompt(null);
+    current?.resolve(ok);
   };
 
-  const modal = isOpen ? (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="bg-white rounded-2xl p-6 max-w-md w-full shadow-xl">
-        <h3 className="text-base font-bold text-slate-900 mb-2">Account Status Restricted</h3>
-        <p className="text-sm text-slate-600 mb-4">{errorMessage}</p>
-        <div className="flex justify-end">
-          <button
-            onClick={() => setIsOpen(false)}
-            className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold"
-          >
-            Dismiss
-          </button>
-        </div>
-      </div>
-    </div>
-  ) : null;
+  const modal = (
+    <ConfirmModal
+      open={!!prompt}
+      title=""
+      message={prompt?.message ?? ''}
+      confirmText="OK"
+      alertOnly
+      danger={prompt?.block ?? false}
+      onConfirm={() => close(!(prompt?.block))}
+      onCancel={() => close(false)}
+    />
+  );
 
   return { check, modal };
 }

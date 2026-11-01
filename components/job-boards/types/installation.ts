@@ -2,6 +2,8 @@
  * Installation Operations Types
  */
 
+import { UnitCode } from "../../../providers/OperationsContext";
+
 export type InstallationStatus =
   | 'Not Actioned'
   | 'Workshop Setup'
@@ -110,14 +112,11 @@ export interface ChecklistTemplateSection {
 export interface ChecklistTemplate {
   id: string;
   name: string;
-  hardwareType: string;
-  hardwareModel: HardwareModel;
-  category: string;
-  description: string;
-  version: string;
+  hardwareId: string;
   status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
   lastUpdated: string;
   sections: ChecklistTemplateSection[];
+  FMServiceSegment?: UnitCode | null
 }
 
 export interface TimelineEvent {

@@ -460,7 +460,7 @@ export default function FMPreinstallPage() {
           {
             key: 'installer',
             title: 'Installer',
-            render: r => r.installDetail?.installer || '-',
+            render: r => r.installDetail?.User?.displayName || '-',
           },
           {
             key: 'location',

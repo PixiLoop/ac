@@ -42,27 +42,6 @@ export class CreateChecklistTemplateDto {
   @IsNotEmpty()
   name: string;
 
-  @IsString()
-  @IsNotEmpty()
-  hardwareType: string;
-
-  /** Accepts Prisma enum or Job Book display label (e.g. "HD Camera") */
-  @IsString()
-  @IsNotEmpty()
-  hardwareModel: string;
-
-  /** Accepts Prisma enum or Job Book display label (e.g. "Camera & Video") */
-  @IsString()
-  @IsNotEmpty()
-  category: string;
-
-  @IsString()
-  @IsOptional()
-  description?: string;
-
-  @IsString()
-  @IsOptional()
-  version?: string = 'v1.0';
 
   @IsEnum(TemplateStatus)
   @IsOptional()
@@ -73,32 +52,16 @@ export class CreateChecklistTemplateDto {
   @Type(() => CreateChecklistTemplateSectionDto)
   @IsOptional()
   sections?: CreateChecklistTemplateSectionDto[] = [];
+
+  @IsString()
+  @IsOptional()
+  hardwareId?: string
 }
 
 export class UpdateChecklistTemplateDto {
   @IsString()
   @IsOptional()
   name?: string;
-
-  @IsString()
-  @IsOptional()
-  hardwareType?: string;
-
-  @IsString()
-  @IsOptional()
-  hardwareModel?: string;
-
-  @IsString()
-  @IsOptional()
-  category?: string;
-
-  @IsString()
-  @IsOptional()
-  description?: string;
-
-  @IsString()
-  @IsOptional()
-  version?: string;
 
   @IsEnum(TemplateStatus)
   @IsOptional()

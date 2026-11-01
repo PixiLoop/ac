@@ -3,6 +3,6 @@
 import React from 'react';
 import { TechnicianDashboard } from '../../components/technician/TechnicianDashboard';
 
-export default function TechnicianPage() {
+export default function TechnicianDashboardPage() {
   return <TechnicianDashboard />;
 }

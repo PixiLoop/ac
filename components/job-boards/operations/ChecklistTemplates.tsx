@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { ChecklistTemplate } from '../types/installation';
 import { ChecklistTemplateDetail } from './ChecklistTemplateDetail';
 import { CreateChecklistTemplateModal } from './CreateChecklistTemplateModal';
@@ -33,9 +33,17 @@ export const ChecklistTemplates: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [reuseFrom, setReuseFrom] = useState<ChecklistTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ChecklistTemplate | null>(null);
+  const [categories, setCategories] = useState([])
 
   const selectedTemplate = checklistTemplates.find((t) => t.id === selectedTemplateId);
 
+
+  useEffect(() => {
+    const fmSegmentsTemplate = checklistTemplates.filter(template => template.FMServiceSegment !== null)
+    const uniqueCat = Array.from(new Set(fmSegmentsTemplate.map(item => item.FMServiceSegment.type)));
+    setCategories(['All', ...uniqueCat])
+  }, [checklistTemplates])
+  
   if (selectedTemplate) {
     return (
       <ChecklistTemplateDetail
@@ -45,51 +53,18 @@ export const ChecklistTemplates: React.FC = () => {
     );
   }
 
-  const categories = ['All', 'Telematics Unit', 'Camera & Video', 'Connectivity', 'Sensors', 'Core Unit', 'Accessories'];
-
   const filteredTemplates = checklistTemplates.filter((tmpl) => {
-    if (categoryFilter !== 'All' && tmpl.category !== categoryFilter) return false;
+    if (categoryFilter !== 'All' && tmpl.FMServiceSegment?.type !== categoryFilter) return false;
     if (search.trim() !== '') {
       const q = search.toLowerCase();
       const matchName = tmpl.name.toLowerCase().includes(q);
-      const matchModel = tmpl.hardwareModel.toLowerCase().includes(q);
-      const matchType = tmpl.hardwareType.toLowerCase().includes(q);
+      const matchModel = (tmpl.FMServiceSegment?.label ?? "").toLowerCase().includes(q);
+      const matchType = (tmpl.FMServiceSegment?.type ?? "").toLowerCase().includes(q);
       if (!matchName && !matchModel && !matchType) return false;
     }
     return true;
   });
 
-  // ChecklistTemplates.tsx
-
-  const handleDuplicateTemplate = async (tmpl: ChecklistTemplate, e: React.MouseEvent) => {
-    e.stopPropagation();
-    try {
-      const newId = await createChecklistTemplate({
-        name: `${tmpl.name} (Copy)`,
-        hardwareModel: tmpl.hardwareModel,
-        hardwareType: tmpl.hardwareType,
-        category: tmpl.category,
-        description: tmpl.description,
-        version: `${tmpl.version}-copy`,
-        status: 'DRAFT', // Changed from 'Draft' to 'DRAFT'
-        sections: tmpl.sections.map((sec, sIdx) => ({
-          id: `sec-copy-${sIdx}-${Date.now()}`,
-          title: sec.title,
-          items: sec.items.map((it, iIdx) => ({
-            id: `item-copy-${sIdx}-${iIdx}-${Date.now()}`,
-            title: it.title,
-            description: it.description,
-            section: sec.title,
-            isRequired: it.isRequired,
-            displayOrder: it.displayOrder,
-          })),
-        })),
-      });
-      setSelectedTemplateId(newId);
-    } catch (err) {
-      console.error('Failed to duplicate template', err);
-    }
-  };
 
   // Confirm delete
   const handleConfirmDelete = async () => {
@@ -109,7 +84,7 @@ export const ChecklistTemplates: React.FC = () => {
     (acc, t) => acc + t.sections.reduce((sAcc, s) => sAcc + s.items.length, 0),
     0
   );
-  const modelsCoveredCount = new Set(checklistTemplates.map((t) => t.hardwareModel)).size;
+  const modelsCoveredCount = new Set(checklistTemplates.map((t) => t.FMServiceSegment?.label)).size;
 
   return (
     <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
@@ -238,7 +213,6 @@ export const ChecklistTemplates: React.FC = () => {
                   <th className="py-3 px-4 align-middle">Template Name</th>
                   <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Model</th>
                   <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Type</th>
-                  <th className="py-3 px-4 align-middle">Category</th>
                   <th className="py-3 px-4 align-middle text-center">Sections</th>
                   <th className="py-3 px-4 align-middle text-center whitespace-nowrap">Checklist Items</th>
                   <th className="py-3 px-4 align-middle">Status</th>
@@ -272,12 +246,9 @@ export const ChecklistTemplates: React.FC = () => {
                           <div className="min-w-0">
                             <div className="font-bold text-slate-900 group-hover:text-blue-600 flex items-center gap-1.5 leading-snug">
                               <span className="truncate">{tmpl.name}</span>
-                              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded shrink-0 leading-none">
-                                {tmpl.version}
-                              </span>
                             </div>
                             <div className="text-[11px] text-slate-400 line-clamp-1 leading-snug mt-0.5">
-                              {tmpl.description}
+                              {tmpl.FMServiceSegment?.code}
                             </div>
                           </div>
                         </div>
@@ -286,20 +257,13 @@ export const ChecklistTemplates: React.FC = () => {
                       {/* Hardware Model */}
                       <td className="py-3 px-4 align-middle">
                         <span className="inline-flex items-center font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 leading-none whitespace-nowrap">
-                          {tmpl.hardwareModel}
+                          {tmpl.FMServiceSegment?.label}
                         </span>
                       </td>
 
                       {/* Hardware Type */}
                       <td className="py-3 px-4 align-middle text-slate-700 font-medium whitespace-nowrap">
-                        {tmpl.hardwareType}
-                      </td>
-
-                      {/* Category */}
-                      <td className="py-3 px-4 align-middle">
-                        <span className="inline-flex items-center text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full leading-none whitespace-nowrap">
-                          {tmpl.category}
-                        </span>
+                        {tmpl.FMServiceSegment?.type}
                       </td>
 
                       {/* Sections Count */}
@@ -368,13 +332,13 @@ export const ChecklistTemplates: React.FC = () => {
                             <Copy className="w-3.5 h-3.5" />
                             Reuse
                           </button>
-                          <button
+                          {/* <button
                             onClick={(e) => handleDuplicateTemplate(tmpl, e)}
                             className="inline-flex items-center justify-center p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
                             title="Quick duplicate"
                           >
                             <Copy className="w-3.5 h-3.5" />
-                          </button>
+                          </button> */}
                           <button
                             onClick={() => setTemplateToDelete(tmpl)}
                             className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors leading-none"
@@ -423,7 +387,7 @@ export const ChecklistTemplates: React.FC = () => {
             </div>
 
             <p className="text-xs text-slate-600">
-              Are you sure you want to delete <span className="font-bold text-slate-900">{templateToDelete.name}</span> ({templateToDelete.hardwareModel})? Jobs already scheduled will retain their current checklist instances, but new jobs will no longer auto-attach this template.
+              Are you sure you want to delete <span className="font-bold text-slate-900">{templateToDelete.name}</span> ({templateToDelete.FMServiceSegment?.label ?? ""})? Jobs already scheduled will retain their current checklist instances, but new jobs will no longer auto-attach this template.
             </p>
 
             <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

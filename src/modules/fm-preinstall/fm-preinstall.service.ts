@@ -523,7 +523,11 @@ export class FMPreinstallService {
         include: {
           customer: true,
           fmCustomer: true,
-          installDetail: true,
+          installDetail: {
+            include: {
+              User: true
+            }
+          },
         },
         orderBy,
         skip: (page - 1) * pageSize,

@@ -93,7 +93,7 @@ export class ChecklistTemplatesService {
       category: this.toFrontendCategory(template.category),
       description: template.description || '',
       version: template.version,
-      status: template.status === 'ACTIVE' ? 'Active' : template.status === 'DRAFT' ? 'Draft' : 'Archived',
+      status: template.status,
       lastUpdated: template.lastUpdated ? template.lastUpdated.toISOString().split('T')[0] : '',
       sections: (template.sections || [])
         .sort((a: { displayOrder: number; }, b: { displayOrder: number; }) => a.displayOrder - b.displayOrder)
@@ -112,6 +112,7 @@ export class ChecklistTemplatesService {
               displayOrder: item.displayOrder,
             })),
         })),
+      FMServiceSegment: template?.FMServiceSegment
     };
   }
 
@@ -139,6 +140,7 @@ export class ChecklistTemplatesService {
             items: true,
           },
         },
+        FMServiceSegment: true
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -170,11 +172,7 @@ export class ChecklistTemplatesService {
     const template = await this.prisma.checklistTemplate.create({
       data: {
         name: dto.name,
-        hardwareType: dto.hardwareType,
-        hardwareModel: this.toDbHardwareModel(dto.hardwareModel as any) as any,
-        category: this.toDbCategory(dto.category as any) as any,
-        description: dto.description ?? "",
-        version: dto.version || 'v1.0',
+        fmSegmentId: dto.hardwareId ?? null,
         status: dto.status || 'ACTIVE',
         sections: {
           create: (dto.sections || []).map((sec, sIdx) => ({
@@ -207,12 +205,6 @@ export class ChecklistTemplatesService {
     await this.findOne(id); // Ensure existence
 
     const updateData: any = { ...dto, lastUpdated: new Date() };
-    if (dto.hardwareModel !== undefined) {
-      updateData.hardwareModel = this.toDbHardwareModel(dto.hardwareModel as any);
-    }
-    if (dto.category !== undefined) {
-      updateData.category = this.toDbCategory(dto.category as any);
-    }
 
     const updated = await this.prisma.checklistTemplate.update({
       where: { id },

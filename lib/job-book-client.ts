@@ -447,4 +447,10 @@ export const api = {
             return request<{ data: InstallationJob[]; total: number }>(`/jobs/assigned`);
         },
     },
+
+    fmSegments: {
+        list: async (params: Record<string, string> = {}) => {
+            return request<{ data: any; total: number }>(`/fm-segments`);
+        },
+    },
 };

@@ -28,14 +28,14 @@ import {
 import Link from 'next/link';
 import { useOperations } from '../../providers/OperationsContext';
 import { InstallationJob, InstallationStatus, ChecklistSection } from '../job-boards/types/installation';
-import { buildChecklistForHardware, INITIAL_CHECKLIST_TEMPLATES } from '../job-boards/types/mockData';
+import { buildChecklistForHardware } from '../job-boards/types/mockData';
 import { TechnicianWorkOrderModal } from './TechnicianWorkOrderModal';
 import { useAuth } from '../../providers/auth-provider';
 
 export const TechnicianDashboard: React.FC = () => {
     const { user, loading, logout } = useAuth();
     const router = useRouter();
-    const { jobs, assignedJobs, changeJobStatus, getChecklistStats, refreshFromApi, checklistTemplates } = useOperations();
+    const { assignedJobs, changeJobStatus, getChecklistStats, refreshFromApi, checklistTemplates } = useOperations();
 
     const [activeTech, setActiveTech] = useState({
         id: 'tech-1',
@@ -59,26 +59,10 @@ export const TechnicianDashboard: React.FC = () => {
 
     // Track jobs explicitly started by technician
     const [startedJobIds, setStartedJobIds] = useState<Set<string>>(() => {
-        if (typeof window !== 'undefined') {
-            try {
-                const saved = localStorage.getItem('technician_started_jobs');
-                if (saved) return new Set(JSON.parse(saved));
-            } catch (e) { }
-        }
         return new Set<string>();
     });
 
-    // Load active technician from localStorage
     useEffect(() => {
-        if (typeof window !== 'undefined') {
-            const saved = localStorage.getItem('active_technician');
-            if (saved) {
-                try {
-                    const parsed = JSON.parse(saved);
-                    if (parsed?.id) setActiveTech(parsed);
-                } catch (e) { }
-            }
-        }
         refreshFromApi();
     }, []);
 
@@ -128,7 +112,7 @@ export const TechnicianDashboard: React.FC = () => {
         }
         const templates = checklistTemplates && checklistTemplates.length > 0
             ? checklistTemplates
-            : INITIAL_CHECKLIST_TEMPLATES;
+            : [];
 
         let sections: ChecklistSection[] = [];
         if (job.hardware && job.hardware.length > 0) {
@@ -145,9 +129,9 @@ export const TechnicianDashboard: React.FC = () => {
 
     // Use unified jobs source and enrich with checklist sections
     const sourceJobs = useMemo(() => {
-        const pool = (assignedJobs && assignedJobs.length > 0) ? assignedJobs : (jobs || []);
+        const pool = assignedJobs;
         return pool.map(ensureJobChecklist);
-    }, [jobs, assignedJobs, ensureJobChecklist]);
+    }, [assignedJobs, ensureJobChecklist]);
 
     // Filter assigned jobs specifically for the active technician
     const technicianJobs = useMemo(() => {
@@ -263,9 +247,6 @@ export const TechnicianDashboard: React.FC = () => {
         const nextSet = new Set(startedJobIds);
         nextSet.add(job.id);
         setStartedJobIds(nextSet);
-        if (typeof window !== 'undefined') {
-            localStorage.setItem('technician_started_jobs', JSON.stringify(Array.from(nextSet)));
-        }
         setTechStatus('On Job');
         setManualStatusOverride(false);
         await changeJobStatus(
@@ -287,9 +268,6 @@ export const TechnicianDashboard: React.FC = () => {
             const nextSet = new Set(startedJobIds);
             nextSet.delete(job.id);
             setStartedJobIds(nextSet);
-            if (typeof window !== 'undefined') {
-                localStorage.setItem('technician_started_jobs', JSON.stringify(Array.from(nextSet)));
-            }
             if (nextStatus === 'Completed') {
                 setTechStatus('Available');
             }

@@ -17,7 +17,7 @@ async function bootstrap() {
 
   const app = await NestFactory.create(AppModule, { 
       cors: {
-        origin: 'http://localhost:3000',
+        origin: true,
         credentials: true,
       },
    });
@@ -62,7 +62,7 @@ console.log('API_BASE_URL  sss:', process.env.NEXT_PUBLIC_API_BASE_URL);
   const uploadsDir = join(process.cwd(), 'apps', 'api', 'public', 'uploads');
   app.use('/api/uploads', express.static(uploadsDir));
   
-  await app.listen(port);
+  await app.listen(port, '0.0.0.0');
   console.log(`API running on http://localhost:${port}`);
 
 

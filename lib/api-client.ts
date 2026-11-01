@@ -5,7 +5,7 @@ import { useToast } from '../components/ui/toast';
 
 console.log("process.env.NEXT_PUBLIC_API_BASE_URL==", process.env.NEXT_PUBLIC_API_BASE_URL)
 export const baseURL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:5000/api';
+  process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
 
 if (!process.env.NEXT_PUBLIC_API_BASE_URL && typeof window !== 'undefined') {
   console.warn(

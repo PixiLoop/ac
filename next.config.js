@@ -6,14 +6,13 @@ const dotenv = require('dotenv');
  * This MUST run before Next config is exported
  */
 dotenv.config({
-  path: path.resolve(__dirname, '../../.env'),
+  path: path.resolve(__dirname, '.env'),
 });
- console.log("process.env.NEXT_PUBLIC_API_BASE_URL next", process.env.NEXT_PUBLIC_API_BASE_URL)
+
 const withPWA = require('next-pwa')({
   dest: 'public',
   register: true,
   skipWaiting: true,
-
   /**
    * Disable PWA in development (recommended)
    */
@@ -22,6 +21,7 @@ const withPWA = require('next-pwa')({
 
 /** @type {import('next').NextConfig} */
 module.exports = withPWA({
+  output: 'standalone',
   reactStrictMode: true,
 
   /**
@@ -30,8 +30,8 @@ module.exports = withPWA({
    */
  
   env: {
-    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL,
-    NEXT_PUBLIC_ABN_GUID: process.env.NEXT_PUBLIC_ABN_GUID,
+    NEXT_PUBLIC_API_BASE_URL: process.env.NEXT_PUBLIC_API_BASE_URL || '/api',
+    NEXT_PUBLIC_ABN_GUID: process.env.NEXT_PUBLIC_ABN_GUID || '',
   },
   async rewrites() {
     return [

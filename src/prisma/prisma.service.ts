@@ -5,8 +5,12 @@ import { PrismaClient } from '@prisma/client';
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit {
   async onModuleInit() {
-    // Prisma 5: still works normally
-    await this.$connect();
+    try {
+      await this.$connect();
+      console.log('[PrismaService] Connected to database');
+    } catch (err: any) {
+      console.warn('[PrismaService] Database offline or not configured — running in offline fallback mode:', err?.message || err);
+    }
   }
 
   async enableShutdownHooks(app: INestApplication) {

@@ -87,6 +87,16 @@ export class FMPreinstallController {
         return this.service.findById(id);
     }
 
+    @Post('bulk')
+    @Permissions('fmpreinstalls.create')
+    createBulk(
+        @Body() dto: any,
+        @Req() req: any,
+    ) {
+        const userId = req.user?.id || 'SYSTEM';
+        return this.service.createBulk(dto, userId);
+    }
+
     @Post()
     @Permissions('fmpreinstalls.create')
     create(

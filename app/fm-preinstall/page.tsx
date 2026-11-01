@@ -13,6 +13,7 @@ import { Select } from '../../components/ui/select';
 import { SearchSelect } from '../../components/ui/SearchSelect';
 import { useAuth } from '../../providers/auth-provider';
 import { createPermissionChecker } from '../../lib/permission';
+import { Layers } from 'lucide-react';
 
 function FilterLabel({ children }: { children: React.ReactNode }) {
   return <div className="text-[10px] text-slate-500 mb-0.5 font-medium">{children}</div>;
@@ -344,9 +345,17 @@ export default function FMPreinstallPage() {
           <Button size="sm" variant="outline" onClick={handleReset}>Reset</Button>
           
           {canCreate && (
-          <div className="ml-auto">
-            <Button onClick={() => router.push('/fm-preinstall/new')}>New Preinstall</Button>
-          </div>
+            <div className="ml-auto flex items-center gap-2">
+              <Button
+                variant="outline"
+                className="bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 font-medium"
+                onClick={() => router.push('/fm-preinstall/bulk')}
+              >
+                <Layers className="w-4 h-4 text-indigo-600" />
+                Bulk New
+              </Button>
+              <Button onClick={() => router.push('/fm-preinstall/new')}>New Preinstall</Button>
+            </div>
           )}
         </div>
       </div>

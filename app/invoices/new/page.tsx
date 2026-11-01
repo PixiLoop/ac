@@ -32,32 +32,37 @@ export default function NewInvoicePage() {
                     // Invoice form understadning format
                     invoiceType: 'FMPREINSTALL',
                     customerId: d.customerId,
+                    customer: d.customer ?? null,
+                    abnNumber: d.abnNumber ?? '',
                     externalNotes: d.externalNotes ?? '',
                     internalNotes: d.internalNotes ?? '',
-                    labour: d.labour ?? 0,
-                    freight: d.freight ?? 0,
-                    sundries: d.sundries ?? 0,
-                    rounding: d.rounding ?? 0,
+                    reference: d.reference ?? '',
+                    labour: Number(d.labour ?? 0),
+                    freight: Number(d.freight ?? 0),
+                    sundries: Number(d.sundries ?? 0),
+                    rounding: Number(d.rounding ?? 0),
 
                     shippingName: d.shippingName ?? '',
                     shippingAddress1: d.shippingAddress1 ?? '',
                     shippingAddress2: d.shippingAddress2 ?? '',
-                    shippingCity: '',
-                    shippingState: '',
-                    shippingPostcode: '',
+                    shippingCity: d.shippingCity ?? '',
+                    shippingState: d.shippingState ?? '',
+                    shippingPostcode: d.shippingPostcode ?? '',
 
                     billingName: d.billingName ?? '',
                     billingAddress1: d.billingAddress1 ?? '',
                     billingAddress2: d.billingAddress2 ?? '',
-                    billingCity: '',
-                    billingState: '',
-                    billingPostcode: '',
+                    billingCity: d.billingCity ?? '',
+                    billingState: d.billingState ?? '',
+                    billingPostcode: d.billingPostcode ?? '',
 
                     // Items — JOBBOOK invoice
                     items: d.items ?? [],
 
                     // preinstallId track — InvoiceForm pass
                     _fromPreinstallId: fromPreinstall,
+                    _preserveCharges: true,
+                    _preserveAddresses: true,
                 });
             })
             .catch(err => {
@@ -93,14 +98,22 @@ export default function NewInvoicePage() {
                     return;
                 }
 
+                if (so.customer?.orderRequired && !String(so.customerPO ?? '').trim()) {
+                    showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+                    router.push(`/salesorders/${fromSOId}`);
+                    return;
+                }
+
                 setSeedData({
                     invoiceType: 'SALESORDER',
                     customerId: so.customerId,
+                    reference: so.customerPO ?? '',
                     customer: so.customer ?? null,
                     salesOrderId: so.id,
                     salesOrder: {
                         id: so.id,
                         orderNumber: so.orderNumber,
+                        orderType: so.orderType,
                         customer: so.customer ?? null,
                     },
                     freight: so.freight ?? 0,

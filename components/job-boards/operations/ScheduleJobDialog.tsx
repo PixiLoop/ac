@@ -18,6 +18,35 @@ interface ScheduleJobDialogProps {
   onClose: () => void;
 }
 
+/** Clean technician label — never show raw cuid / clipped long ids */
+function techLabel(tech: {
+  id: string;
+  displayName?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  status?: string | null;
+}): string {
+  const fromNames = `${tech.firstName ?? ''} ${tech.lastName ?? ''}`.trim();
+  let name = (tech.displayName || fromNames || 'Technician').trim();
+  name = name
+    .replace(/\s*\([^)]*\)\s*[—\-]\s*Technician\s*$/i, '')
+    .replace(/\s*\(c[a-z0-9]{20,}\)\s*/gi, '')
+    .replace(/\s*[—\-]\s*Technician\s*$/i, '')
+    .trim();
+  if (!name || name === tech.id) name = fromNames || 'Technician';
+  return tech.status ? `${name} — ${tech.status}` : name;
+}
+
+/** Fixed height + horizontal padding only — vertical padding clips select text on Windows */
+const fieldControlStyle: React.CSSProperties = {
+  height: 44,
+  minHeight: 44,
+  lineHeight: '44px',
+  paddingTop: 0,
+  paddingBottom: 0,
+  boxSizing: 'border-box',
+};
+
 export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
   job,
   isOpen,
@@ -28,9 +57,12 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
     scheduleJob,
     checkTechnicianConflict,
     getTechnicianJobsForDate,
+    contractors,
+    subContractors
   } = useOperations();
 
   const [selectedTechId, setSelectedTechId] = useState<string>(job.technicianId || technicians[0]?.id || '');
+  const [assignedTo, setAssignedTo] = useState<"technician" | "contractor" | "subcontractor">("technician")
   const [date, setDate] = useState<string>(job.installationDate || '2026-10-06');
   const [startTime, setStartTime] = useState<string>(job.startTime || '09:00');
   const [endTime, setEndTime] = useState<string>(job.endTime || '11:00');
@@ -47,7 +79,7 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
   ];
 
   // Selected tech object
-  const selectedTech = technicians.find((t) => t.id === selectedTechId);
+  const selectedTech = assignedTo === "technician" ? technicians.find((t) => t.id === selectedTechId) : (assignedTo === "contractor" ? contractors.find((t) => t.id === selectedTechId) : subContractors.find((t) => t.id === selectedTechId));
 
   // Conflict evaluation
   const conflict = checkTechnicianConflict(selectedTechId, date, startTime, endTime, job.id);
@@ -61,9 +93,21 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
       if (job.installationDate) setDate(job.installationDate);
       if (job.startTime) setStartTime(job.startTime);
       if (job.endTime) setEndTime(job.endTime);
+      if (job.assignedTo) setAssignedTo(job.assignedTo);
       setErrorMsg(null);
     }
   }, [job, isOpen]);
+
+  useEffect(() => {
+    if (assignedTo === 'technician' && technicians.length > 0 && !technicians.find(technician => technician.id === selectedTechId)) {
+      setSelectedTechId(technicians[0].id)
+    } else if (assignedTo === 'contractor' && contractors.length > 0 && !contractors.find(contractor => contractor.id === selectedTechId)) {
+      setSelectedTechId(contractors[0].id)
+    } else if (assignedTo === 'subcontractor' && subContractors.length > 0 && !subContractors.find(contractor => contractor.id === selectedTechId)) {
+      setSelectedTechId(subContractors[0].id)
+    }
+  }, [assignedTo, contractors, selectedTechId])
+
 
   if (!isOpen) return null;
 
@@ -76,7 +120,7 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
       return;
     }
 
-    const res = await scheduleJob(job.id, selectedTechId, date, startTime, endTime, notes);
+    const res = await scheduleJob(job.id, assignedTo, selectedTechId, date, startTime, endTime, notes);
     if (!res.success) {
       setErrorMsg(res.conflict?.message || 'Could not schedule job.');
       return;
@@ -117,57 +161,94 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
         <form onSubmit={handleSubmit} className="p-6 overflow-y-auto space-y-5">
           {successToast && (
             <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-sm font-medium flex items-center gap-2">
-              <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
               Installation scheduled successfully! Updating operations view...
             </div>
           )}
 
           {/* Technician Selection */}
-          <div>
-            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
-              Assigned Installer / Technician <span className="text-rose-500">*</span>
+          <div className="w-full mb-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+              Assigned To <span className="text-rose-500">*</span>
             </label>
-            <div className="relative">
+            <div className="relative w-full">
               <select
-                value={selectedTechId}
-                onChange={(e) => setSelectedTechId(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-shadow appearance-none"
+                value={assignedTo}
+                onChange={(e) => setAssignedTo(e.target.value as "technician" | "contractor" | "subcontractor")}
+                style={{ ...fieldControlStyle, paddingLeft: 14, paddingRight: 40 }}
+                className="block w-full appearance-none rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               >
-                {technicians.map((tech) => (
-                  <option key={tech.id} value={tech.id}>
-                    {tech.displayName} ({tech.id}) — Technician
-                  </option>
-                ))}
+                <option value={"technician"}>
+                  Technician
+                </option>
+                <option value={"contractor"}>
+                  Contractor
+                </option>
+                <option value={"subcontractor"}>
+                  Sub-Contractor
+                </option>
               </select>
-              <User className="w-4 h-4 text-slate-400 absolute right-3.5 top-3 pointer-events-none" />
+              <User className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
           </div>
 
-          {/* Date & Time Selectors */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+          {/* Technician Selection */}
+          <div className="w-full mb-1">
+            <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
+              Assigned {assignedTo === "technician" ? "Installer / Technician" : (assignedTo === "contractor" ? "Contractor" : "Sub-Contractor")} <span className="text-rose-500">*</span>
+            </label>
+            <div className="relative w-full">
+              <select
+                value={selectedTechId}
+                onChange={(e) => setSelectedTechId(e.target.value)}
+                style={{ ...fieldControlStyle, paddingLeft: 14, paddingRight: 40 }}
+                className="block w-full appearance-none rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+              >
+                {assignedTo === "technician" && technicians.map((tech) => (
+                  <option key={tech.id} value={tech.id}>
+                    {techLabel(tech)}
+                  </option>
+                ))}
+                {assignedTo === "contractor" && contractors.map((tech) => (
+                  <option key={tech.id} value={tech.id}>
+                    {techLabel(tech)}
+                  </option>
+                ))}
+                {assignedTo === "subcontractor" && subContractors.map((tech) => (
+                  <option key={tech.id} value={tech.id}>
+                    {techLabel(tech)}
+                  </option>
+                ))}
+              </select>
+              <User className="w-4 h-4 text-slate-400 absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Date & Time Selectors — equal height, one row */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 items-start">
+            <div className="w-full min-w-0">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 Installation Date <span className="text-rose-500">*</span>
               </label>
-              <div className="relative">
-                <input
-                  type="date"
-                  value={date}
-                  onChange={(e) => setDate(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-xl px-3.5 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  required
-                />
-              </div>
+              <input
+                type="date"
+                value={date}
+                onChange={(e) => setDate(e.target.value)}
+                style={{ ...fieldControlStyle, paddingLeft: 14, paddingRight: 14 }}
+                className="block w-full rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                required
+              />
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            <div className="w-full min-w-0">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 Start Time <span className="text-rose-500">*</span>
               </label>
               <select
                 value={startTime}
                 onChange={(e) => setStartTime(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ ...fieldControlStyle, paddingLeft: 12, paddingRight: 12 }}
+                className="block w-full appearance-none rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {timeOptions.map((t) => (
                   <option key={t} value={t}>
@@ -177,14 +258,15 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
               </select>
             </div>
 
-            <div>
-              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
+            <div className="w-full min-w-0">
+              <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
                 End Time <span className="text-rose-500">*</span>
               </label>
               <select
                 value={endTime}
                 onChange={(e) => setEndTime(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                style={{ ...fieldControlStyle, paddingLeft: 12, paddingRight: 12 }}
+                className="block w-full appearance-none rounded-xl border border-slate-300 bg-white text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
                 {timeOptions.map((t) => (
                   <option key={t} value={t}>
@@ -237,23 +319,22 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
                 {techJobsOnDate.map((tj) => (
                   <div
                     key={tj.id}
-                    className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg text-xs border ${
-                      tj.id === job.id
-                        ? 'bg-blue-50 border-blue-200 text-blue-800'
-                        : 'bg-white border-slate-200 text-slate-700'
-                    }`}
+                    className={`flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-lg text-xs border ${tj.id === job.id
+                      ? 'bg-blue-50 border-blue-200 text-blue-800'
+                      : 'bg-white border-slate-200 text-slate-700'
+                      }`}
                   >
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono font-semibold text-slate-900">
+                    <div className="flex items-center gap-2 min-w-0">
+                      <span className="font-mono font-semibold text-slate-900 shrink-0">
                         {tj.startTime} – {tj.endTime}
                       </span>
-                      <span>—</span>
-                      <span className="font-mono font-medium text-blue-600">{tj.id}</span>
-                      <span className="text-slate-500 truncate max-w-[140px]">
+                      <span className="shrink-0">—</span>
+                      <span className="font-mono font-medium text-blue-600 shrink-0">{tj.id}</span>
+                      <span className="text-slate-500 truncate">
                         ({tj.customerName})
                       </span>
                     </div>
-                    <span className="text-[10px] uppercase font-bold text-slate-500">
+                    <span className="text-[10px] uppercase font-bold text-slate-500 shrink-0 leading-none">
                       {tj.status}
                     </span>
                   </div>
@@ -263,18 +344,21 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
           </div>
 
           {/* Location details */}
-          <div>
+          <div className="w-full">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
               Installation Location
             </label>
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800">
+            <div
+              style={{ height: 44 }}
+              className="flex w-full items-center gap-2 px-3 bg-slate-50 border border-slate-200 rounded-xl text-sm text-slate-800"
+            >
               <MapPin className="w-4 h-4 text-slate-400 shrink-0" />
-              <span>{job.location}</span>
+              <span className="truncate leading-normal">{job.location}</span>
             </div>
           </div>
 
           {/* Scheduling Notes */}
-          <div>
+          <div className="w-full">
             <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-1.5">
               Scheduling / Fitting Instructions
             </label>
@@ -283,7 +367,7 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
               placeholder="e.g. Technician requires access badge from Gate 2. Driver on standby."
-              className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="!block !h-auto !w-full !min-w-0 rounded-xl border border-slate-300 bg-white !px-3 !py-2 !text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
             />
           </div>
 
@@ -298,16 +382,16 @@ export const ScheduleJobDialog: React.FC<ScheduleJobDialogProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+              className="!h-10 inline-flex items-center px-4 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-100 transition-colors"
             >
               Cancel
             </button>
             <button
               type="submit"
               disabled={conflict.hasConflict}
-              className="px-5 py-2 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors flex items-center gap-2"
+              className="!h-10 inline-flex items-center gap-2 px-5 rounded-xl text-sm font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed shadow-xs transition-colors"
             >
-              <CalendarCheck className="w-4 h-4" />
+              <CalendarCheck className="w-4 h-4 shrink-0" />
               Confirm & Book Job
             </button>
           </div>

@@ -2,6 +2,7 @@
 
 import { cn } from '../../lib/utils';
 
+/** Custom radio — avoids global `input`/`label` CSS that stretches native radios. */
 export function Radio({
   label,
   value,
@@ -16,21 +17,42 @@ export function Radio({
   disabled?: boolean;
 }) {
   return (
-    <label
+    <button
+      type="button"
+      role="radio"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(value)}
       className={cn(
-        'flex items-center gap-2 text-sm text-slate-700 cursor-pointer',
-        disabled && 'opacity-60 cursor-not-allowed'
+        'flex w-full items-center gap-2 text-left text-sm text-slate-700',
+        disabled && 'opacity-60 cursor-not-allowed',
       )}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        width: '100%',
+        margin: 0,
+        padding: '2px 0',
+        background: 'transparent',
+        border: 'none',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+      }}
     >
-      <input
-        type="radio"
-        value={value}
-        checked={checked}
-        disabled={disabled}
-        onChange={() => onChange(value)}
-        className="h-4 w-4 border-slate-300 text-aqua focus:ring-aqua"
+      <span
+        aria-hidden
+        style={{
+          width: 14,
+          height: 14,
+          minWidth: 14,
+          borderRadius: '50%',
+          border: checked ? '4px solid #00b0b3' : '2px solid #94a3b8',
+          background: '#fff',
+          boxSizing: 'border-box',
+          flexShrink: 0,
+        }}
       />
-      {label}
-    </label>
+      <span style={{ fontSize: 14, lineHeight: '20px', color: '#334155' }}>{label}</span>
+    </button>
   );
 }

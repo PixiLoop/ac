@@ -18,7 +18,7 @@ import { createPermissionChecker } from '../../lib/permission';
 type AircoGroup = { id: string; code: string; groupLetter: string; level: number; agentFactor: number; partnerFactor: number };
 type VariableTier = { id: string; landedLessThan: number; kRetailFactor: number; kTradeFactor: number; kThreshold: number; aRetailFactor: number; aTradeFactor: number; aThreshold: number; sortOrder: number };
 type XGroup = { id: string; code: string; agentFactor: number; partnerFactor: number; tradeFactor: number; retailFactor: number; isManual: boolean };
-type PriceSettings = { id: string; roundBelow50: number; roundBelow100: number; roundAbove100: number; priceOffset: number; minSalesPrice: number };
+type PriceSettings = { id: string; roundBelow50: number; roundBelow100: number; roundAbove100: number; priceOffset: number; minSalesPrice: number; gstFactor?: number };
 
 // ── Validation & Calculation Helpers ─────────────────────────────────────────
 
@@ -136,7 +136,7 @@ export function GroupManagement() {
     return (
       <Card>
         <CardContent className="py-8">
-          <p className="text-sm text-slate-600">You do not have permission.</p>
+          <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
         </CardContent>
       </Card>
     );
@@ -301,6 +301,7 @@ export function GroupManagement() {
       { name: 'Round Above $100', val: priceSettings.roundAbove100 },
       { name: 'Price Offset', val: priceSettings.priceOffset },
       { name: 'Minimum Sales Price', val: priceSettings.minSalesPrice },
+      { name: 'GST Factor', val: priceSettings.gstFactor ?? 10 },
     ];
 
     for (const f of settingsFields) {
@@ -319,6 +320,7 @@ export function GroupManagement() {
         roundAbove100: Number(priceSettings.roundAbove100),
         priceOffset: Number(priceSettings.priceOffset),
         minSalesPrice: Number(priceSettings.minSalesPrice),
+        gstFactor: Number(priceSettings.gstFactor ?? 10),
       });
       showToast({ type: 'success', title: 'Price settings saved' });
     } catch {
@@ -491,6 +493,13 @@ export function GroupManagement() {
                       <Input type="number" min={0} step="any" value={priceSettings.minSalesPrice} onChange={(e) => setS('minSalesPrice', e.target.value)} className="h-7 w-16 px-2 text-[12px] text-right" />
                     )}
                     <span>Cents</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span>GST Factor</span>
+                    {priceSettings && (
+                      <Input type="number" min={0} step="any" value={priceSettings.gstFactor ?? 10} onChange={(e) => setS('gstFactor', e.target.value)} className="h-7 w-16 px-2 text-[12px] text-right" />
+                    )}
+                    <span>%</span>
                   </div>
                   <div className="flex gap-2">
                     <Button size="sm" variant="outline" onClick={saveSettings} disabled={savingSettings || !canEdit}>

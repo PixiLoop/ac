@@ -13,6 +13,12 @@ export class CreateRoleDto {
   isTechnician?: boolean;
 
   @IsOptional()
+  isContractor?: boolean
+
+  @IsOptional()
+  isSubContractor?: boolean
+
+  @IsOptional()
   @IsArray()
   @ArrayUnique()
   permissionIds?: string[];

@@ -43,6 +43,8 @@ export default function RoleFormInline({
 
   /* ---------- STATE ---------- */
   const [isTechnician, setIsTechnician] = useState(false);
+  const [isContractor, setIsContractor] = useState(false)
+  const [isSubContractor, setIsSubContractor] = useState(false)
   const [permissions, setPermissions] = useState<PermissionDto[]>([]);
   const [permIds, setPermIds] = useState<string[]>([]);
   const [permLoading, setPermLoading] = useState(false);
@@ -57,7 +59,7 @@ export default function RoleFormInline({
   const nameRef = useRef<HTMLInputElement | null>(null);
 
   /* ================= LOAD DATA ================= */
-console.log(role, "roleeeeeeeeeeeeeeeeeeeeeeee");
+  console.log(role, "roleeeeeeeeeeeeeeeeeeeeeeee");
 
   useEffect(() => {
     if (mode === 'create') {
@@ -148,6 +150,8 @@ console.log(role, "roleeeeeeeeeeeeeeeeeeeeeeee");
         name: name.trim(),
         description: desc.trim() || undefined,
         isTechnician,
+        isContractor,
+        isSubContractor,
         permissionIds: permIds,
       };
 
@@ -224,19 +228,62 @@ console.log(role, "roleeeeeeeeeeeeeeeeeeeeeeee");
               maxLength={250}
               readOnly={mode === 'view'}
             />
-
-            <label className="flex items-center gap-2 cursor-pointer pt-1">
-              <input
-                type="checkbox"
-                checked={isTechnician}
-                disabled={mode === 'view'}
-                onChange={e => setIsTechnician(e.target.checked)}
-                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
-              />
-              <span className="text-sm font-medium text-slate-700">
-                Is technician
-              </span>
-            </label>
+            <div className='flex gap-4'>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={isTechnician}
+                  disabled={mode === 'view'}
+                  onChange={e => {
+                    setIsTechnician(e.target.checked)
+                    if (e.target.checked) {
+                      setIsContractor(false)
+                      setIsSubContractor(false)
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-700">
+                  Is technician
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={isContractor}
+                  disabled={mode === 'view'}
+                  onChange={e => {
+                    setIsContractor(e.target.checked)
+                    if (e.target.checked) {
+                      setIsTechnician(false)
+                      setIsSubContractor(false)
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-700">
+                  Is contractor
+                </span>
+              </label>
+              <label className="flex items-center gap-2 cursor-pointer pt-1">
+                <input
+                  type="checkbox"
+                  checked={isSubContractor}
+                  disabled={mode === 'view'}
+                  onChange={e => {
+                    setIsSubContractor(e.target.checked)
+                    if (e.target.checked) {
+                      setIsContractor(false)
+                      setIsTechnician(false)
+                    }
+                  }}
+                  className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                />
+                <span className="text-sm font-medium text-slate-700">
+                  Is sub-contractor
+                </span>
+              </label>
+            </div>
           </div>
 
           {/* RIGHT — PERMISSIONS */}

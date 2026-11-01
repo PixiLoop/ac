@@ -11,6 +11,7 @@ type Props = {
   loading?: boolean
   loadingText?: string
   danger?: boolean
+  alertOnly?: boolean
   onConfirm: () => void
   onCancel: () => void
 }
@@ -24,6 +25,7 @@ export default function ConfirmModal({
   loading = false,
   loadingText = 'Please wait...',
   danger = true,
+  alertOnly = false,
   onConfirm,
   onCancel,
 }: Props) {
@@ -37,9 +39,11 @@ export default function ConfirmModal({
         <p className="text-sm text-slate-600 mb-6">{message}</p>
 
         <div className="flex justify-end gap-3">
-          <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
-            {cancelText}
-          </Button>
+          {!alertOnly && (
+            <Button type="button" variant="outline" onClick={onCancel} disabled={loading}>
+              {cancelText}
+            </Button>
+          )}
           <Button
             type="button"
             variant={danger ? 'danger' : 'primary'}

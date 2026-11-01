@@ -366,7 +366,18 @@ export class FMCustomersService {
           include: {
             organizations: true
           }
-        }
+        },
+        options: { include: { option: true } },
+        customer: {
+          select: {
+            id: true,
+            customerNumber: true,
+            orderRequired: true,
+            gstExempt: true,
+            deletedAt: true,
+            Depots: { where: { deletedAt: null }, select: { id: true, name: true, code: true } },
+          },
+        },
       },
     })
   }
@@ -512,6 +523,7 @@ export class FMCustomersService {
       status: true,
       data: options.map(o => ({
         id: o.id,
+        code: o.code,
         label: o.label,
         enabled: o.customerOptions?.[0]?.enabled ?? false,
         charge: o.customerOptions?.[0]?.charge ?? 0,

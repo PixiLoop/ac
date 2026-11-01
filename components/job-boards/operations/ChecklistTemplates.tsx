@@ -31,6 +31,7 @@ export const ChecklistTemplates: React.FC = () => {
   const [search, setSearch] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('All');
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [reuseFrom, setReuseFrom] = useState<ChecklistTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ChecklistTemplate | null>(null);
 
   const selectedTemplate = checklistTemplates.find((t) => t.id === selectedTemplateId);
@@ -111,7 +112,7 @@ export const ChecklistTemplates: React.FC = () => {
   const modelsCoveredCount = new Set(checklistTemplates.map((t) => t.hardwareModel)).size;
 
   return (
-    <div className="space-y-6 mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Title & Actions Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
@@ -127,11 +128,14 @@ export const ChecklistTemplates: React.FC = () => {
         {/* Create Template Button */}
         <div className="flex items-center gap-3">
           <button
-            onClick={() => setShowCreateModal(true)}
+            onClick={() => {
+              setReuseFrom(null);
+              setShowCreateModal(true);
+            }}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold shadow-xs hover:shadow-md transition-all active:scale-95"
           >
             <Plus className="w-4 h-4" />
-            Create Checklist Template
+            Create Template
           </button>
         </div>
       </div>
@@ -228,18 +232,18 @@ export const ChecklistTemplates: React.FC = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-slate-600">
+            <table className="w-full text-left text-xs text-slate-600 border-collapse">
               <thead className="bg-slate-50/80 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <tr>
-                  <th className="py-3.5 px-4">Template Name</th>
-                  <th className="py-3.5 px-4">Hardware Model</th>
-                  <th className="py-3.5 px-4">Hardware Type</th>
-                  <th className="py-3.5 px-4">Category</th>
-                  <th className="py-3.5 px-4 text-center">Sections</th>
-                  <th className="py-3.5 px-4 text-center">Checklist Items</th>
-                  <th className="py-3.5 px-4">Status</th>
-                  <th className="py-3.5 px-4">Last Updated</th>
-                  <th className="py-3.5 px-4 text-right">Actions</th>
+                  <th className="py-3 px-4 align-middle">Template Name</th>
+                  <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Model</th>
+                  <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Type</th>
+                  <th className="py-3 px-4 align-middle">Category</th>
+                  <th className="py-3 px-4 align-middle text-center">Sections</th>
+                  <th className="py-3 px-4 align-middle text-center whitespace-nowrap">Checklist Items</th>
+                  <th className="py-3 px-4 align-middle">Status</th>
+                  <th className="py-3 px-4 align-middle whitespace-nowrap">Last Updated</th>
+                  <th className="py-3 px-4 align-middle text-center">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -260,60 +264,60 @@ export const ChecklistTemplates: React.FC = () => {
                       className="hover:bg-slate-50/70 cursor-pointer transition-colors group"
                     >
                       {/* Template Name */}
-                      <td className="py-3.5 px-4">
-                        <div className="flex items-center gap-2.5">
-                          <div className="p-2 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors">
+                      <td className="py-3 px-4 align-middle">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <div className="p-2 bg-blue-50 text-blue-600 rounded-xl group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
                             <CheckSquare className="w-4 h-4" />
                           </div>
-                          <div>
-                            <p className="font-bold text-slate-900 group-hover:text-blue-600 flex items-center gap-1.5">
-                              {tmpl.name}
-                              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded">
+                          <div className="min-w-0">
+                            <div className="font-bold text-slate-900 group-hover:text-blue-600 flex items-center gap-1.5 leading-snug">
+                              <span className="truncate">{tmpl.name}</span>
+                              <span className="text-[10px] font-mono text-slate-400 bg-slate-100 px-1 rounded shrink-0 leading-none">
                                 {tmpl.version}
                               </span>
-                            </p>
-                            <p className="text-[11px] text-slate-400 line-clamp-1">
+                            </div>
+                            <div className="text-[11px] text-slate-400 line-clamp-1 leading-snug mt-0.5">
                               {tmpl.description}
-                            </p>
+                            </div>
                           </div>
                         </div>
                       </td>
 
                       {/* Hardware Model */}
-                      <td className="py-3.5 px-4">
-                        <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
+                      <td className="py-3 px-4 align-middle">
+                        <span className="inline-flex items-center font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 leading-none whitespace-nowrap">
                           {tmpl.hardwareModel}
                         </span>
                       </td>
 
                       {/* Hardware Type */}
-                      <td className="py-3.5 px-4 text-slate-700 font-medium">
+                      <td className="py-3 px-4 align-middle text-slate-700 font-medium whitespace-nowrap">
                         {tmpl.hardwareType}
                       </td>
 
                       {/* Category */}
-                      <td className="py-3.5 px-4">
-                        <span className="text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full">
+                      <td className="py-3 px-4 align-middle">
+                        <span className="inline-flex items-center text-[11px] font-medium text-slate-600 bg-slate-100 px-2 py-0.5 rounded-full leading-none whitespace-nowrap">
                           {tmpl.category}
                         </span>
                       </td>
 
                       {/* Sections Count */}
-                      <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
+                      <td className="py-3 px-4 align-middle text-center font-semibold text-slate-700">
                         {tmpl.sections.length}
                       </td>
 
                       {/* Items Count */}
-                      <td className="py-3.5 px-4 text-center">
-                        <span className="font-bold text-blue-600 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-200">
+                      <td className="py-3 px-4 align-middle text-center">
+                        <span className="inline-flex items-center justify-center font-bold text-blue-600 bg-blue-50 px-2.5 py-1 rounded-full border border-blue-200 leading-none whitespace-nowrap">
                           {totalItems} items ({requiredItems} req)
                         </span>
                       </td>
 
                       {/* Status */}
-                      <td className="py-3.5 px-4">
+                      <td className="py-3 px-4 align-middle">
                         <span
-                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-full border ${tmpl.status === 'ACTIVE'
+                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-full border leading-none whitespace-nowrap ${tmpl.status === 'ACTIVE'
                             ? 'text-emerald-700 bg-emerald-50 border-emerald-200'
                             : tmpl.status === 'DRAFT'
                               ? 'text-amber-700 bg-amber-50 border-amber-200'
@@ -321,7 +325,7 @@ export const ChecklistTemplates: React.FC = () => {
                             }`}
                         >
                           <span
-                            className={`w-1.5 h-1.5 rounded-full ${tmpl.status === 'ACTIVE'
+                            className={`w-1.5 h-1.5 rounded-full shrink-0 ${tmpl.status === 'ACTIVE'
                               ? 'bg-emerald-500'
                               : tmpl.status === 'DRAFT'
                                 ? 'bg-amber-500'
@@ -333,34 +337,51 @@ export const ChecklistTemplates: React.FC = () => {
                       </td>
 
                       {/* Last Updated */}
-                      <td className="py-3.5 px-4 text-slate-500 font-mono text-[11px]">
-                        {tmpl.lastUpdated}
+                      <td className="py-3 px-4 align-middle text-slate-500 font-mono text-[11px] whitespace-nowrap">
+                        {typeof tmpl.lastUpdated === 'string'
+                          ? tmpl.lastUpdated.slice(0, 10)
+                          : tmpl.lastUpdated}
                       </td>
 
                       {/* Actions */}
-                      <td className="py-3.5 px-4 text-right">
-                        <div className="flex items-center justify-end gap-1.5" onClick={(e) => e.stopPropagation()}>
+                      <td className="py-3 px-4 align-middle text-center">
+                        <div
+                          className="inline-flex items-center justify-center gap-1.5 flex-nowrap"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             onClick={() => setSelectedTemplateId(tmpl.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors leading-none"
                             title="View / Edit Template"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            View
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => {
+                              setReuseFrom(tmpl);
+                              setShowCreateModal(true);
+                            }}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-ink bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors leading-none"
+                            title="Reuse as a new customisable copy"
+                          >
+                            <Copy className="w-3.5 h-3.5" />
+                            Reuse
                           </button>
                           <button
                             onClick={(e) => handleDuplicateTemplate(tmpl, e)}
-                            className="p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Clone / Duplicate Template"
+                            className="inline-flex items-center justify-center p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+                            title="Quick duplicate"
                           >
                             <Copy className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => setTemplateToDelete(tmpl)}
-                            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors leading-none"
                             title="Delete Template"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
+                            Delete
                           </button>
                         </div>
                       </td>
@@ -376,8 +397,13 @@ export const ChecklistTemplates: React.FC = () => {
       {/* Create Checklist Template Modal */}
       <CreateChecklistTemplateModal
         isOpen={showCreateModal}
-        onClose={() => setShowCreateModal(false)}
+        reuseFrom={reuseFrom}
+        onClose={() => {
+          setShowCreateModal(false);
+          setReuseFrom(null);
+        }}
         onCreated={(newId) => {
+          setReuseFrom(null);
           setSelectedTemplateId(newId);
         }}
       />

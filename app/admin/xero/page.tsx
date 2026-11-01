@@ -118,7 +118,7 @@ export default function XeroConfigPage() {
   if (!canView) {
     return (
       <AdminShell title="Xero Configuration">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

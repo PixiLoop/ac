@@ -162,6 +162,42 @@ export class UpdateItemDto {
   @IsOptional() @IsBoolean()
   isVision?: boolean;
 
+  @IsOptional() @IsBoolean()
+  aiOption?: boolean;
+
+  @IsOptional() @IsBoolean()
+  tmaOption?: boolean;
+
+  @IsOptional() @IsBoolean()
+  rimOption?: boolean;
+
+  @IsOptional() @IsBoolean()
+  nrcOption?: boolean;
+
+  @IsOptional() @IsBoolean()
+  internSim?: boolean;
+
+  @IsOptional() @IsBoolean()
+  mixVisSim?: boolean;
+
+  @IsOptional() @IsBoolean()
+  vision4GModem?: boolean;
+
+  @IsOptional() @Type(() => Number) @IsInt()
+  cameraCount?: number;
+
+  @IsOptional() @IsString()
+  fmVisionType?: string;
+
+  @IsOptional() @IsString()
+  fmCameraType?: string;
+
+  @IsOptional() @IsString()
+  fmSim1Type?: string;
+
+  @IsOptional() @IsString()
+  fmSim2Type?: string;
+
   @IsOptional() @IsString()
   fmRuleCode?: string;
 

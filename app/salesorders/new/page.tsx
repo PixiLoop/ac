@@ -12,10 +12,14 @@ import { AccountDetailsSection } from '../../../components/salesorders/sections/
 import { SalesOrderCharges } from '../../../components/salesorders/SalesOrderCharges';
 import { useToast } from '../../../components/ui/toast';
 import { api } from '../../../lib/api-client'
+import { useAccountStatusGate } from '../../../hooks/useAccountStatusGate';
+import { accountPricingFields, savedLinePrice } from '../../../lib/line-pricing';
+import { availableStock } from '../../../lib/available-stock';
 
 export default function NewSalesOrderPage() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { check: accountCheck, modal: accountModal } = useAccountStatusGate();
   const [form, setForm] = useState<any>({
     customerId: '',
     orderType: 'STANDARD',
@@ -60,9 +64,19 @@ export default function NewSalesOrderPage() {
         quotationId: q.id,
       }));
 
-      api.get(`/customers/${q.customerId}`).then(custRes => {
+      api.get(`/customers/${q.customerId}`).then(async custRes => {
         const customer = custRes.data?.data ?? custRes.data;
+        const allowed = await accountCheck(customer?.id, customer?.status, 'sales-order');
+        if (!allowed) {
+          setForm(prev => ({ ...prev, customerId: '' }));
+          setSelectedCustomer(null);
+          return;
+        }
         setSelectedCustomer(customer);
+        const pricing = accountPricingFields(customer);
+        update('gstExempt', pricing.gstExempt);
+        update('fmPriceLevel', pricing.fmPriceLevel);
+        update('fmPriceFactor', pricing.fmPriceFactor);
       });
 
       //Shipping
@@ -97,9 +111,9 @@ export default function NewSalesOrderPage() {
           partNo: '',
           description: i.description,
           qty: i.quantity,
-          unitPrice: Number(i.unitPrice),
+          ...savedLinePrice(i),
           discountPct: Number(i.discountPct ?? 0),
-          availableQty: null,
+          availableQty: availableStock(i.product),
         }))
       );
 
@@ -193,12 +207,25 @@ export default function NewSalesOrderPage() {
       return;
     }
 
+    let cancelled = false;
     async function loadCustomerAddresses() {
       try {
         const res = await api.get(`/customers/${form.customerId}`);
         const data = res.data?.data ?? res.data;
-
+        if (cancelled) return;
         setSelectedCustomer(data);
+        const pricing = accountPricingFields(data);
+        update('gstExempt', pricing.gstExempt);
+        update('fmPriceLevel', pricing.fmPriceLevel);
+        update('fmPriceFactor', pricing.fmPriceFactor);
+
+        const allowed = await accountCheck(data?.id, data?.status, 'sales-order');
+        if (cancelled) return;
+        if (!allowed) {
+          update('customerId', '');
+          setSelectedCustomer(null);
+          return;
+        }
 
         //Populate price/payment fields from customer master
         if (data.priceLevel) update('priceLevel', data.priceLevel);
@@ -271,6 +298,7 @@ export default function NewSalesOrderPage() {
     }
 
     loadCustomerAddresses();
+    return () => { cancelled = true; };
   }, [form.customerId]);
 
 
@@ -365,6 +393,9 @@ export default function NewSalesOrderPage() {
       return;
     }
 
+    const allowed = await accountCheck(form.customerId, selectedCustomer?.status, 'sales-order');
+    if (!allowed) return;
+
     /*if (selectedItems.some(i => !i.qty || i.qty == 0)) {
       showToast({
         type: 'error',
@@ -446,6 +477,7 @@ export default function NewSalesOrderPage() {
 
   return (
     <AdminShell title="Create Sales Order">
+      {accountModal}
       <div className="flex justify-end gap-2 mb-1">
         <Button
           variant="outline"
@@ -507,6 +539,7 @@ export default function NewSalesOrderPage() {
               setItems={setItems}
               form={form}
               freight={form.freight}
+              useAvailableStock
               defaultOpen
             />
 
@@ -537,6 +570,7 @@ export default function NewSalesOrderPage() {
               rounding={form.rounding}
               otherCharges={form.otherCharges}
               update={update}
+              gstExempt={!!form.gstExempt}
             />
           </div>
         </div>

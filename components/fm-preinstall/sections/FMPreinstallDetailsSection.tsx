@@ -6,6 +6,7 @@ import { api } from '../../../lib/api-client';
 import { CustomerSearchSelect } from '../../../components/common/CustomerSearchSelect';
 import { Combobox, ComboboxChip, ComboboxChips, ComboboxChipsInput, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxValue } from '../../ui/combobox';
 import { useParams } from 'next/navigation';
+import { GST_FREE_WARNING, targetAssetMessage } from '../../../lib/fm-rules';
 import { InstallerSearchSelect } from '../../common/InstallerSearchSelect';
 
 const INSTALL_TYPES = [
@@ -25,7 +26,8 @@ export function FMPreinstallDetailsSection({
     setAccount,
     setInstallDetail,
     disabled,
-    setItems
+    setItems,
+    invalidFields = [],
 }: any) {
     const { id } = useParams();
     const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -67,6 +69,14 @@ export function FMPreinstallDetailsSection({
         try {
             const res = await api.get(`/fm-preinstall/target-install/${id.trim()}`);
             const install = res.data?.data ?? res.data;
+            const owner = fmCustomers.find((c: any) => c.id === value.fmCustomerId);
+            const blocked = targetAssetMessage(value.type, install, owner?.fmWebNumber);
+            if (blocked) {
+                setTargetInfo(null);
+                update('targetInstallId', '');
+                setTargetError(blocked);
+                return;
+            }
             setTargetInfo(install);
             update('targetInstallId', install.id);
 
@@ -274,7 +284,11 @@ export function FMPreinstallDetailsSection({
                         onSelect={handleCustomerSelect}
                         disabled={disabled}
                         label="Customer"
+                        requireFmCustomer
                     />
+                    {selectedCustomer?.gstExempt && (
+                        <p className="mt-1 text-xs font-semibold text-red-600">{GST_FREE_WARNING}</p>
+                    )}
                 </div>
 
                 {/* FM CUSTOMER */}
@@ -304,12 +318,23 @@ export function FMPreinstallDetailsSection({
                     </select>
                 </div>
 
+                <div>
+                    <label>Order Number</label>
+                    <input
+                        className="border p-2 w-full"
+                        value={value.orderNumber ?? ''}
+                        disabled={disabled}
+                        onChange={e => update('orderNumber', e.target.value)}
+                    />
+                </div>
+
                 {/* TYPE */}
                 <div>
                     <label>Type</label>
                     <select disabled={disabled} className="border p-2 w-full"
                         value={value.type}
                         onChange={e => handleTypeChange(e.target.value)}>
+                        <option value="">Select</option>
                         {INSTALL_TYPES.map(t => (
                             <option key={t.value} value={t.value}>{t.label}</option>
                         ))}
@@ -411,7 +436,7 @@ export function FMPreinstallDetailsSection({
                 </div> */}
                 <div>
                     <label className="text-sm font-medium">Depot / Site</label>
-                    <select className="flex-1 border p-1"
+                    <select className={`flex-1 border p-1 ${invalidFields.includes('depotId') ? 'border-rose-500 ring-1 ring-rose-400' : ''}`}
                         value={value?.depotId ?? ''}
                         onChange={e => update('depotId', e.target.value)}
                         disabled={!value?.customerId}
@@ -426,7 +451,7 @@ export function FMPreinstallDetailsSection({
                 {/* LOCATION — moved here from install panel */}
                 <div>
                     <label className="text-sm font-medium">Location</label>
-                    <input className="border p-2 w-full text-sm"
+                    <input className={`border p-2 w-full text-sm ${invalidFields.includes('installLocation') ? 'border-rose-500 ring-1 ring-rose-400' : ''}`}
                         value={value.installLocation ?? ''}
                         disabled={disabled}
                         onChange={e => update('installLocation', e.target.value)} />
@@ -436,7 +461,7 @@ export function FMPreinstallDetailsSection({
                 <div>
                     <InstallerSearchSelect
                         value={value.installer}
-                        onSelect={update}
+                        onSelect={handleInstallField}
                         disabled={disabled}
                         label="Installer"
                     />

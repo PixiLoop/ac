@@ -13,14 +13,84 @@ import {
 export class ChecklistTemplatesService {
   constructor(private readonly prisma: PrismaService) { }
 
+  private toFrontendHardwareModel(model?: string | null) {
+    const map: Record<string, string> = {
+      MIX4000: 'MIX4000',
+      FM3306: 'FM3306',
+      HD_CAMERA: 'HD Camera',
+      STANDARD_CAMERA: 'Standard Camera',
+      BASE_UNIT: 'Base Unit',
+      SIM: 'SIM',
+      GPS_UNIT: 'GPS Unit',
+      CAN_BUS_INTERFACE: 'CAN Bus Interface',
+      DRIVER_ID_KEYPAD: 'Driver ID Keypad',
+    };
+    if (!model) return model;
+    return map[model] || model;
+  }
+
+  private toFrontendCategory(category?: string | null) {
+    const map: Record<string, string> = {
+      TELEMATICS_UNIT: 'Telematics Unit',
+      CAMERA_AND_VIDEO: 'Camera & Video',
+      CONNECTIVITY: 'Connectivity',
+      SENSORS: 'Sensors',
+      CORE_UNIT: 'Core Unit',
+      ACCESSORIES: 'Accessories',
+    };
+    if (!category) return category;
+    return map[category] || category;
+  }
+
+  private toDbHardwareModel(model?: string | null) {
+    const map: Record<string, string> = {
+      MIX4000: 'MIX4000',
+      FM3306: 'FM3306',
+      'HD Camera': 'HD_CAMERA',
+      HD_CAMERA: 'HD_CAMERA',
+      'Standard Camera': 'STANDARD_CAMERA',
+      STANDARD_CAMERA: 'STANDARD_CAMERA',
+      'Base Unit': 'BASE_UNIT',
+      BASE_UNIT: 'BASE_UNIT',
+      SIM: 'SIM',
+      'GPS Unit': 'GPS_UNIT',
+      GPS_UNIT: 'GPS_UNIT',
+      'CAN Bus Interface': 'CAN_BUS_INTERFACE',
+      CAN_BUS_INTERFACE: 'CAN_BUS_INTERFACE',
+      'Driver ID Keypad': 'DRIVER_ID_KEYPAD',
+      DRIVER_ID_KEYPAD: 'DRIVER_ID_KEYPAD',
+    };
+    if (!model) return model;
+    return map[model] || model;
+  }
+
+  private toDbCategory(category?: string | null) {
+    const map: Record<string, string> = {
+      'Telematics Unit': 'TELEMATICS_UNIT',
+      TELEMATICS_UNIT: 'TELEMATICS_UNIT',
+      'Camera & Video': 'CAMERA_AND_VIDEO',
+      CAMERA_AND_VIDEO: 'CAMERA_AND_VIDEO',
+      Connectivity: 'CONNECTIVITY',
+      CONNECTIVITY: 'CONNECTIVITY',
+      Sensors: 'SENSORS',
+      SENSORS: 'SENSORS',
+      'Core Unit': 'CORE_UNIT',
+      CORE_UNIT: 'CORE_UNIT',
+      Accessories: 'ACCESSORIES',
+      ACCESSORIES: 'ACCESSORIES',
+    };
+    if (!category) return category;
+    return map[category] || category;
+  }
+
   // Standardize return payload to match frontend ChecklistTemplate shape
   private formatTemplate(template: any) {
     return {
       id: template.id,
       name: template.name,
       hardwareType: template.hardwareType,
-      hardwareModel: template.hardwareModel,
-      category: template.category,
+      hardwareModel: this.toFrontendHardwareModel(template.hardwareModel),
+      category: this.toFrontendCategory(template.category),
       description: template.description || '',
       version: template.version,
       status: template.status === 'ACTIVE' ? 'Active' : template.status === 'DRAFT' ? 'Draft' : 'Archived',
@@ -101,8 +171,8 @@ export class ChecklistTemplatesService {
       data: {
         name: dto.name,
         hardwareType: dto.hardwareType,
-        hardwareModel: dto.hardwareModel,
-        category: dto.category,
+        hardwareModel: this.toDbHardwareModel(dto.hardwareModel as any) as any,
+        category: this.toDbCategory(dto.category as any) as any,
         description: dto.description ?? "",
         version: dto.version || 'v1.0',
         status: dto.status || 'ACTIVE',
@@ -137,6 +207,12 @@ export class ChecklistTemplatesService {
     await this.findOne(id); // Ensure existence
 
     const updateData: any = { ...dto, lastUpdated: new Date() };
+    if (dto.hardwareModel !== undefined) {
+      updateData.hardwareModel = this.toDbHardwareModel(dto.hardwareModel as any);
+    }
+    if (dto.category !== undefined) {
+      updateData.category = this.toDbCategory(dto.category as any);
+    }
 
     const updated = await this.prisma.checklistTemplate.update({
       where: { id },

@@ -4,6 +4,10 @@ import { useEffect, useRef, useState } from 'react';
 import { cn } from '../../lib/utils';
 import { api } from '../../lib/api-client';
 import { Input } from '../ui/input';
+import ConfirmModal from '../ui/ConfirmModal';
+
+export const INVALID_CUSTOMER_NUMBER = 'Invalid Customer Number';
+export const NOT_AN_FM_CUSTOMER = 'Not an FM Customer';
 
 type Customer = {
     id: string;
@@ -28,6 +32,8 @@ type Props = {
     disabled?: boolean;
     /** Defaults to "Customer" */
     label?: string;
+    /** FM screens reject an account that has no FM customer record */
+    requireFmCustomer?: boolean;
 };
 
 export function CustomerSearchSelect({
@@ -35,12 +41,15 @@ export function CustomerSearchSelect({
     onSelect,
     disabled,
     label = 'Customer',
+    requireFmCustomer = false,
 }: Props) {
     const [customers, setCustomers] = useState<Customer[]>([]);
     const [open, setOpen] = useState(false);
     const [query, setQuery] = useState('');
     const [highlighted, setHighlighted] = useState(0);
+    const [notice, setNotice] = useState<string | null>(null);
     const ref = useRef<HTMLDivElement>(null);
+    const inputRef = useRef<HTMLInputElement>(null);
 
     /* ── search the full customer list, including FM fleet names ── */
     useEffect(() => {
@@ -95,6 +104,56 @@ export function CustomerSearchSelect({
 
     useEffect(() => setHighlighted(0), [query]);
 
+    const reject = (message: string) => {
+        setNotice(message);
+        setOpen(true);
+    };
+
+    const accept = (customer: Customer) => {
+        if (requireFmCustomer && !customer.fmCustomer) {
+            reject(NOT_AN_FM_CUSTOMER);
+            return;
+        }
+        onSelect(customer);
+        setOpen(false);
+        setQuery('');
+    };
+
+    const resolveEnteredNumber = async () => {
+        const term = query.trim();
+        const exact = filtered.find(
+            c => c.customerNumber?.toLowerCase() === term.toLowerCase(),
+        );
+        if (exact) {
+            accept(exact);
+            return;
+        }
+
+        if (!term) {
+            const selected = filtered[highlighted];
+            if (selected) accept(selected);
+            return;
+        }
+
+        try {
+            const res = await api.get('/customers/lookup', { params: { number: term } });
+            const customer = res.data?.data ?? res.data;
+            if (customer?.id) {
+                accept(customer);
+                return;
+            }
+        } catch {
+            /* unrecognised number */
+        }
+
+        if (filtered.length > 0 && !/^\d[\d\s-]*$/.test(term)) {
+            accept(filtered[highlighted]);
+            return;
+        }
+
+        reject(INVALID_CUSTOMER_NUMBER);
+    };
+
     const displayLabel = value
         //? `${value.customerNumber} – ${value.registeredName || value.name}`
         ? `${value.customerNumber} – ${optionLabel(value)}`
@@ -116,6 +175,23 @@ export function CustomerSearchSelect({
 
     return (
         <>
+            <ConfirmModal
+                open={!!notice}
+                title=""
+                message={notice ?? ''}
+                confirmText="OK"
+                alertOnly
+                danger={false}
+                onConfirm={() => {
+                    setNotice(null);
+                    setOpen(true);
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                }}
+                onCancel={() => {
+                    setNotice(null);
+                    setTimeout(() => inputRef.current?.focus(), 0);
+                }}
+            />
             <div ref={ref} className="relative w-full min-w-0">
                 <label className="font-medium text-slate-700 mb-1 block text-sm">
                     {label}
@@ -136,6 +212,7 @@ export function CustomerSearchSelect({
                 {open && (
                     <div className="absolute z-50 mt-1 w-full border rounded-md bg-white shadow-lg">
                         <input
+                            ref={inputRef}
                             autoFocus
                             className="w-full px-3 py-2 text-sm border-b outline-none"
                             placeholder="Type to search…"
@@ -152,8 +229,7 @@ export function CustomerSearchSelect({
                                 }
                                 if (e.key === 'Enter') {
                                     e.preventDefault();
-                                    const sel = filtered[highlighted];
-                                    if (sel) { onSelect(sel); setOpen(false); setQuery(''); }
+                                    void resolveEnteredNumber();
                                 }
                                 if (e.key === 'Escape') setOpen(false);
                             }}
@@ -171,11 +247,7 @@ export function CustomerSearchSelect({
                                         idx === highlighted && 'bg-slate-100',
                                     )}
                                     onMouseEnter={() => setHighlighted(idx)}
-                                    onClick={() => {
-                                        onSelect(c);
-                                        setOpen(false);
-                                        setQuery('');
-                                    }}
+                                    onClick={() => accept(c)}
                                 >
                                     <span className="font-mono text-xs text-slate-500 mr-2">
                                         {c.customerNumber}

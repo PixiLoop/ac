@@ -1,12 +1,11 @@
+import { calcLineTotal } from './salesOrderCalc';
+
 export function calcPartsTotal(items: any[]) {
-  return items.reduce(
-    (sum, i) =>
-      sum +
-      (i.qty || i.quantity || 0) *
-        (i.unitPrice || i.rate || 0) *
-        (1 - (i.discountPct || 0) / 100),
-    0,
-  );
+  return items.reduce((sum, i) => sum + calcLineTotal({
+    ...i,
+    qty: i.qty || i.quantity || 0,
+    unitPrice: i.unitPrice || i.rate || 0,
+  }), 0);
 }
 
 export function round(n: number) {

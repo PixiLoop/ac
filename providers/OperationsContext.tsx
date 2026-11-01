@@ -1,5 +1,5 @@
 "use client"
-import React, { createContext, useContext, useState, useMemo, useEffect } from 'react';
+import React, { createContext, useContext, useState, useMemo, useEffect, useCallback } from 'react';
 import {
   ChecklistSection,
   ChecklistTemplate,
@@ -7,6 +7,7 @@ import {
   HardwareItem,
   HardwareModel,
   InstallationJob,
+  InstallationLineItem,
   InstallationStatus,
   Project,
   Technician,
@@ -16,7 +17,58 @@ import {
   buildChecklistForHardware,
   INITIAL_INSTALLATION_JOBS,
 } from '../components/job-boards/types/mockData';
-import { api } from '../lib/job-book-client';
+import { api, formatJobBookError } from '../lib/job-book-client';
+import { useAuth } from './auth-provider';
+
+
+export interface UserContractor {
+  id: string;
+  tenantId: string | null;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  phone: string | null;
+  profilePhotoUrl: string | null;
+  passwordHash: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  mfaEnabled: boolean;
+  mfaSecret: string | null;
+  secretQuestion: string | null;
+  secretAnswerHash: string | null;
+  lastLoginAt: string | null; // or Date if you parse it
+  createdAt: string;           // or Date if you parse it
+  updatedAt: string;           // or Date if you parse it
+  defaultLandingPage: string;
+  deletedAt: string | null;    // or Date if you parse it
+  status: string;
+}
+
+
+export interface UserSubContractor {
+  id: string;
+  tenantId: string | null;
+  email: string;
+  firstName: string;
+  lastName: string;
+  displayName: string;
+  phone: string | null;
+  profilePhotoUrl: string | null;
+  passwordHash: string;
+  isActive: boolean;
+  mustChangePassword: boolean;
+  mfaEnabled: boolean;
+  mfaSecret: string | null;
+  secretQuestion: string | null;
+  secretAnswerHash: string | null;
+  lastLoginAt: string | null; // or Date if you parse it
+  createdAt: string;           // or Date if you parse it
+  updatedAt: string;           // or Date if you parse it
+  defaultLandingPage: string;
+  deletedAt: string | null;    // or Date if you parse it
+  status: string;
+}
 
 export interface ChecklistStats {
   completed: number;
@@ -42,7 +94,7 @@ interface OperationsContextType {
   customers: Customer[];
   projects: Project[];
   isApiConnected: boolean;
-  
+
   // Selection & Navigation
   selectedJobId: string | null;
   selectedJob: InstallationJob | null;
@@ -53,10 +105,10 @@ interface OperationsContextType {
   setSelectedTemplateId: (id: string | null) => void;
   selectedProjectId: string | null;
   setSelectedProjectId: (id: string | null) => void;
-  
+
   activeNavTab: string;
   setActiveNavTab: (tab: string) => void;
-  
+
   // Filtering & View state
   installationsViewMode: 'list' | 'board';
   setInstallationsViewMode: (mode: 'list' | 'board') => void;
@@ -68,24 +120,25 @@ interface OperationsContextType {
   setTechnicianFilter: (techId: string | 'All') => void;
   searchQuery: string;
   setSearchQuery: (query: string) => void;
-  
+
   // Actions
   scheduleJob: (
     jobId: string,
+    assignedTo: "technician" | "contractor" | "subcontractor",
     technicianId: string,
     date: string,
     startTime: string,
     endTime: string,
     notes?: string
   ) => Promise<{ success: boolean; conflict?: SchedulingConflictResult }>;
-  
+
   rescheduleJob: (
     jobId: string,
     newDate: string,
     newStartTime: string,
     newEndTime: string
   ) => Promise<{ success: boolean; conflict?: SchedulingConflictResult }>;
-  
+
   checkTechnicianConflict: (
     technicianId: string,
     date: string,
@@ -93,9 +146,9 @@ interface OperationsContextType {
     endTime: string,
     excludeJobId?: string
   ) => SchedulingConflictResult;
-  
+
   getTechnicianJobsForDate: (technicianId: string, date: string) => InstallationJob[];
-  
+
   changeJobStatus: (
     jobId: string,
     newStatus: InstallationStatus,
@@ -103,7 +156,7 @@ interface OperationsContextType {
     updatedBy?: string,
     bypassValidation?: boolean
   ) => Promise<{ success: boolean; requiresChecklistCompletion?: boolean; incompleteCount?: number }>;
-  
+
   toggleChecklistItem: (
     jobId: string,
     sectionId: string,
@@ -112,12 +165,57 @@ interface OperationsContextType {
     notes?: string,
     technicianName?: string
   ) => Promise<void>;
-  
+  uploadChecklistPhoto: (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    file: File,
+  ) => Promise<{ success: boolean; message?: string }>;
+  deleteChecklistPhoto: (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    photoId: string,
+  ) => Promise<{ success: boolean; message?: string }>;
+  addChecklistComment: (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    text: string,
+    authorName?: string,
+  ) => Promise<{ success: boolean; message?: string }>;
+  deleteChecklistComment: (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    commentId: string,
+  ) => Promise<{ success: boolean; message?: string }>;
+
   addHardwareToJob: (jobId: string, hardware: HardwareItem) => Promise<void>;
   removeHardwareFromJob: (jobId: string, hardwareId: string) => Promise<void>;
+  regenerateJobChecklist: (jobId: string) => Promise<{ success: boolean; message?: string }>;
+  addLineItemToJob: (
+    jobId: string,
+    item: {
+      productId: string;
+      partNo?: string;
+      productCode?: string;
+      description?: string;
+      quantity?: number;
+      unitPrice?: number;
+      discountPct?: number;
+      landedCost?: number;
+    },
+  ) => Promise<void>;
+  updateJobLineItem: (
+    jobId: string,
+    itemId: string,
+    patch: Partial<Pick<InstallationLineItem, 'description' | 'quantity' | 'unitPrice' | 'discountPct'>>,
+  ) => Promise<void>;
+  removeLineItemFromJob: (jobId: string, itemId: string) => Promise<void>;
   createInstallationJob: (job: Omit<InstallationJob, 'id' | 'checklistSections' | 'timeline' | 'createdAt' | 'canInvoice'>) => Promise<string>;
   addTechnician: (technician: Omit<Technician, 'id'>) => Promise<string>;
-  
+
   // Template actions
   createChecklistTemplate: (template: Omit<ChecklistTemplate, 'id' | 'lastUpdated'>) => Promise<string>;
   updateChecklistTemplate: (templateId: string, templateData: Partial<ChecklistTemplate>) => Promise<void>;
@@ -136,7 +234,7 @@ interface OperationsContextType {
     item: { title?: string; description?: string; isRequired?: boolean }
   ) => Promise<void>;
   deleteTemplateItem: (templateId: string, sectionId: string, itemId: string) => Promise<void>;
-  
+
   // Helpers
   getChecklistStats: (job: InstallationJob) => ChecklistStats;
   getTechnicianWorkload: (technicianId: string) => {
@@ -147,23 +245,19 @@ interface OperationsContextType {
   };
   getStatusCounts: () => Record<string, number>;
   refreshFromApi: () => Promise<void>;
+  contractors: UserContractor[];
+  setContractors: React.Dispatch<React.SetStateAction<UserContractor[]>>;
+  subContractors: UserSubContractor[];
+  setSubContractors: React.Dispatch<React.SetStateAction<UserSubContractor[]>>;
+  assignedJobs: InstallationJob[];
+  setAssignedJobs: React.Dispatch<React.SetStateAction<InstallationJob[]>>;
 }
 
 const OperationsContext = createContext<OperationsContextType | undefined>(undefined);
 
 export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [jobs, setJobs] = useState<InstallationJob[]>(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('operations_installation_jobs');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (Array.isArray(parsed) && parsed.length > 0) return parsed;
-        }
-      } catch (e) {}
-    }
-    return INITIAL_INSTALLATION_JOBS;
-  });
+  const { user } = useAuth()
+  const [jobs, setJobs] = useState<InstallationJob[]>([]);
   const [technicians, setTechnicians] = useState<Technician[]>([]);
   const [checklistTemplates, setChecklistTemplates] = useState<ChecklistTemplate[]>([]);
   const [customers, setCustomers] = useState<Customer[]>([]);
@@ -182,22 +276,72 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const [technicianFilter, setTechnicianFilter] = useState<string | 'All'>('All');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  const [contractors, setContractors] = useState<UserContractor[]>([])
+  const [subContractors, setSubContractors] = useState<UserSubContractor[]>([])
+  const [assignedJobs, setAssignedJobs] = useState<InstallationJob[]>([])
+
+
+  // sync contractors with backed
+  const fetchAssignedJobs = useCallback(
+    async () => {
+      const data = await api.jobs.list()
+      if (data?.data?.data && data?.data?.data?.length > 0) {
+        setAssignedJobs(data.data.data)
+      }
+    },
+    [api.jobs],
+  )
+
+  useEffect(() => {
+    fetchAssignedJobs()
+  }, [fetchAssignedJobs, user])
+
+  // sync contractors with backed
+  const fetchContractors = useCallback(
+    async () => {
+      const data = await api.contractor.list()
+      if (data?.data?.items && data?.data?.items?.length > 0) {
+        setContractors(data.data.items)
+      }
+    },
+    [api.contractor],
+  )
+
+  // sync subcontractors with backed
+  const fetchSubContractors = useCallback(
+    async () => {
+      const data = await api.subContractor.list()
+      if (data?.data?.items && data?.data?.items?.length > 0) {
+        setSubContractors(data.data.items)
+      }
+    },
+    [api.subContractor],
+  )
+
+  useEffect(() => {
+    fetchContractors()
+  }, [fetchContractors, user])
+
+  useEffect(() => {
+    fetchSubContractors()
+  }, [fetchSubContractors, user])
+
   const selectedJob = useMemo(() => {
     if (!selectedJobId) return null;
     return jobs.find((j) => j.id === selectedJobId) || null;
   }, [jobs, selectedJobId]);
 
-  // Save jobs to localStorage
-  useEffect(() => {
-    if (typeof window !== 'undefined') {
-      try {
-        localStorage.setItem('operations_installation_jobs', JSON.stringify(jobs));
-      } catch (e) {}
-    }
-  }, [jobs]);
 
   // Initial sync with backend REST APIs
   const refreshFromApi = async () => {
+    // Unwrap { data: T } | T | { data: T[]; total } from job-book-client + ResponseInterceptor
+    const asArray = <T,>(payload: any): T[] => {
+      if (Array.isArray(payload)) return payload;
+      if (Array.isArray(payload?.data)) return payload.data;
+      if (Array.isArray(payload?.items)) return payload.items;
+      return [];
+    };
+
     try {
       const [jobsRes, techRes, tmplRes, custRes, projRes] = await Promise.all([
         api.installations.list(),
@@ -207,33 +351,46 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         api.projects.list(),
       ]);
 
-      if (jobsRes.data?.data && Array.isArray(jobsRes.data.data) && jobsRes.data.data.length > 0) {
-        setJobs((prev) => {
-          const apiJobs = jobsRes.data!.data;
-          const merged = [...apiJobs];
-          for (const localJob of prev) {
-            if (!merged.some((j) => j.id === localJob.id)) {
-              merged.push(localJob);
-            }
+      const apiJobs = asArray<InstallationJob>(jobsRes.data);
+      // Always apply API result (including empty) so we don't keep a stale blank list
+      // when the response shape is a bare array after interceptor unwrap.
+      setJobs((prev) => {
+        if (apiJobs.length === 0 && prev.length > 0 && jobsRes.error) {
+          return prev;
+        }
+        const merged = [...apiJobs];
+        for (const localJob of prev) {
+          if (!merged.some((j) => j.id === localJob.id)) {
+            merged.push(localJob);
           }
-          return merged;
-        });
+        }
+        return merged;
+      });
+
+      const techItems = asArray<any>(techRes.data);
+      if (techItems.length) {
+        setTechnicians(
+          techItems.map((t: any) => ({
+            ...t,
+            displayName:
+              t.displayName ||
+              `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim() ||
+              t.email ||
+              t.id,
+          })),
+        );
       }
 
-      if (techRes.data?.items) {
-        setTechnicians(techRes.data.items);
-      }
+      const templates = asArray(tmplRes?.data);
+      if (templates.length) setChecklistTemplates(templates as any);
 
-      if (tmplRes?.data) {
-        setChecklistTemplates(tmplRes.data as any);
-      }
-      if (custRes.data?.data) {
-        setCustomers(custRes.data.data);
-      }
-      if (projRes.data?.data) {
-        setProjects(projRes.data.data);
-      }
-      setIsApiConnected(true);
+      const customers = asArray(custRes.data);
+      if (customers.length) setCustomers(customers as any);
+
+      const projects = asArray(projRes.data);
+      if (projects.length) setProjects(projects as any);
+
+      setIsApiConnected(!jobsRes.error);
     } catch (err) {
       console.warn('API sync warning; utilizing resilient offline cache:', err);
       setIsApiConnected(false);
@@ -242,7 +399,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
   useEffect(() => {
     refreshFromApi();
-  }, []);
+  }, [user]);
 
   // Helper to parse time string "HH:mm" to minutes since midnight
   const parseTimeToMinutes = (timeStr: string): number => {
@@ -345,6 +502,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // Schedule Job via API
   const scheduleJob = async (
     jobId: string,
+    assignedTo: "technician" | "contractor" | "subcontractor",
     technicianId: string,
     date: string,
     startTime: string,
@@ -353,6 +511,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   ) => {
     // Call backend API
     const res = await api.installations.schedule(jobId, {
+      assignedTo,
       technicianId,
       date,
       startTime,
@@ -383,19 +542,34 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }
 
     const tech = technicians.find((t) => t.id === technicianId);
+    const techName =
+      tech?.displayName ||
+      `${tech?.firstName ?? ''} ${tech?.lastName ?? ''}`.trim() ||
+      'Assigned Technician';
     setJobs((prevJobs) =>
       prevJobs.map((job) => {
         if (job.id !== jobId) return job;
+        const nextStatus = job.status === 'Not Actioned' ? 'Waiting Install' : job.status;
         return {
           ...job,
           technicianId,
-          technicianName: tech ? tech.displayName : 'Assigned Technician',
+          technicianName: techName,
           installationDate: date,
           startTime,
           endTime,
           isScheduled: true,
-          status: job.status === 'Not Actioned' ? 'Waiting Install' : job.status,
+          status: nextStatus,
           notes: notes ? `${job.notes ? `${job.notes}\n` : ''}${notes}` : job.notes,
+          timeline: [
+            {
+              id: `tl-sched-${Date.now()}`,
+              status: nextStatus,
+              timestamp: new Date().toISOString(),
+              updatedBy: 'Scheduler',
+              note: `Scheduled with technician ${techName} for ${date} (${startTime} - ${endTime})`,
+            },
+            ...(job.timeline || []),
+          ],
         };
       })
     );
@@ -403,26 +577,47 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return { success: true };
   };
 
-  // Reschedule Job via API
+  // Reschedule Job via API (uses installations/:id/schedule — no separate calendar route)
   const rescheduleJob = async (
     jobId: string,
     newDate: string,
     newStartTime: string,
     newEndTime: string
   ) => {
+    const job = jobs.find((j) => j.id === jobId);
+    const technicianId = job?.technicianId || technicians[0]?.id;
+    if (!technicianId) {
+      return {
+        success: false,
+        conflict: {
+          hasConflict: true,
+          message: 'Assign a technician before rescheduling.',
+        },
+      };
+    }
+
     const res = await api.calendar.reschedule({
       jobId,
       newDate,
       newStartTime,
       newEndTime,
+      technicianId,
+      notes: `Rescheduled to ${newDate} (${newStartTime} – ${newEndTime})`,
     });
 
     if (res.status === 409 || res.error) {
+      const raw = res.error?.message ?? res.error;
+      const message =
+        typeof raw === 'string'
+          ? raw
+          : Array.isArray(raw)
+            ? raw.filter((p) => typeof p === 'string').join(', ')
+            : 'Could not reschedule job.';
       return {
         success: false,
         conflict: {
           hasConflict: true,
-          message: res.error?.message || 'Technician has an overlap scheduling conflict.',
+          message,
         },
       };
     }
@@ -444,14 +639,49 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     updatedBy: string = 'Current User',
     bypassValidation: boolean = false
   ) => {
+    const prevSnapshot = jobs.find((j) => j.id === jobId);
+
+    const trimmedNote = String(note ?? '').trim();
+    const timelineNote = trimmedNote || `Status transitioned to ${newStatus}`;
+
+    // Optimistic: header badge + timeline update immediately
+    const updatedJobsFn = (prev: InstallationJob[]) =>
+      prev.map((j) => {
+        if (j.id !== jobId) return j;
+        return {
+          ...j,
+          status: newStatus,
+          canInvoice:
+            newStatus === 'Installed' ||
+            newStatus === 'Completed' ||
+            newStatus === 'Invoiced' ||
+            j.canInvoice,
+          timeline: [
+            {
+              id: `tl-local-${Date.now()}`,
+              status: newStatus,
+              timestamp: new Date().toISOString(),
+              updatedBy,
+              note: timelineNote,
+            },
+            ...(j.timeline || []),
+          ],
+        };
+      });
+    setJobs(updatedJobsFn);
+    setAssignedJobs(updatedJobsFn);
+
     const res = await api.installations.updateStatus(jobId, {
       newStatus,
-      note,
+      note: trimmedNote || undefined,
       updatedBy,
       bypassValidation,
     });
 
     if (res.status === 422) {
+      if (prevSnapshot) {
+        setJobs((prev) => prev.map((j) => (j.id === jobId ? prevSnapshot : j)));
+      }
       return {
         success: false,
         requiresChecklistCompletion: true,
@@ -459,12 +689,30 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
     }
 
-    if (res.data) {
-      const updatedJob = res.data;
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? updatedJob : j)));
-      return { success: true };
+    if (res.error || (res.status >= 400 && res.status !== 422)) {
+      if (prevSnapshot) {
+        setJobs((prev) => prev.map((j) => (j.id === jobId ? prevSnapshot : j)));
+      }
+      return {
+        success: false,
+        message: res.error?.message || 'Failed to update status',
+      };
     }
 
+    const updatedJob = (res.data as any)?.id ? res.data : (res.data as any)?.data;
+    if (updatedJob?.id) {
+      setJobs((prev) =>
+        prev.map((j) => {
+          if (j.id !== jobId) return j;
+          const merged = { ...j, ...updatedJob };
+          // Keep optimistic timeline (incl. user comment) if API payload omits it
+          if (!Array.isArray(updatedJob.timeline) || !updatedJob.timeline.length) {
+            merged.timeline = j.timeline;
+          }
+          return merged;
+        }),
+      );
+    }
     return { success: true };
   };
 
@@ -478,7 +726,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     technicianName: string = 'John Smith'
   ) => {
     // Optimistic UI update
-    setJobs((prev) =>
+    const checklistUpdater = (prev: InstallationJob[]) =>
       prev.map((j) => {
         if (j.id !== jobId) return j;
         const updatedSections = j.checklistSections.map((sec) => {
@@ -497,8 +745,9 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         });
 
         return { ...j, checklistSections: updatedSections };
-      })
-    );
+      });
+    setJobs(checklistUpdater);
+    setAssignedJobs(checklistUpdater);
 
     // Call API in background
     await api.installations.updateChecklistItem(jobId, sectionId, itemId, {
@@ -508,11 +757,106 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     });
   };
 
+  const applyJobUpdate = (jobId: string, job: InstallationJob | undefined) => {
+    if (!job?.id) return;
+    const updateFn = (prev: InstallationJob[]) =>
+      prev.map((j) =>
+        j.id === jobId ? { ...j, ...job, lineItems: job.lineItems ?? j.lineItems ?? [] } : j,
+      );
+    setJobs(updateFn);
+    setAssignedJobs(updateFn);
+  };
+
+  const uploadChecklistPhoto = async (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    file: File,
+  ) => {
+    const res = await api.installations.uploadChecklistPhoto(jobId, sectionId, itemId, file);
+    if (res.error || res.status >= 400) {
+      return {
+        success: false,
+        message: formatJobBookError(res.error, 'Failed to upload photo'),
+      };
+    }
+    const payload = res.data as any;
+    const job = payload?.job ?? payload;
+    applyJobUpdate(jobId, job);
+    return { success: true };
+  };
+
+  const deleteChecklistPhoto = async (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    photoId: string,
+  ) => {
+    const res = await api.installations.deleteChecklistPhoto(jobId, sectionId, itemId, photoId);
+    if (res.error || res.status >= 400) {
+      return {
+        success: false,
+        message: formatJobBookError(res.error, 'Failed to remove photo'),
+      };
+    }
+    const payload = res.data as any;
+    const job = payload?.job ?? payload;
+    applyJobUpdate(jobId, job);
+    return { success: true };
+  };
+
+  const addChecklistComment = async (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    text: string,
+    authorName?: string,
+  ) => {
+    const res = await api.installations.addChecklistComment(jobId, sectionId, itemId, {
+      text,
+      authorName,
+    });
+    if (res.error || res.status >= 400) {
+      return {
+        success: false,
+        message: formatJobBookError(res.error, 'Failed to post comment'),
+      };
+    }
+    const payload = res.data as any;
+    const job = payload?.job ?? payload;
+    applyJobUpdate(jobId, job);
+    return { success: true };
+  };
+
+  const deleteChecklistComment = async (
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    commentId: string,
+  ) => {
+    const res = await api.installations.deleteChecklistComment(
+      jobId,
+      sectionId,
+      itemId,
+      commentId,
+    );
+    if (res.error || res.status >= 400) {
+      return {
+        success: false,
+        message: formatJobBookError(res.error, 'Failed to remove comment'),
+      };
+    }
+    const payload = res.data as any;
+    const job = payload?.job ?? payload;
+    applyJobUpdate(jobId, job);
+    return { success: true };
+  };
+
   // Add hardware to job via API -> Automatically attaches hardware checklist
   const addHardwareToJob = async (jobId: string, hardware: HardwareItem) => {
     const res = await api.installations.addHardware(jobId, hardware);
     if (res.data) {
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? res.data! : j)));
+      applyJobUpdate(jobId, res.data);
       return;
     }
 
@@ -540,6 +884,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
                 displayOrder: item.displayOrder,
                 completed: false,
                 notes: '',
+                photos: [],
               })),
             });
           }
@@ -547,6 +892,46 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         return { ...job, hardware: [...job.hardware, hardware], checklistSections: newSections };
       })
     );
+  };
+
+  const regenerateJobChecklist = async (jobId: string) => {
+    const res = await api.installations.regenerateChecklist(jobId);
+    if (res.error || res.status >= 400 || !res.data) {
+      // Local fallback: build from in-memory templates + job hardware
+      const job = jobs.find((j) => j.id === jobId);
+      if (!job?.hardware?.length) {
+        return {
+          success: false,
+          message: formatJobBookError(
+            res.error,
+            'Add hardware first, then generate the checklist.',
+          ),
+        };
+      }
+      const models = job.hardware.map((h) => h.model);
+      const built = buildChecklistForHardware(models, checklistTemplates);
+      if (!built.length) {
+        return {
+          success: false,
+          message:
+            'No active checklist template matches the hardware on this job. Create a template under Checklist Templates first.',
+        };
+      }
+      setJobs((prev) =>
+        prev.map((j) => {
+          if (j.id !== jobId) return j;
+          const existingModels = new Set(j.checklistSections.map((s) => s.hardwareModel));
+          const toAdd = built.filter((s) => !existingModels.has(s.hardwareModel));
+          return {
+            ...j,
+            checklistSections: [...j.checklistSections, ...toAdd],
+          };
+        }),
+      );
+      return { success: true };
+    }
+    applyJobUpdate(jobId, res.data);
+    return { success: true };
   };
 
   // Remove hardware from job via API
@@ -562,14 +947,72 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     );
   };
 
+  const addLineItemToJob = async (
+    jobId: string,
+    item: {
+      productId: string;
+      partNo?: string;
+      productCode?: string;
+      description?: string;
+      quantity?: number;
+      unitPrice?: number;
+      discountPct?: number;
+      landedCost?: number;
+    },
+  ) => {
+    const res = await api.installations.addLineItem(jobId, item);
+    if (res.data) {
+      applyJobUpdate(jobId, res.data);
+      return;
+    }
+    throw new Error(formatJobBookError(res.error, 'Failed to add line item'));
+  };
+
+  const updateJobLineItem = async (
+    jobId: string,
+    itemId: string,
+    patch: Partial<Pick<InstallationLineItem, 'description' | 'quantity' | 'unitPrice' | 'discountPct'>>,
+  ) => {
+    const res = await api.installations.updateLineItem(jobId, itemId, patch);
+    if (res.data) {
+      applyJobUpdate(jobId, res.data);
+      return;
+    }
+    throw new Error(formatJobBookError(res.error, 'Failed to update line item'));
+  };
+
+  const removeLineItemFromJob = async (jobId: string, itemId: string) => {
+    const res = await api.installations.removeLineItem(jobId, itemId);
+    if (res.data) {
+      applyJobUpdate(jobId, res.data);
+      return;
+    }
+    throw new Error(formatJobBookError(res.error, 'Failed to remove line item'));
+  };
+
   // Create installation job via API
   const createInstallationJob = async (
     jobData: Omit<InstallationJob, 'id' | 'checklistSections' | 'timeline' | 'createdAt' | 'canInvoice'>
   ): Promise<string> => {
     const res = await api.installations.create(jobData);
     if (res.data) {
-      const createdJob = res.data;
-      setJobs((prev) => [createdJob, ...prev]);
+      let createdJob = res.data;
+
+      // Older API builds ignored hardware/checklist — backfill if needed
+      if ((!createdJob.hardware || createdJob.hardware.length === 0) && jobData.hardware?.length) {
+        for (const hw of jobData.hardware) {
+          const hwRes = await api.installations.addHardware(createdJob.id, hw);
+          if (hwRes.data) createdJob = hwRes.data;
+        }
+      } else if (
+        (!createdJob.checklistSections || createdJob.checklistSections.length === 0) &&
+        (createdJob.hardware?.length || jobData.hardware?.length)
+      ) {
+        const regen = await api.installations.regenerateChecklist(createdJob.id);
+        if (regen.data) createdJob = regen.data;
+      }
+
+      setJobs((prev) => [createdJob, ...prev.filter((j) => j.id !== createdJob.id)]);
       return createdJob.id;
     }
 
@@ -581,7 +1024,9 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     const fallbackJob: InstallationJob = {
       ...jobData,
       id: newId,
-      jobNumber: `JOB-2026-${nextNum}`,
+      jobNumber: jobData.jobNumber || (jobData.isWhiteboard ? `WB-2026-${nextNum}` : `JOB-2026-${nextNum}`),
+      isWhiteboard: jobData.isWhiteboard ?? true,
+      jobType: jobData.jobType ?? (jobData.isWhiteboard ? 'Whiteboard' : 'Standard'),
       checklistSections,
       timeline: [
         {
@@ -589,7 +1034,9 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           status: jobData.status,
           timestamp: new Date().toISOString(),
           updatedBy: 'Operations Dispatch',
-          note: `Created with hardware checklists.`,
+          note: jobData.isWhiteboard
+            ? `Whiteboard job created with hardware checklists.`
+            : `Created with hardware checklists.`,
         },
       ],
       createdAt: new Date().toISOString(),
@@ -618,15 +1065,43 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     return newId;
   };
 
+  /** Deep-clone sections/items so reused templates never share references. */
+  const cloneTemplateSections = (
+    sections: ChecklistTemplate['sections'] | undefined
+  ): ChecklistTemplate['sections'] => {
+    const stamp = Date.now();
+    return (sections || []).map((sec, sIdx) => ({
+      id: `sec-clone-${stamp}-${sIdx}`,
+      title: sec.title,
+      items: (sec.items || []).map((it, iIdx) => ({
+        id: `item-clone-${stamp}-${sIdx}-${iIdx}`,
+        title: it.title,
+        description: it.description,
+        section: sec.title,
+        isRequired: it.isRequired,
+        displayOrder: it.displayOrder ?? iIdx + 1,
+      })),
+    }));
+  };
+
   // Template management actions via API
   const createChecklistTemplate = async (
     templateData: Omit<ChecklistTemplate, 'id' | 'lastUpdated'>
   ): Promise<string> => {
-    const res = await api.templates.create(templateData);
+    // Always clone payload sections so source templates stay untouched
+    const isolatedSections = cloneTemplateSections(templateData.sections);
+    const payload = { ...templateData, sections: isolatedSections };
+
+    const res = await api.templates.create(payload);
     if (res.data) {
+      const created = res.data as ChecklistTemplate;
+      // Prefer API-returned sections (real DB ids); fall back to isolated clone
       const createdTmpl: ChecklistTemplate = {
-        ...res.data,
-        sections: templateData.sections || res.data.sections || [],
+        ...created,
+        sections:
+          Array.isArray(created.sections) && created.sections.length > 0
+            ? created.sections
+            : isolatedSections,
       };
       setChecklistTemplates((prev) => [createdTmpl, ...prev]);
       return createdTmpl.id;
@@ -634,17 +1109,20 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
     const newId = `tmpl-${Date.now()}`;
     const newTmpl: ChecklistTemplate = {
-      ...templateData,
+      ...payload,
       id: newId,
       lastUpdated: new Date().toISOString().split('T')[0],
-      sections: templateData.sections || [],
+      sections: isolatedSections,
     };
     setChecklistTemplates((prev) => [newTmpl, ...prev]);
     return newId;
   };
 
   const addTemplateSection = async (templateId: string, sectionTitle: string) => {
-    await api.templates.addSection(templateId, sectionTitle);
+    const res = await api.templates.addSection(templateId, sectionTitle);
+    const created = (res as any)?.data ?? res;
+    const sectionId =
+      created?.id || created?.data?.id || `sec-custom-${Date.now()}`;
     setChecklistTemplates((prev) =>
       prev.map((tmpl) => {
         if (tmpl.id !== templateId) return tmpl;
@@ -654,7 +1132,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           sections: [
             ...tmpl.sections,
             {
-              id: `sec-custom-${Date.now()}`,
+              id: sectionId,
               title: sectionTitle,
               items: [],
             },
@@ -671,8 +1149,11 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   ) => {
     const tmpl = checklistTemplates.find((t) => t.id === templateId);
     const sec = tmpl?.sections.find((s) => s.title === sectionTitle);
+    let createdItemId = `item-${Date.now()}`;
     if (sec) {
-      await api.templates.addItem(templateId, sec.id, item);
+      const res = await api.templates.addItem(templateId, sec.id, item);
+      const created = (res as any)?.data ?? res;
+      createdItemId = created?.id || created?.data?.id || createdItemId;
     }
 
     setChecklistTemplates((prev) =>
@@ -684,7 +1165,7 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
           sections: t.sections.map((s) => {
             if (s.title !== sectionTitle) return s;
             const newItem = {
-              id: `item-${Date.now()}`,
+              id: createdItemId,
               title: item.title,
               description: item.description,
               section: sectionTitle,
@@ -864,8 +1345,16 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         getTechnicianJobsForDate,
         changeJobStatus,
         toggleChecklistItem,
+        uploadChecklistPhoto,
+        deleteChecklistPhoto,
+        addChecklistComment,
+        deleteChecklistComment,
         addHardwareToJob,
         removeHardwareFromJob,
+        regenerateJobChecklist,
+        addLineItemToJob,
+        updateJobLineItem,
+        removeLineItemFromJob,
         createInstallationJob,
         addTechnician,
         createChecklistTemplate,
@@ -880,6 +1369,12 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         getTechnicianWorkload,
         getStatusCounts,
         refreshFromApi,
+        contractors,
+        setContractors,
+        subContractors,
+        setSubContractors,
+        assignedJobs,
+        setAssignedJobs
       }}
     >
       {children}

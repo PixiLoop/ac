@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { HardwareItem, HardwareModel } from '../types/installation';
 import { StatusBadge, ScheduleBadge } from './shared/StatusBadge';
 import { ChecklistProgress } from './shared/ChecklistProgress';
 import { ScheduleJobDialog } from './ScheduleJobDialog';
 import { StatusChangeDialog } from './StatusChangeDialog';
-import Link from 'next/link';
+import { InstallationLineItems } from './InstallationLineItems';
 import {
   ArrowLeft,
   Calendar,
@@ -24,29 +24,82 @@ import {
   Edit3,
   CalendarCheck,
   Send,
-  Wrench,
+  Camera,
+  ImagePlus,
+  Trash2,
+  Loader2,
 } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useOperations } from '../../../providers/OperationsContext';
+import { api } from '../../../lib/job-book-client';
+import { useToast } from '../../ui/toast';
+import { AuthenticatedPhoto } from './shared/AuthenticatedPhoto';
 
 export const InstallationDetail: React.FC = () => {
+  const router = useRouter();
+  const { showToast } = useToast();
   const {
     selectedJob,
     setSelectedJobId,
     toggleChecklistItem,
+    uploadChecklistPhoto,
+    deleteChecklistPhoto,
+    addChecklistComment,
+    deleteChecklistComment,
     addHardwareToJob,
     removeHardwareFromJob,
+    regenerateJobChecklist,
     getChecklistStats,
     checkTechnicianConflict,
     changeJobStatus,
+    technicians,
   } = useOperations();
 
   const [showScheduleDialog, setShowScheduleDialog] = useState<boolean>(false);
   const [showStatusDialog, setShowStatusDialog] = useState<boolean>(false);
   const [selectedHwToAdd, setSelectedHwToAdd] = useState<HardwareModel>('GPS Unit');
   const [showAddHwModal, setShowAddHwModal] = useState<boolean>(false);
-  const [editingNotesItemId, setEditingNotesItemId] = useState<string | null>(null);
-  const [itemNoteText, setItemNoteText] = useState<string>('');
+  const [commentDraftByItem, setCommentDraftByItem] = useState<Record<string, string>>({});
+  const [commentComposerItemId, setCommentComposerItemId] = useState<string | null>(null);
+  const [postingCommentKey, setPostingCommentKey] = useState<string | null>(null);
   const [collapsedSections, setCollapsedSections] = useState<Record<string, boolean>>({});
+  const [resolvedTechName, setResolvedTechName] = useState<string | null>(null);
+  const [uploadingPhotoKey, setUploadingPhotoKey] = useState<string | null>(null);
+  const [regeneratingChecklist, setRegeneratingChecklist] = useState(false);
+
+  useEffect(() => {
+    setResolvedTechName(null);
+    const techId = selectedJob?.technicianId;
+    if (!techId) return;
+
+    const fromList = technicians.find((t) => t.id === techId);
+    const listName =
+      fromList?.displayName ||
+      `${fromList?.firstName ?? ''} ${fromList?.lastName ?? ''}`.trim();
+    const apiName =
+      selectedJob?.technicianName && selectedJob.technicianName !== techId
+        ? selectedJob.technicianName
+        : '';
+    if (apiName || listName) {
+      setResolvedTechName(apiName || listName);
+      return;
+    }
+
+    let cancelled = false;
+    api.technicians.get(techId).then((res) => {
+      if (cancelled || !res.data) return;
+      const u = res.data as any;
+      const name =
+        u.displayName ||
+        `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() ||
+        u.email ||
+        null;
+      if (name) setResolvedTechName(name);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedJob?.id, selectedJob?.technicianId, selectedJob?.technicianName, technicians]);
 
   if (!selectedJob) {
     return (
@@ -67,6 +120,19 @@ export const InstallationDetail: React.FC = () => {
   }
 
   const stats = getChecklistStats(selectedJob);
+
+  const assignedTech = selectedJob.technicianId
+    ? technicians.find((t) => t.id === selectedJob.technicianId)
+    : undefined;
+  const assignedTechName =
+    resolvedTechName ||
+    (selectedJob.technicianName &&
+      selectedJob.technicianName !== selectedJob.technicianId
+      ? selectedJob.technicianName
+      : undefined) ||
+    assignedTech?.displayName ||
+    `${assignedTech?.firstName ?? ''} ${assignedTech?.lastName ?? ''}`.trim() ||
+    undefined;
 
   // Check if technician has a scheduling conflict
   const conflict = selectedJob.technicianId && selectedJob.installationDate && selectedJob.startTime && selectedJob.endTime
@@ -93,21 +159,93 @@ export const InstallationDetail: React.FC = () => {
       itemId,
       !currentState,
       undefined,
-      selectedJob.technicianName || 'Current Installer'
+      assignedTechName || 'Current Installer'
     );
   };
 
-  const handleSaveItemNotes = async (sectionId: string, itemId: string) => {
-    await toggleChecklistItem(
-      selectedJob.id,
-      sectionId,
-      itemId,
-      true,
-      itemNoteText,
-      selectedJob.technicianName || 'Current Installer'
-    );
-    setEditingNotesItemId(null);
-    setItemNoteText('');
+  const handlePostComment = async (sectionId: string, itemId: string) => {
+    if (!selectedJob) return;
+    const text = (commentDraftByItem[itemId] || '').trim();
+    if (!text) {
+      showToast({ type: 'error', title: 'Enter a comment first', replace: true });
+      return;
+    }
+    const key = `${sectionId}:${itemId}`;
+    setPostingCommentKey(key);
+    try {
+      const res = await addChecklistComment(
+        selectedJob.id,
+        sectionId,
+        itemId,
+        text,
+        assignedTechName || 'Current Installer',
+      );
+      if (!res.success) {
+        showToast({
+          type: 'error',
+          title: res.message || 'Could not post comment',
+          replace: true,
+        });
+        return;
+      }
+      setCommentDraftByItem((prev) => ({ ...prev, [itemId]: '' }));
+      setCommentComposerItemId(null);
+      showToast({ type: 'success', title: 'Comment posted', replace: true });
+    } finally {
+      setPostingCommentKey(null);
+    }
+  };
+
+  const handleRemoveComment = async (sectionId: string, itemId: string, commentId: string) => {
+    if (!selectedJob) return;
+    const res = await deleteChecklistComment(selectedJob.id, sectionId, itemId, commentId);
+    if (!res.success) {
+      showToast({
+        type: 'error',
+        title: res.message || 'Could not remove comment',
+        replace: true,
+      });
+      return;
+    }
+    showToast({ type: 'success', title: 'Comment removed', replace: true });
+  };
+
+  const handleUploadPhoto = async (sectionId: string, itemId: string, file: File | null | undefined) => {
+    if (!file || !selectedJob) return;
+    if (!file.type.startsWith('image/')) {
+      showToast({ type: 'error', title: 'Please choose an image file', replace: true });
+      return;
+    }
+    const key = `${sectionId}:${itemId}`;
+    setUploadingPhotoKey(key);
+    try {
+      const res = await uploadChecklistPhoto(selectedJob.id, sectionId, itemId, file);
+      if (!res.success) {
+        showToast({
+          type: 'error',
+          title: res.message || 'Could not save photo',
+          replace: true,
+        });
+        return;
+      }
+      showToast({ type: 'success', title: 'Photo saved to checklist', replace: true });
+    } finally {
+      setUploadingPhotoKey(null);
+    }
+  };
+
+  const handleRemovePhoto = async (sectionId: string, itemId: string, photoId: string) => {
+    if (!selectedJob) return;
+    const res = await deleteChecklistPhoto(selectedJob.id, sectionId, itemId, photoId);
+    if (!res.success) {
+      showToast({
+        type: 'error',
+        title: res.message || 'Could not remove photo',
+        replace: true,
+      });
+      return;
+    }
+    showToast({ type: 'success', title: 'Photo removed', replace: true });
   };
 
   const handleAddHardware = async () => {
@@ -130,6 +268,29 @@ export const InstallationDetail: React.FC = () => {
     setShowAddHwModal(false);
   };
 
+  const handleGenerateChecklist = async () => {
+    if (!selectedJob) return;
+    setRegeneratingChecklist(true);
+    try {
+      const res = await regenerateJobChecklist(selectedJob.id);
+      if (!res.success) {
+        showToast({
+          type: 'error',
+          title: res.message || 'Could not generate checklist',
+          replace: true,
+        });
+        return;
+      }
+      showToast({
+        type: 'success',
+        title: 'Checklist generated from hardware templates',
+        replace: true,
+      });
+    } finally {
+      setRegeneratingChecklist(false);
+    }
+  };
+
   const availableHardwareToAdd: HardwareModel[] = [
     'MIX4000',
     'FM3306',
@@ -141,11 +302,14 @@ export const InstallationDetail: React.FC = () => {
   ];
 
   return (
-    <div className="space-y-6 mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Back button and quick actions */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <button
-          onClick={() => setSelectedJobId(null)}
+          onClick={() => {
+            setSelectedJobId(null);
+            router.push('/job-boards/installations');
+          }}
           className="inline-flex items-center gap-2 text-sm font-semibold text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-3.5 py-2 rounded-xl border border-slate-200 shadow-xs transition-colors"
         >
           <ArrowLeft className="w-4 h-4" />
@@ -194,16 +358,6 @@ export const InstallationDetail: React.FC = () => {
               </span>
               <StatusBadge status={selectedJob.status} />
               <ScheduleBadge isScheduled={selectedJob.isScheduled} />
-              {selectedJob.preinstallNo && (
-                <Link
-                  href={selectedJob.preinstallId ? `/fm-preinstall/${selectedJob.preinstallId}` : '/fm-preinstall'}
-                  className="inline-flex items-center gap-1.5 text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 hover:bg-blue-100 border border-blue-200 transition-colors"
-                  title="View linked FM Preinstall"
-                >
-                  <Wrench className="w-3.5 h-3.5" />
-                  Preinstall: {selectedJob.preinstallNo}
-                </Link>
-              )}
             </div>
 
             <h1 className="text-xl font-bold text-slate-800">
@@ -291,13 +445,13 @@ export const InstallationDetail: React.FC = () => {
 
               <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80">
                 <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500 block mb-1">
-                  Assigned Installer / Technician
+                  Assigned {selectedJob.assignedTo === "technician" ? "Installer / Technician" : (selectedJob.assignedTo === "contractor" ? "Contractor" : "Sub-Contractor")}
                 </span>
                 <div className="flex items-center gap-2">
                   <User className="w-4 h-4 text-blue-600 shrink-0" />
                   <span className="text-sm font-semibold text-slate-800">
-                    {selectedJob.technicianName ? (
-                      selectedJob.technicianName
+                    {assignedTechName ? (
+                      assignedTechName
                     ) : (
                       <span className="text-amber-600 font-medium">Unassigned</span>
                     )}
@@ -388,6 +542,46 @@ export const InstallationDetail: React.FC = () => {
 
             {/* Checklist Progress Component (Requirement #5) */}
             <ChecklistProgress stats={stats} />
+
+            {selectedJob.checklistSections.length === 0 && (
+              <div className="rounded-xl border border-amber-200 bg-amber-50/80 px-4 py-4 flex flex-col sm:flex-row sm:items-center gap-3">
+                <div className="flex-1">
+                  <p className="text-sm font-semibold text-amber-900">
+                    No checklist items on this job yet
+                  </p>
+                  <p className="text-xs text-amber-800/90 mt-0.5">
+                    Attach / Take photo appears on each checklist step after a template is applied.
+                    {selectedJob.hardware.length > 0
+                      ? ' Hardware is already selected — generate the checklist from matching templates.'
+                      : ' Add hardware first, then generate the checklist.'}
+                  </p>
+                </div>
+                {selectedJob.hardware.length > 0 ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleGenerateChecklist()}
+                    disabled={regeneratingChecklist}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 disabled:opacity-60 shrink-0"
+                  >
+                    {regeneratingChecklist ? (
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    ) : (
+                      <FileText className="w-3.5 h-3.5" />
+                    )}
+                    Generate Checklist
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowAddHwModal(true)}
+                    className="inline-flex items-center justify-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold text-white bg-amber-700 hover:bg-amber-800 shrink-0"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Add Hardware
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Combined Checklist Sections */}
             <div className="space-y-4">
@@ -502,57 +696,203 @@ export const InstallationDetail: React.FC = () => {
                                 </div>
                               )}
 
-                              {/* Notes */}
-                              {item.notes && editingNotesItemId !== item.id && (
-                                <div className="mt-1.5 p-2 bg-slate-100/70 rounded-lg text-xs text-slate-700 border border-slate-200/80 flex items-start justify-between">
-                                  <span className="italic">Note: “{item.notes}”</span>
-                                  <button
-                                    onClick={() => {
-                                      setEditingNotesItemId(item.id);
-                                      setItemNoteText(item.notes || '');
-                                    }}
-                                    className="text-[10px] text-blue-600 font-semibold ml-2"
-                                  >
-                                    Edit
-                                  </button>
-                                </div>
-                              )}
-
-                              {editingNotesItemId === item.id ? (
-                                <div className="mt-2 space-y-2">
-                                  <input
-                                    type="text"
-                                    value={itemNoteText}
-                                    onChange={(e) => setItemNoteText(e.target.value)}
-                                    placeholder="Add fitting note or measurement..."
-                                    className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500"
-                                  />
-                                  <div className="flex gap-2">
-                                    <button
-                                      onClick={() => handleSaveItemNotes(section.id, item.id)}
-                                      className="px-2.5 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-md"
-                                    >
-                                      Save Note
-                                    </button>
-                                    <button
-                                      onClick={() => setEditingNotesItemId(null)}
-                                      className="px-2 py-1 text-slate-500 text-[11px]"
-                                    >
-                                      Cancel
-                                    </button>
+                              {/* Comments thread */}
+                              <div className="pt-1.5 space-y-2">
+                                {(item.comments?.length ?? 0) > 0 && (
+                                  <div className="space-y-1.5">
+                                    {item.comments!.map((comment) => (
+                                      <div
+                                        key={comment.id}
+                                        className="group/comment relative rounded-lg border border-slate-200/80 bg-slate-50 px-2.5 py-2"
+                                      >
+                                        <div className="flex items-start justify-between gap-2">
+                                          <div className="min-w-0">
+                                            <p className="text-xs text-slate-800 whitespace-pre-wrap break-words">
+                                              {comment.text}
+                                            </p>
+                                            <p className="text-[10px] text-slate-500 mt-1">
+                                              {comment.authorName || 'Installer'}
+                                              {comment.createdAt &&
+                                              new Date(comment.createdAt).getTime() > 0
+                                                ? ` · ${new Date(comment.createdAt).toLocaleString([], {
+                                                    day: '2-digit',
+                                                    month: 'short',
+                                                    hour: '2-digit',
+                                                    minute: '2-digit',
+                                                  })}`
+                                                : ''}
+                                            </p>
+                                          </div>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              void handleRemoveComment(
+                                                section.id,
+                                                item.id,
+                                                comment.id,
+                                              )
+                                            }
+                                            className="shrink-0 p-0.5 rounded text-slate-400 hover:text-rose-600 opacity-0 group-hover/comment:opacity-100 transition-opacity"
+                                            title="Remove comment"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
+                                    ))}
                                   </div>
+                                )}
+
+                                {commentComposerItemId === item.id ? (
+                                  <div className="space-y-2">
+                                    <textarea
+                                      value={commentDraftByItem[item.id] || ''}
+                                      onChange={(e) =>
+                                        setCommentDraftByItem((prev) => ({
+                                          ...prev,
+                                          [item.id]: e.target.value,
+                                        }))
+                                      }
+                                      rows={2}
+                                      maxLength={2000}
+                                      placeholder="Add a comment, serial, or fitting note..."
+                                      className="w-full text-xs px-2.5 py-1.5 border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-500 resize-y min-h-[56px]"
+                                    />
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        type="button"
+                                        onClick={() => void handlePostComment(section.id, item.id)}
+                                        disabled={postingCommentKey === `${section.id}:${item.id}`}
+                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-blue-600 text-white text-[11px] font-semibold rounded-md disabled:opacity-60"
+                                      >
+                                        {postingCommentKey === `${section.id}:${item.id}` ? (
+                                          <Loader2 className="w-3 h-3 animate-spin" />
+                                        ) : null}
+                                        Post comment
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setCommentComposerItemId(null);
+                                          setCommentDraftByItem((prev) => ({
+                                            ...prev,
+                                            [item.id]: '',
+                                          }));
+                                        }}
+                                        className="px-2 py-1 text-slate-500 text-[11px]"
+                                      >
+                                        Cancel
+                                      </button>
+                                      {(item.comments?.length ?? 0) > 0 && (
+                                        <span className="text-[10px] text-slate-400 ml-auto">
+                                          {item.comments!.length} comment
+                                          {item.comments!.length === 1 ? '' : 's'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => setCommentComposerItemId(item.id)}
+                                    className="text-[11px] text-slate-400 hover:text-blue-600 font-medium inline-flex items-center gap-1 pt-0.5"
+                                  >
+                                    + Add comment
+                                    {(item.comments?.length ?? 0) > 0
+                                      ? ` (${item.comments!.length})`
+                                      : ''}
+                                  </button>
+                                )}
+                              </div>
+
+                              {/* Photos — attach gallery or capture on mobile */}
+                              <div className="pt-2 space-y-2">
+                                {(item.photos?.length ?? 0) > 0 && (
+                                  <div className="flex flex-wrap gap-2">
+                                    {item.photos!.map((photo) => (
+                                      <div
+                                        key={photo.id}
+                                        className="relative group/photo w-16 h-16 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 cursor-zoom-in"
+                                        title={photo.fileName || 'Checklist photo'}
+                                      >
+                                        <AuthenticatedPhoto
+                                          src={photo.url}
+                                          alt={photo.fileName || 'Checklist photo'}
+                                          className="w-full h-full object-cover"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            void handleRemovePhoto(section.id, item.id, photo.id);
+                                          }}
+                                          className="absolute top-0.5 right-0.5 p-0.5 rounded bg-black/60 text-white opacity-0 group-hover/photo:opacity-100 transition-opacity"
+                                          title="Remove photo"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <label
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
+                                      uploadingPhotoKey === `${section.id}:${item.id}`
+                                        ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
+                                        : 'border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                    }`}
+                                  >
+                                    {uploadingPhotoKey === `${section.id}:${item.id}` ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <ImagePlus className="w-3.5 h-3.5 text-blue-600" />
+                                    )}
+                                    Attach photo
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      className="hidden"
+                                      disabled={uploadingPhotoKey === `${section.id}:${item.id}`}
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        e.target.value = '';
+                                        void handleUploadPhoto(section.id, item.id, f);
+                                      }}
+                                    />
+                                  </label>
+
+                                  <label
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
+                                      uploadingPhotoKey === `${section.id}:${item.id}`
+                                        ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
+                                        : 'border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                                    }`}
+                                  >
+                                    <Camera className="w-3.5 h-3.5" />
+                                    Take photo
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      capture="environment"
+                                      className="hidden"
+                                      disabled={uploadingPhotoKey === `${section.id}:${item.id}`}
+                                      onChange={(e) => {
+                                        const f = e.target.files?.[0];
+                                        e.target.value = '';
+                                        void handleUploadPhoto(section.id, item.id, f);
+                                      }}
+                                    />
+                                  </label>
+
+                                  {(item.photos?.length ?? 0) > 0 && (
+                                    <span className="text-[10px] text-slate-400 font-medium">
+                                      {item.photos!.length} saved
+                                    </span>
+                                  )}
                                 </div>
-                              ) : !item.notes ? (
-                                <button
-                                  onClick={() => {
-                                    setEditingNotesItemId(item.id);
-                                    setItemNoteText('');
-                                  }}
-                                  className="text-[11px] text-slate-400 hover:text-blue-600 font-medium inline-flex items-center gap-1 pt-0.5"
-                                >
-                                  + Add note / serial
-                                </button>
-                              ) : null}
+                              </div>
                             </div>
                           </div>
                         ))}
@@ -625,6 +965,11 @@ export const InstallationDetail: React.FC = () => {
             </div>
           </div>
 
+          <InstallationLineItems
+            jobId={selectedJob.id}
+            lineItems={selectedJob.lineItems ?? []}
+          />
+
           {/* 5. Job Status Timeline (Requirement #26 & #32) */}
           <div className="bg-white rounded-2xl border border-slate-200/90 p-5 shadow-xs space-y-4">
             <div className="flex items-center justify-between pb-2 border-b border-slate-100">
@@ -637,24 +982,42 @@ export const InstallationDetail: React.FC = () => {
               </button>
             </div>
 
-            <div className="relative pl-6 space-y-5 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
-              {selectedJob.timeline.map((event, idx) => (
+            <div className="relative pl-6 space-y-5 max-h-[420px] overflow-y-auto overscroll-contain pr-1 before:absolute before:left-2 before:top-2 before:bottom-2 before:w-0.5 before:bg-slate-200">
+              {(selectedJob.timeline || []).map((event, idx) => {
+                let noteText = event.note || '';
+                if (
+                  noteText &&
+                  assignedTechName &&
+                  selectedJob.technicianId &&
+                  noteText.includes(selectedJob.technicianId)
+                ) {
+                  noteText = noteText
+                    .split(selectedJob.technicianId)
+                    .join(assignedTechName);
+                }
+                const isSystemNote =
+                  !noteText ||
+                  /^Status transitioned to /i.test(noteText) ||
+                  /^Moved to .+ via board/i.test(noteText) ||
+                  /^Scheduled with technician /i.test(noteText);
+
+                return (
                 <div key={event.id} className="relative group">
-                  {/* Timeline dot */}
+                  {/* Timeline dot — latest in blue */}
                   <span
                     className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow-xs ${
-                      idx === selectedJob.timeline.length - 1
+                      idx === 0
                         ? 'bg-blue-600 ring-4 ring-blue-100'
                         : 'bg-slate-400'
                     }`}
                   />
 
-                  <div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-bold text-slate-900">
+                  <div className="min-w-0">
+                    <div className="flex items-start justify-between gap-2">
+                      <span className={`text-xs font-bold ${idx === 0 ? 'text-blue-700' : 'text-slate-900'}`}>
                         {event.status}
                       </span>
-                      <span className="text-[10px] text-slate-400">
+                      <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
                         {new Date(event.timestamp).toLocaleDateString([], {
                           month: 'short',
                           day: 'numeric',
@@ -668,14 +1031,26 @@ export const InstallationDetail: React.FC = () => {
                     <p className="text-[11px] text-slate-500 font-medium">
                       By: {event.updatedBy}
                     </p>
-                    {event.note && (
-                      <p className="text-xs text-slate-600 mt-1 p-2 bg-slate-50 rounded-lg border border-slate-200/80">
-                        {event.note}
-                      </p>
-                    )}
+                    {noteText ? (
+                      <div
+                        className={`mt-1 p-2 rounded-lg border text-xs break-words ${
+                          isSystemNote
+                            ? 'bg-slate-50 text-slate-600 border-slate-200/80'
+                            : 'bg-blue-50 text-blue-900 border-blue-200'
+                        }`}
+                      >
+                        {!isSystemNote && (
+                          <span className="block text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-0.5">
+                            Comment
+                          </span>
+                        )}
+                        {noteText}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </div>
         </div>

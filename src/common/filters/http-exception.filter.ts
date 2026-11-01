@@ -1,5 +1,5 @@
 import { ExceptionFilter, Catch, ArgumentsHost, HttpException } from '@nestjs/common';
-import { Logger } from 'pino';
+import type { Logger } from 'pino';
 
 @Catch(HttpException)
 export class HttpExceptionFilter implements ExceptionFilter {

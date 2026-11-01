@@ -183,7 +183,7 @@ export function InventoryList() {
   };
 
   if (!canView) {
-    return <p className="text-sm text-slate-600">You do not have permission.</p>;
+    return <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>;
   }
 
   return (

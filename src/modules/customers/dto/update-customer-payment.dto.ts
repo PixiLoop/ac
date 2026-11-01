@@ -7,6 +7,10 @@ export class UpdateCustomerPaymentDto {
   accountType?: string
 
   @IsOptional()
+  @IsString()
+  parentCustomerId?: string | null
+
+  @IsOptional()
   @IsEnum(PaymentTerms)
   paymentTerms?: PaymentTerms
 

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { useAuth } from '../providers/auth-provider';
 import { useToast } from '../components/ui/toast';
 import { useHasPermission } from '../hooks/useHasPermission';
+import { ACCESS_DENIED_MESSAGE } from '../lib/access-message';
 
 export function useRequirePermission(permission: string) {
   const hasPermission = useHasPermission(permission);
@@ -17,7 +18,7 @@ export function useRequirePermission(permission: string) {
       showToast({
         type: 'error',
         title: 'Access denied',
-        message: 'You do not have permission to view this page.',
+        message: ACCESS_DENIED_MESSAGE,
       });
     }
   }, [hasPermission, showToast]);
@@ -39,7 +40,7 @@ export function useRequirePermission(permission: string) {
 //       showToast({
 //         type: 'error',
 //         title: 'Access denied',
-//         message: 'You do not have permission to view this page.',
+//         message: 'You Do Not Have Access to This Process. Contact for Authorisation.',
 //       });
 //       return;
       

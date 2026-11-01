@@ -2,7 +2,7 @@ import {
   Controller, Get, Post, Patch, Delete,
   Param, Body, Query, UseGuards
 } from '@nestjs/common';
-import { LocationsService, CreateLocationDto, UpdateLocationDto } from './locations.service';
+import type { LocationsService, CreateLocationDto, UpdateLocationDto } from './locations.service';
 
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Permissions } from '../../../common/rbac/permissions.decorator';

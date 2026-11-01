@@ -88,7 +88,7 @@ export default function LoginPage() {
       await globalMutate('/auth/me', cachePayload, false);
 
       const user = cachePayload.user;
-      router.push(user?.mustChangePassword ? '/profile' : '/profile');
+      router.push('/profile');
     } catch {
       router.push('/profile');
     }

@@ -47,7 +47,7 @@ export const TechnicianList: React.FC = () => {
   });
 
   return (
-    <div className="space-y-6 mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Title Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>

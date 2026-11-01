@@ -13,9 +13,13 @@ import { AccountDetailsSection } from '../../../components/salesorders/sections/
 import { SalesOrderCharges } from '../../../components/salesorders/SalesOrderCharges';
 import { InvoiceListSection } from '../../../components/invoices/InvoiceListSection';
 import { PickingSlipListSection } from '../../../components/salesorders/PickingSlipListSection';
-import { useComments } from '../../../providers/CommentProvider'
 import { useToast } from '../../../components/ui/toast';
 import { api } from '../../../lib/api-client'
+import { useAccountStatusGate } from '../../../hooks/useAccountStatusGate';
+import { accountPricingFields, savedLinePrice } from '../../../lib/line-pricing';
+import { availableStock } from '../../../lib/available-stock';
+import { useOperations } from '../../../providers/OperationsContext';
+import { CheckCircle2 } from 'lucide-react';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -29,9 +33,15 @@ export default function EditSalesOrderPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
   const { showToast } = useToast();
-  const { setContext } = useComments();
-
+  const { check: accountCheck, modal: accountModal } = useAccountStatusGate();
+  const { createInstallationJob } = useOperations()
+  const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
+  const [newRego, setNewRego] = useState<string>('');
+  const [newFleet, setNewFleet] = useState<string>('');
+  const [newLocation, setNewLocation] = useState<string>('');
+  const [isJobCreated, setIsJobCreated] = useState(false)
   const [loading, setLoading] = useState(true);
+  const [orderRequired, setOrderRequired] = useState(false);
   const loadedRef = useRef(false);
 
   const [orderMeta, setOrderMeta] = useState<{ id: string; orderNo: string } | null>(null);
@@ -100,6 +110,10 @@ export default function EditSalesOrderPage() {
   };
 
   const handleCreateInvoice = async () => {
+    if (orderRequired && !String(form.customerPO ?? '').trim()) {
+      showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+      return;
+    }
     setCreatingInvoice(true);
     try {
       router.push(`/invoices/new?salesOrderId=${id}`);
@@ -186,7 +200,12 @@ export default function EditSalesOrderPage() {
       const data = res.data?.data ?? res.data;
 
       setOrderMeta({ id: data.id, orderNo: data.orderNumber });
+      setOrderRequired(!!data.customer?.orderRequired);
       setFromQuotation(data.fromQuotation ? { id: data.fromQuotation.id, quoteNumber: data.fromQuotation.quoteNumber } : null);
+
+      if (data.InstallationJob?.length > 0) {
+        setIsJobCreated(true)
+      }
 
       setForm({
         customerId: data.customerId,
@@ -234,25 +253,40 @@ export default function EditSalesOrderPage() {
       if (data.customerId) {
         try {
           const custRes = await api.get(`/customers/${data.customerId}`);
-          setSelectedCustomer(custRes.data?.data ?? custRes.data);
+          const customer = custRes.data?.data ?? custRes.data;
+          setSelectedCustomer(customer);
+          const pricing = accountPricingFields(customer);
+          update('gstExempt', pricing.gstExempt);
+          update('fmPriceLevel', pricing.fmPriceLevel);
+          update('fmPriceFactor', pricing.fmPriceFactor);
+          await accountCheck(customer?.id, customer?.status, 'sales-order');
         } catch { }
       }
 
-      setItems(data.items.map((i: any) => ({
-        id: i.id,
-        itemId: i.productId,
-        description: i.description,
-        qty: Number(i.quantity),
-        unitPrice: Number(i.unitPrice),
-        discountPct: Number(i.discountPct) || 0,
-        availableQty: Number(i.product?.onHand ?? null),
-        backOrderQty: Number(i.backOrderQty ?? 0),
-        landedCost: Number(i.landedCost ?? 0),
-        retailPrice: Number(i.retailPrice ?? 0),
-        tradePrice: Number(i.tradePrice ?? 0),
-        salesPartnerPrice: Number(i.salesPartnerPrice ?? 0),
-        agentPrice: Number(i.agentPrice ?? 0)
-      })));
+      setItems(data.items.map((i: any) => {
+        const qty = Number(i.quantity);
+        const avail = availableStock(i.product);
+        const stockBackOrder = avail == null ? 0 : Math.max(0, qty - avail);
+        return {
+          id: i.id,
+          itemId: i.productId,
+          description: i.description,
+          qty,
+          ...savedLinePrice(i),
+          discountPct: Number(i.discountPct) || 0,
+          availableQty: avail,
+          notInvoicedQty: i.notInvoicedQty != null ? Number(i.notInvoicedQty) : qty,
+          backOrderQty: stockBackOrder,
+          backorderQty: stockBackOrder,
+          invoicedQty: Math.max(0, qty - Number(i.notInvoicedQty ?? qty)),
+          landedCost: Number(i.landedCost ?? 0),
+          retailPrice: Number(i.retailPrice ?? 0),
+          tradePrice: Number(i.tradePrice ?? 0),
+          salesPartnerPrice: Number(i.salesPartnerPrice ?? 0),
+          agentPrice: Number(i.agentPrice ?? 0),
+          isFmHardware: i.product.isFmHardware
+        };
+      }));
 
       setLoading(false);
     }
@@ -262,11 +296,6 @@ export default function EditSalesOrderPage() {
     loadPickingSlips();
 
   }, [id]);
-
-  useEffect(() => {
-    if (!orderMeta) return;
-    setContext({ entityType: 'salesOrder', entityId: orderMeta.id, title: `Sales Order #${orderMeta.orderNo}` });
-  }, [orderMeta, setContext]);
 
   const validateAddresses = () => {
     if (!form.customerId) return 'Customer is required';
@@ -296,6 +325,9 @@ export default function EditSalesOrderPage() {
 
     const selectedItems = items.filter(i => i.itemId);
     if (!selectedItems.length) { showToast({ type: 'error', title: 'Validation Error', message: 'At least one item must be selected.' }); return; }
+
+    const allowed = await accountCheck(form.customerId, selectedCustomer?.status, 'sales-order');
+    if (!allowed) return;
     //if (selectedItems.some(i => !i.qty || i.qty == 0)) { showToast({ type: 'error', title: 'Validation Error', message: 'Quantity must be not equal 0.' }); return; }
 
     try {
@@ -345,14 +377,63 @@ export default function EditSalesOrderPage() {
     }
   };
 
+  const handleCreateJob = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    const contact = selectedCustomer.contacts.find(contact => (contact.category as string).toUpperCase() === "ACCOUNT")
+
+    const createdId = await createInstallationJob({
+      jobNumber: `JOB-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+      customerId: form.customerId,
+      assignedTo: "technician",
+      customerName: selectedCustomer.name,
+      customerContact: `${contact?.firstName} ${contact?.lastName}`,
+      customerPhone: contact?.phone,
+      projectId: "",
+      projectName: '',
+      location: newLocation,
+      vehicle: {
+        rego: newRego,
+        fleetNumber: newFleet,
+        vin: "",
+        makeModel: "",
+      },
+      hardware: items.filter(i => i.isFmHardware).map((m, idx) => ({
+        id: m.itemId,
+        model: "",
+        name: m.description,
+        serialNumber: ``,
+        category: "Accessories"
+      })),
+      isScheduled: false,
+      status: 'Not Actioned',
+      notes: 'Freshly raised work order.',
+      salesOrderId: orderMeta.id
+    });
+
+    setShowCreateModal(false);
+    setIsJobCreated(true)
+
+    showToast({ type: 'success', title: 'Success', message: `Installation job created` });
+  };
+
   if (loading) {
     return <AdminShell title="Edit Sales Order"><div className="p-6 text-sm text-slate-500">Loading…</div></AdminShell>;
   }
 
   return (
     <AdminShell title={`Edit Sales Order: ${orderMeta?.orderNo ?? ''}`}>
+      {accountModal}
       <div className="flex justify-end gap-2 mb-1">
         {/* Quote link — shown only if this SO was created from a Quote */}
+
+        {!isJobCreated && <Button
+          type="button"
+          variant="outline"
+          onClick={() => setShowCreateModal(true)}
+        >
+          + Create Job
+        </Button>}
         {fromQuotation && (
           <button
             type="button"
@@ -372,7 +453,11 @@ export default function EditSalesOrderPage() {
             type="button"
             variant="outline"
             disabled={creatingInvoice}
-            onClick={handleCreateInvoice}
+            onClick={async () => {
+              const allowed = await accountCheck(selectedCustomer?.id ?? form.customerId, selectedCustomer?.status, 'invoice');
+              if (!allowed) return;
+              handleCreateInvoice();
+            }}
           >
             + Create Invoice
           </Button>
@@ -389,6 +474,13 @@ export default function EditSalesOrderPage() {
               ? `Continue Picking Slip (${draftPickingSlip.slipNumber})`
               : '+ Create Picking Slip'}
         </Button>
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => window.open(`/salesorders/${id}/print`, '_blank', 'noopener')}
+        >
+          Print
+        </Button>
         <Button variant="outline" type="button" onClick={() => router.push('/salesorders')}>Cancel</Button>
         <Button type="submit" form="sales-order-form">Save</Button>
       </div>
@@ -401,13 +493,28 @@ export default function EditSalesOrderPage() {
               update={(key, val) => {
                 update(key, val);
                 if (key === 'customerId' && val) {
+                  const previousCustomerId = form.customerId;
                   setSelectedCustomer(null);
-                  api.get(`/customers/${val}`).then(res => {
+                  api.get(`/customers/${val}`).then(async res => {
                     const data = res.data?.data ?? res.data;
+                    setSelectedCustomer(data);
+                    const allowed = await accountCheck(data?.id, data?.status, 'sales-order');
+                    if (!allowed) {
+                      update('customerId', previousCustomerId || '');
+                      if (previousCustomerId) {
+                        const previous = await api.get(`/customers/${previousCustomerId}`);
+                        setSelectedCustomer(previous.data?.data ?? previous.data);
+                      }
+                      return;
+                    }
                     setSelectedCustomer(data);
                     if (data.priceLevel) update('priceLevel', data.priceLevel);
                     if (data.paymentTerms) update('paymentTerms', data.paymentTerms);
                     if (data.salesFactor != null) update('salesFactor', data.salesFactor);
+                    const pricing = accountPricingFields(data);
+                    update('gstExempt', pricing.gstExempt);
+                    update('fmPriceLevel', pricing.fmPriceLevel);
+                    update('fmPriceFactor', pricing.fmPriceFactor);
                     const addresses = data.addresses || [];
                     const shippingAddr = addresses.find((a: any) => a.type === 'SHIPPING' && a.isDefault) || addresses.find((a: any) => a.type === 'SHIPPING');
                     if (shippingAddr) {
@@ -455,7 +562,7 @@ export default function EditSalesOrderPage() {
 
         <div className="grid grid-cols-12 gap-4">
           <div className="col-span-12 lg:col-span-10">
-            <SalesOrderItemsSection form={form} items={items} setItems={setItems} freight={form.freight} defaultOpen />
+            <SalesOrderItemsSection form={form} items={items} setItems={setItems} freight={form.freight} useAvailableStock defaultOpen />
             <div className="border rounded p-4 mt-4">
               <h3 className="font-semibold mb-2">Additional Notes</h3>
               <textarea
@@ -467,7 +574,7 @@ export default function EditSalesOrderPage() {
             </div>
           </div>
           <div className="col-span-12 lg:col-span-2">
-            <SalesOrderCharges items={items} freight={form.freight} sundries={form.sundries} labour={form.labour} rounding={form.rounding} otherCharges={form.otherCharges} update={update} />
+            <SalesOrderCharges items={items} freight={form.freight} sundries={form.sundries} labour={form.labour} rounding={form.rounding} otherCharges={form.otherCharges} update={update} gstExempt={!!form.gstExempt} />
           </div>
         </div>
       </form>
@@ -478,6 +585,122 @@ export default function EditSalesOrderPage() {
       {/* ── PICKING SLIPS SECTION ── */}
       <PickingSlipListSection pickingSlips={pickingSlips} mode="edit" />
 
+      {/* New Installation Modal */}
+      {showCreateModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b bg-slate-50">
+              <h3 className="text-base font-bold text-slate-900">Create Installation Job</h3>
+              <button
+                onClick={() => setShowCreateModal(false)}
+                className="text-slate-400 hover:text-slate-600 text-sm"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateJob} className="p-6 overflow-y-auto space-y-4">
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+                  Customer
+                </label>
+                <input
+                  type="text"
+                  value={`${selectedCustomer.customerNumber}-${selectedCustomer.name}`}
+                  disabled
+                  className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono"
+                  required
+                />
+              </div>
+              <div></div>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+                    Vehicle Rego
+                  </label>
+                  <input
+                    type="text"
+                    value={newRego}
+                    onChange={(e) => setNewRego(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-mono"
+                    required
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+                    Fleet Number
+                  </label>
+                  <input
+                    type="text"
+                    value={newFleet}
+                    onChange={(e) => setNewFleet(e.target.value)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
+                  Installation Depot Location
+                </label>
+                <input
+                  type="text"
+                  value={newLocation}
+                  onChange={(e) => setNewLocation(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-1.5 text-xs"
+                  required
+                />
+              </div>
+
+              {/* Hardware Selection (Demonstrating requirement #1 & #6) */}
+              <div>
+                <label className="block text-xs font-bold uppercase text-slate-700 mb-1.5">
+                  Select Hardware Components (Auto-attaches Checklists)
+                </label>
+                <div className="grid grid-cols-2 gap-2">
+                  {items.filter(i => i.isFmHardware).map((model) => {
+                    const isSelected = true
+                    return (
+                      <button
+                        type="button"
+                        key={model.itemId}
+                        className={`p-2 rounded-xl text-xs font-semibold border text-left transition-all flex items-center justify-between ${isSelected
+                          ? 'bg-blue-50 border-blue-500 text-blue-900'
+                          : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                          }`}
+                      >
+                        <span>{model.description}</span>
+                        {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Selecting hardware will generate the combined installation checklist sections.
+                </p>
+              </div>
+
+              <div className="flex justify-end gap-2.5 pt-3 border-t">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateModal(false)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-100 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={items.filter(i => i.isFmHardware).length === 0}
+                  className="px-5 py-2 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 rounded-xl shadow-xs disabled:opacity-50"
+                >
+                  Create & Generate Checklist
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </AdminShell>
   );
 }

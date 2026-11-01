@@ -57,7 +57,7 @@
 }
 
   /* ---------------- FORMS ---------------- */
-  input,
+  input:not([type='radio']):not([type='checkbox']):not([type='file']):not([type='color']):not([type='range']),
   textarea,
   select {
     font-family: var(--font-body);
@@ -65,6 +65,18 @@
            bg-white px-3 text-sm text-slate-900
            placeholder:text-slate-400
 
+  }
+
+  input[type='radio'],
+  input[type='checkbox'] {
+    width: 0.875rem !important;
+    height: 0.875rem !important;
+    min-width: 0.875rem !important;
+    max-width: 0.875rem !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    flex-shrink: 0 !important;
+    accent-color: #00b0b3;
   }
 
   input[disabled],
@@ -178,6 +190,31 @@
 @layer utilities {
   .text-muted {
     @apply text-slate-500;
+  }
+
+  /* Thin scrollbar — hidden until hover (Job Book kanban columns) */
+  .scrollbar-hover-thin {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .scrollbar-hover-thin:hover,
+  .scrollbar-hover-thin:focus-within {
+    scrollbar-color: rgba(100, 116, 139, 0.55) transparent;
+  }
+  .scrollbar-hover-thin::-webkit-scrollbar {
+    width: 4px;
+    height: 4px;
+  }
+  .scrollbar-hover-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .scrollbar-hover-thin::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 999px;
+  }
+  .scrollbar-hover-thin:hover::-webkit-scrollbar-thumb,
+  .scrollbar-hover-thin:focus-within::-webkit-scrollbar-thumb {
+    background: rgba(100, 116, 139, 0.55);
   }
 }
 

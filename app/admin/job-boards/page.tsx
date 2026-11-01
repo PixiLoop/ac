@@ -10,6 +10,7 @@ import ConfirmModal from '../../../components/ui/ConfirmModal'
 import Link from 'next/link'
 import { useAuth } from '../../../providers/auth-provider'
 import { createPermissionChecker } from '../../../lib/permission'
+import { AuthenticatedPhoto } from '../../../components/job-boards/operations/shared/AuthenticatedPhoto'
 
 export default function JobBoardsPage() {
   const router = useRouter()
@@ -63,7 +64,7 @@ export default function JobBoardsPage() {
   if (!canView) {
     return (
       <AdminShell title="Job Boards">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     )
   }
@@ -118,11 +119,19 @@ export default function JobBoardsPage() {
                 onClick={() => router.push(`/admin/job-boards/${board.id}`)}
                 className="cursor-pointer rounded-xl bg-white shadow-sm hover:shadow-md transition overflow-hidden border"
               >
-                {/* Color Strip */}
-                <div
-                  className="h-24"
-                  style={{ background: board.color || '#d1d5db' }}
-                />
+                {board.backgroundImage ? (
+                  <AuthenticatedPhoto
+                    src={board.backgroundImage}
+                    alt={board.name}
+                    className="h-24 w-full object-cover"
+                    openOnClick={false}
+                  />
+                ) : (
+                  <div
+                    className="h-24"
+                    style={{ background: board.color || '#d1d5db' }}
+                  />
+                )}
 
                 <div className="p-4">
                   <h3 className="font-medium text-sm text-slate-800 truncate">

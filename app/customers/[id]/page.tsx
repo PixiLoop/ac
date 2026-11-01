@@ -14,6 +14,7 @@ import { Select } from '../../../components/ui/select';
 import { FormSection } from '../../../components/forms/FormSection';
 import { AbnLookup } from '../../../components/common/AbnLookup';
 import { fetchDispatchMethodOptions } from '../../../components/customers/forms/CustomerDispatchForm';
+import { MainAccountSelect, type MainAccountOption } from '../../../components/customers/MainAccountSelect';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phoneRegex = /^[0-9+\-\s]{6,20}$/;
@@ -62,6 +63,7 @@ export default function EditCustomerPage({ params }: any) {
     creditHoldReason: '',
     currentBalance: 0,
     accountType: '',
+    parentCustomerId: '',
     paymentTerms: 'DAYS_30',
     priceLevel: 'RETAIL',
     salesFactor: '',
@@ -74,6 +76,8 @@ export default function EditCustomerPage({ params }: any) {
   const [dispatches, setDispatches] = useState<any[]>([]);
 
   const [depots, setDepots] = useState([])
+  const [parentAccount, setParentAccount] = useState<MainAccountOption | null>(null)
+  const [childAccounts, setChildAccounts] = useState<MainAccountOption[]>([])
 
   /* ---------------- Track Unsaved Changes (Dirty State) ---------------- */
 
@@ -142,6 +146,7 @@ export default function EditCustomerPage({ params }: any) {
         creditHoldReason: c.creditHoldReason ?? '',
         currentBalance: c.currentBalance ?? 0,
         accountType: c.accountType ?? '',
+        parentCustomerId: c.parentCustomer?.id ?? '',
         paymentTerms: c.paymentTerms ?? 'DAYS_30',
         priceLevel: c.priceLevel ?? 'RETAIL',
         salesFactor: c.salesFactor?.toString() ?? '',
@@ -157,6 +162,17 @@ export default function EditCustomerPage({ params }: any) {
       setContacts(loadedContacts);
       setAddresses(loadedAddresses);
       setAccount(loadedAccount);
+      setParentAccount(
+        c.parentCustomer
+          ? {
+              id: c.parentCustomer.id,
+              customerNumber: c.parentCustomer.customerNumber,
+              name: c.parentCustomer.name,
+              registeredName: c.parentCustomer.registeredName,
+            }
+          : null,
+      );
+      setChildAccounts(c.childAccounts ?? []);
       setDispatches(loadedDispatches);
       setDepots(loadedDepots);
 
@@ -288,10 +304,32 @@ export default function EditCustomerPage({ params }: any) {
 
   const updateAddress = (index: number, field: string, value: any) => {
     setAddresses(prev => {
-      const updated = [...prev];
+      const updated = prev.map(a => ({ ...a }));
+      const currentType = String(updated[index]?.type || 'SHIPPING');
+
       if (field === 'isDefault' && value === true) {
-        updated.forEach(a => (a.isDefault = false));
+        // One default per address type (e.g. Shipping + Charge can both be default)
+        updated.forEach((a, i) => {
+          if (i !== index && String(a.type || 'SHIPPING') === currentType) {
+            a.isDefault = false;
+          }
+        });
       }
+
+      if (field === 'type') {
+        const nextType = String(value || 'SHIPPING');
+        const wasDefault = !!updated[index].isDefault;
+        updated[index] = { ...updated[index], type: nextType };
+        if (wasDefault) {
+          updated.forEach((a, i) => {
+            if (i !== index && String(a.type || 'SHIPPING') === nextType) {
+              a.isDefault = false;
+            }
+          });
+        }
+        return updated;
+      }
+
       updated[index] = { ...updated[index], [field]: value };
       return updated;
     });
@@ -426,6 +464,10 @@ export default function EditCustomerPage({ params }: any) {
       }
     }
 
+    if (/^depot$/i.test(account.accountType) && !account.parentCustomerId) {
+      return showToast({ type: 'error', title: 'Validation error', message: 'Main Account is required' });
+    }
+
     // 5. Dispatches Validation
     for (let i = 0; i < dispatches.length; i++) {
       const d = dispatches[i];
@@ -489,6 +531,7 @@ export default function EditCustomerPage({ params }: any) {
         api.patch(`/customers/${targetId}/depots`, { depots: cleanedDepots }),
         api.patch(`/customers/${targetId}/payment`, {
           accountType: account.accountType,
+          parentCustomerId: /^depot$/i.test(account.accountType) ? account.parentCustomerId : null,
           paymentTerms: account.paymentTerms,
           priceLevel: account.priceLevel,
           salesFactor: parsedSalesFactor ? Number(parsedSalesFactor) : null,
@@ -819,7 +862,13 @@ export default function EditCustomerPage({ params }: any) {
                   </div>
 
                   <Checkbox
-                    label="Default Address"
+                    label={
+                      addr.type === 'CHARGE'
+                        ? 'Default Charge Address'
+                        : addr.type === 'POSTAL'
+                          ? 'Default Postal Address'
+                          : 'Default Shipping Address'
+                    }
                     checked={!!addr.isDefault}
                     onChange={v => updateAddress(idx, 'isDefault', v)}
                   />
@@ -857,12 +906,31 @@ export default function EditCustomerPage({ params }: any) {
                 label="Account Type"
                 placeholder="Account Type"
                 value={account.accountType}
-                onChange={v => setAccount(f => ({ ...f, accountType: v }))}
+                onChange={v => {
+                  const depot = /^depot$/i.test(v);
+                  setAccount(f => ({
+                    ...f,
+                    accountType: v,
+                    parentCustomerId: depot ? f.parentCustomerId : '',
+                  }));
+                  if (!depot) setParentAccount(null);
+                }}
                 options={[
                   { label: 'Main', value: 'Main' },
                   { label: 'Depot', value: 'Depot' },
                 ]}
               />
+
+              {/^depot$/i.test(account.accountType) && (
+                <MainAccountSelect
+                  value={parentAccount}
+                  excludeId={customerId}
+                  onSelect={selected => {
+                    setParentAccount(selected);
+                    setAccount(f => ({ ...f, parentCustomerId: selected?.id ?? '' }));
+                  }}
+                />
+              )}
 
               <Select
                 label="Payment Method"
@@ -922,6 +990,28 @@ export default function EditCustomerPage({ params }: any) {
                 />
               </div>
             </div>
+
+            {/^main$/i.test(account.accountType) && (
+              <div>
+                <div className="text-sm font-medium text-slate-700 mb-2">Depot Accounts</div>
+                {childAccounts.length === 0 ? (
+                  <p className="text-sm text-slate-500 italic">No depot accounts linked.</p>
+                ) : (
+                  <div className="flex flex-wrap gap-x-4 gap-y-1">
+                    {childAccounts.map(child => (
+                      <button
+                        key={child.id}
+                        type="button"
+                        className="text-sm text-blue-600 hover:underline"
+                        onClick={() => router.push(`/customers/${child.id}`)}
+                      >
+                        {child.customerNumber} – {child.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* <Checkbox
               label="Credit hold"

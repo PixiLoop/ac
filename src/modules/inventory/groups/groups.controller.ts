@@ -60,6 +60,11 @@ export class GroupsController {
     return this.service.bulkUpdateXGroups(body.rows);
   }
 
+  @Get('gst-factor')
+  getGstFactor() {
+    return this.service.getSettings();
+  }
+
   @Get('settings')
   @Permissions('products.managePricing')
   getSettings() {
@@ -71,7 +76,7 @@ export class GroupsController {
   updateSettings(
     @Body() body: {
       roundBelow50?: number; roundBelow100?: number; roundAbove100?: number;
-      priceOffset?: number; minSalesPrice?: number;
+      priceOffset?: number; minSalesPrice?: number; gstFactor?: number;
     },
   ) {
     return this.service.updateSettings(body);

@@ -388,12 +388,14 @@ export class ProductsService {
 
         return this.prisma.product.findMany({
             where: {
+                deletedAt: null,
+                isActive: true,
                 ...(category && { productCategory: category }),
                 ...(search && {
-                    name: {
-                        contains: search,
-                        mode: 'insensitive',
-                    },
+                    OR: [
+                        { name: { contains: search, mode: 'insensitive' } },
+                        { productCode: { contains: search, mode: 'insensitive' } },
+                    ],
                 }),
                 ...(isFmBool !== undefined && { isFmHardware: isFmBool }),
             },
@@ -403,9 +405,48 @@ export class ProductsService {
         })
     }
 
+    async findByCode(code: string) {
+        const productCode = code.trim();
+        if (!productCode) return null;
+        return this.prisma.product.findFirst({
+            where: { productCode: { equals: productCode, mode: 'insensitive' }, isActive: true },
+            select: { id: true, productCode: true, name: true },
+        });
+    }
+
     async getById(id: string) {
-        return this.prisma.product.findUnique({
+        const product = await this.prisma.product.findUnique({
             where: { id },
-        })
+        });
+        if (!product) return null;
+
+        // Live committed (open SO allocations + open FM preinstalls) so Available
+        // matches Inventory and is not stuck on a stale denormalized counter.
+        const [sales, preinstalls] = await Promise.all([
+            this.prisma.salesOrderItem.aggregate({
+                where: {
+                    productId: id,
+                    deletedAt: null,
+                    salesOrder: { deletedAt: null, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+                },
+                _sum: { allocatedQty: true },
+            }),
+            this.prisma.fMPreinstallItem.aggregate({
+                where: {
+                    productId: id,
+                    deletedAt: null,
+                    preinstall: { deletedAt: null, status: { notIn: ['INVOICED', 'COMPLETED'] } },
+                },
+                _sum: { quantity: true },
+            }),
+        ]);
+
+        const committed =
+            Number(sales._sum.allocatedQty ?? 0) + Number(preinstalls._sum.quantity ?? 0);
+
+        return {
+            ...product,
+            committed,
+        };
     }
 }

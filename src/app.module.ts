@@ -31,11 +31,14 @@ import { TechniciansModule } from './modules/technicians/technicians.module';
 import { TemplatesModule } from './modules/templates/templates.module';
 import { FMSubscriptionReportsModule } from './modules/fm-subscription-reports/fm-subscription-reports.module';
 import { OrganizationsModule } from './modules/organizations/organizations.module';
+import { JobBookEntriesModule } from './modules/job-book-entries/job-book-entries.module';
+import { ContractorModule } from './modules/contractor/contractor.module'
+import { SubContractorModule } from './modules/subcontractor/subcontractor.module'
 
-@Module({ 
+@Module({
   imports: [
-    ConfigModule.forRoot({ 
-      isGlobal: true, 
+    ConfigModule.forRoot({
+      isGlobal: true,
       load: [configuration],
       envFilePath: path.resolve(__dirname, '../../../.env'),
     }),
@@ -65,7 +68,10 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
     InstallationsModule,
     TechniciansModule,
     TemplatesModule,
-    FMSubscriptionReportsModule
+    FMSubscriptionReportsModule,
+    JobBookEntriesModule,
+    ContractorModule,
+    SubContractorModule
   ],
   controllers: [],
   providers: [
@@ -75,4 +81,4 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
     }
   ],
 })
-export class AppModule {}
+export class AppModule { }

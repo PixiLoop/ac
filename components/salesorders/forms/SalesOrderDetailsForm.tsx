@@ -197,7 +197,7 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
       />
 
       <Input
-        label="Customer PO"
+        label="Customer PO (Order Number)"
         value={value.customerPO}
         onChange={e => update('customerPO', e.target.value)}
         disabled={readOnly}

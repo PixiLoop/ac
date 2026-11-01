@@ -7,6 +7,7 @@ import { SearchSelect } from '../../../components/ui/SearchSelect'
 import { FormSection } from '../../../components/forms/FormSection'
 import { api } from '../../../lib/api-client'
 import { fetchDispatchMethodOptions } from '../../customers/forms/CustomerDispatchForm'
+import { accountPricingFields } from '../../../lib/line-pricing'
 
 const PRICE_LEVEL_OPTIONS = [
     { label: 'Retail', value: 'RETAIL' },
@@ -86,6 +87,11 @@ export function QuotationDetailsSection({ value, update, readOnly = false, setFr
                 if (!value.abnNumber && customer?.abn) {
                     update('abnNumber', customer.abn);
                 }
+
+                const pricing = accountPricingFields(customer);
+                update('gstExempt', pricing.gstExempt);
+                update('fmPriceLevel', pricing.fmPriceLevel);
+                update('fmPriceFactor', pricing.fmPriceFactor);
             })
             .catch(() => setDispatches([]));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,7 +140,10 @@ export function QuotationDetailsSection({ value, update, readOnly = false, setFr
         if (customer.priceLevel) update('priceLevel', customer.priceLevel)
         if (customer.paymentTerms) update('paymentTerms', customer.paymentTerms)
         if (customer.salesFactor != null) update('salesFactor', Number(customer.salesFactor));
-        update('gstExempt', customer.gstExempt || false)
+        const pricing = accountPricingFields(customer);
+        update('gstExempt', pricing.gstExempt);
+        update('fmPriceLevel', pricing.fmPriceLevel);
+        update('fmPriceFactor', pricing.fmPriceFactor);
 
         const shipping = customer.addresses?.find(
             (a: any) => a.type === 'SHIPPING'

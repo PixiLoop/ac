@@ -145,7 +145,9 @@ export function AdminShell({ title, children, showTableDensity }: any) {
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [adminMenuOpen, setAdminMenuOpen] = useState(false);
   const [masterDataMenuOpen, setMasterDataMenuOpen] = useState(false);
-  const [jobBoardMenuOpen, setJobBoardMenuOpen] = useState(false)
+  const isJobBookNav =
+    !!pathname?.startsWith('/job-boards') || !!pathname?.startsWith('/admin/job-boards');
+  const [jobBoardMenuOpen, setJobBoardMenuOpen] = useState(isJobBookNav);
   const help =
     pathname?.startsWith('/customers') ? HELP_CONTENT.customers
       : pathname?.startsWith('/profile') ? HELP_CONTENT.profile
@@ -431,44 +433,92 @@ export function AdminShell({ title, children, showTableDensity }: any) {
             </Link>
           )}
           {canViewJobs && (
-            <Link key="/admin/job-boards" href="/admin/job-boards" className={cn('flex w-full items-center gap-2 px-2 py-2 text-[11px] rounded', pathname.startsWith('/admin/job-boards') && 'bg-slate-100', collapsed && 'justify-center')}>
-              <Briefcase className="h-4 w-4" />{!collapsed && 'Job Book'}
-            </Link>
-          )}
-
-          <div className="mt-1">
-            <button
-              onClick={() => collapsed ? openSidebar() : setJobBoardMenuOpen(!jobBoardMenuOpen)}
-              className={cn("flex w-full items-center gap-2 px-2 py-2 text-[11px]", collapsed && "justify-center")}
-            >
-              <Boxes className="h-4 w-4" />
-              {!collapsed && (
-                <>
-                  <span className="flex-1 text-left">Job Book</span>
-                  {jobBoardMenuOpen ? <ChevronDown /> : <ChevronRight />}
-                </>
+            <div className="mt-1">
+              <button
+                onClick={() => (collapsed ? openSidebar() : setJobBoardMenuOpen(!jobBoardMenuOpen))}
+                className={cn(
+                  'flex w-full items-center gap-2 px-2 py-2 text-[11px] rounded transition-colors',
+                  (pathname.startsWith('/job-boards') || pathname.startsWith('/admin/job-boards')) && 'bg-slate-100 font-semibold text-slate-900',
+                  collapsed && 'justify-center'
+                )}
+              >
+                <Briefcase className="h-4 w-4" />
+                {!collapsed && (
+                  <>
+                    <span className="flex-1 text-left">Job Book</span>
+                    {jobBoardMenuOpen ? <ChevronDown /> : <ChevronRight />}
+                  </>
+                )}
+              </button>
+              {!collapsed && jobBoardMenuOpen && (
+                <div className="ml-6 mt-1 space-y-1">
+                  <Link
+                    href="/job-boards/installations"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/installations') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <Wrench className="h-3.5 w-3.5" />Installation Jobs
+                  </Link>
+                  <Link
+                    href="/job-boards/dashboard"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/dashboard') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <LayoutDashboard className="h-3.5 w-3.5" />Operations Dashboard
+                  </Link>
+                  <Link
+                    href="/admin/job-boards"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/admin/job-boards') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <Boxes className="h-3.5 w-3.5" />Workshop Kanban Board
+                  </Link>
+                  <Link
+                    href="/job-boards/calendar"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/calendar') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <Calendar className="h-3.5 w-3.5" />Job Calendar
+                  </Link>
+                  <Link
+                    href="/job-boards/technicians"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/technicians') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <Users className="h-3.5 w-3.5" />Technicians / Installers
+                  </Link>
+                  <Link
+                    href="/job-boards/checklists"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/checklists') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <CheckSquare className="h-3.5 w-3.5" />Checklist Templates
+                  </Link>
+                  <Link
+                    href="/job-boards/job-book-entry"
+                    className={cn(
+                      'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors',
+                      pathname.startsWith('/job-boards/job-book-entry') && 'bg-slate-200/70 font-semibold text-slate-900'
+                    )}
+                  >
+                    <ClipboardList className="h-3.5 w-3.5" />Job Book Entry
+                  </Link>
+                </div>
               )}
-            </button>
-            {!collapsed && jobBoardMenuOpen && (
-              <div className="ml-6 mt-1 space-y-1">
-                <Link href="/job-boards/dashboard" className={cn("flex items-center gap-2 px-2 py-1.5 text-[11px]", pathname.startsWith('/job-boards/dashboard') && "bg-slate-100 rounded")}>
-                  <LayoutDashboard className="h-3.5 w-3.5" />Operations Dashboard
-                </Link>
-                <Link href="/job-boards/installations" className={cn("flex items-center gap-2 px-2 py-1.5 text-[11px]", pathname.startsWith('/job-boards/installations') && "bg-slate-100 rounded")}>
-                  <Wrench className="h-3.5 w-3.5" />Installation Jobs
-                </Link>
-                <Link href="/job-boards/calendar" className={cn("flex items-center gap-2 px-2 py-1.5 text-[11px]", pathname.startsWith('/job-boards/calendar') && "bg-slate-100 rounded")}>
-                  <Calendar className="h-3.5 w-3.5" />Operations Calendar
-                </Link>
-                <Link href="/job-boards/technicians" className={cn("flex items-center gap-2 px-2 py-1.5 text-[11px]", pathname.startsWith('/job-boards/technicians') && "bg-slate-100 rounded")}>
-                  <Users className="h-3.5 w-3.5" />Technicians / Installers
-                </Link>
-                <Link href="/job-boards/checklists" className={cn("flex items-center gap-2 px-2 py-1.5 text-[11px]", pathname.startsWith('/job-boards/checklists') && "bg-slate-100 rounded")}>
-                  <CheckSquare className="h-3.5 w-3.5" />Checklist Templates
-                </Link>
-              </div>
-            )}
-          </div>
+            </div>
+          )}
 
 
           {/* MASTER DATA */}
@@ -585,11 +635,14 @@ export function AdminShell({ title, children, showTableDensity }: any) {
       {/* ================= MAIN ================= */}
       <TableDensityProvider>
         <div
-          className="flex flex-col h-full"
-          style={{ marginLeft: collapsed ? 72 : 256 }}
+          className="flex flex-col h-full min-w-0 w-full"
+          style={{
+            marginLeft: collapsed ? 72 : 256,
+            width: `calc(100% - ${collapsed ? 72 : 256}px)`,
+          }}
         >
           {/* HEADER */}
-          <header className="fixed top-0 right-0 z-30 h-14 border-b bg-white flex items-center justify-between px-6"
+          <header className="fixed top-0 right-0 z-30 h-14 border-b bg-white flex items-center justify-between px-4 sm:px-5"
             style={{ left: collapsed ? 72 : 256 }}
           >
             <h1 className="text-[15px] font-semibold">{title}</h1>
@@ -610,8 +663,17 @@ export function AdminShell({ title, children, showTableDensity }: any) {
             </div>
           </header>
 
-          {/* CONTENT */}
-          <main className="flex-1 overflow-y-auto px-6 py-4 pt-16">
+          {/* CONTENT — Job Book uses full width (no centered max-width gutters) */}
+          <main
+            className={cn(
+              'flex-1 py-4 pt-16 flex flex-col min-h-0 w-full max-w-none min-w-0',
+              isJobBookNav ? 'px-3 sm:px-4' : 'px-6',
+              pathname.startsWith('/job-boards/calendar') ||
+              pathname.startsWith('/job-boards/dashboard')
+                ? 'overflow-hidden'
+                : 'overflow-y-auto',
+            )}
+          >
             {children}
           </main>
         </div>

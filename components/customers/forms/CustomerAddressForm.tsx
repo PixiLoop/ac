@@ -130,15 +130,15 @@ export function CustomerAddressForm({
       return;
     }
 
-    // normalize default per type
+    // One default per address type — keep other types' defaults
     const updated = existingAddresses
       .filter(a => a.id !== form.id)
       .map(a => ({
         ...a,
-        isDefault: false
-        // form.isDefault && a.type === form.type  //Commented this for default address issue with type
-        //   ? false
-        //   : a.isDefault,
+        isDefault:
+          form.isDefault && a.type === form.type
+            ? false
+            : a.isDefault,
       }));
 
     updated.push(form);
@@ -239,7 +239,13 @@ export function CustomerAddressForm({
       </div>
 
       <Checkbox
-        label="Default Address"
+        label={
+          form.type === 'CHARGE'
+            ? 'Default Charge Address'
+            : form.type === 'POSTAL'
+              ? 'Default Postal Address'
+              : 'Default Shipping Address'
+        }
         checked={form.isDefault}
         onChange={v =>
           setForm(f => ({

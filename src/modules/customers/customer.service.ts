@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../prisma/prisma.service'
 import { CustomerRules } from './validators/customer.rules'
 import {
@@ -14,6 +14,7 @@ import { Prisma, CustomerStatus, AddressType } from '@prisma/client';
 
 const PAYMENT_FIELDS = [
   'accountType',
+  'parentCustomerId',
   'paymentTerms',
   'priceLevel',
   'salesFactor',
@@ -93,12 +94,33 @@ export class CustomerService {
           select: {
             id: true,
             fmWebNumber: true,
+            priceLevel: true,
+            priceFactor: true,
             FMCustomerOrgIds: {
               select: {
                 organizations: true
               }
             }
           },
+        },
+        parentCustomer: {
+          select: {
+            id: true,
+            customerNumber: true,
+            name: true,
+            registeredName: true,
+            accountType: true,
+          },
+        },
+        childAccounts: {
+          where: { deletedAt: null },
+          select: {
+            id: true,
+            customerNumber: true,
+            name: true,
+            accountType: true,
+          },
+          orderBy: { name: 'asc' },
         },
 
         invoices: {
@@ -157,7 +179,7 @@ export class CustomerService {
   }
 
   async updatePayment(id: string, dto: UpdateCustomerPaymentDto) {
-    await this.getById(id)
+    const customer = await this.getById(id)
 
     CustomerRules.validatePaymentUpdate(
       dto.paymentTerms,
@@ -165,9 +187,44 @@ export class CustomerService {
       dto.gstExempt,
     )
 
+    const data = sanitizeUpdate(dto, PAYMENT_FIELDS)
+    const nextType = String(
+      'accountType' in dto ? (data.accountType ?? '') : (customer.accountType ?? ''),
+    )
+    const isMain = /^main$/i.test(nextType)
+    const isDepot = /^depot$/i.test(nextType)
+
+    if (!isMain) {
+      const linked = await this.prisma.customer.count({
+        where: { parentCustomerId: id, deletedAt: null },
+      })
+      if (linked > 0) {
+        throw new BadRequestException('This account is the main account for depot accounts')
+      }
+    }
+
+    if (isDepot) {
+      const parentId = 'parentCustomerId' in dto
+        ? data.parentCustomerId
+        : customer.parentCustomerId
+      if (!parentId || parentId === id) {
+        throw new BadRequestException('Main Account is required')
+      }
+      const parent = await this.prisma.customer.findFirst({
+        where: { id: parentId, deletedAt: null },
+        select: { id: true, accountType: true },
+      })
+      if (!parent || !/^main$/i.test(parent.accountType ?? '')) {
+        throw new BadRequestException('Main Account is required')
+      }
+      data.parentCustomerId = parent.id
+    } else if ('accountType' in dto) {
+      data.parentCustomerId = null
+    }
+
     return this.prisma.customer.update({
       where: { id },
-      data: sanitizeUpdate(dto, PAYMENT_FIELDS),
+      data,
     })
   }
 
@@ -230,49 +287,40 @@ export class CustomerService {
       });
     }
 
-    /* 2️⃣ Clear ALL defaults globally */
+    // One default per address type (Shipping + Charge can both be default)
+    const claimedDefaultTypes = new Set<string>();
+    const normalized = dto.addresses.map(a => {
+      const type = a.type ?? 'SHIPPING';
+      let isDefault = !!a.isDefault;
+      if (isDefault) {
+        if (claimedDefaultTypes.has(type)) isDefault = false;
+        else claimedDefaultTypes.add(type);
+      }
+      return { ...a, type, isDefault };
+    });
+
     await this.prisma.customerAddress.updateMany({
       where: { customerId },
       data: { isDefault: false },
     });
 
-    /* 3️⃣ Find selected default */
-    const selectedDefault = dto.addresses.find(a => a.isDefault);
-
-    /* 4️⃣ Upsert properly */
-    for (const a of dto.addresses) {
-      if (a.id) {
-        // existing row
+    for (const a of normalized) {
+      const { id, ...rest } = a as any;
+      if (id) {
         await this.prisma.customerAddress.update({
-          where: { id: a.id },
+          where: { id },
           data: {
-            ...a,
-            isDefault: selectedDefault?.id === a.id,
+            ...rest,
+            isDefault: !!a.isDefault,
           },
         });
       } else {
-        // new row
         await this.prisma.customerAddress.create({
           data: {
-            ...a,
+            ...rest,
             customerId,
-            isDefault: selectedDefault ? false : false,
+            isDefault: !!a.isDefault,
           },
-        });
-      }
-    }
-
-    /* 5️⃣ If default is NEW row, update it after creation */
-    if (selectedDefault && !selectedDefault.id) {
-      const newest = await this.prisma.customerAddress.findFirst({
-        where: { customerId },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      if (newest) {
-        await this.prisma.customerAddress.update({
-          where: { id: newest.id },
-          data: { isDefault: true },
         });
       }
     }
@@ -507,6 +555,25 @@ export class CustomerService {
     return this.getById(customerId)
   }
 
+  async findByNumber(customerNumber: string) {
+    const number = customerNumber.trim()
+    if (!number) throw new NotFoundException('Invalid Customer Number')
+
+    const customer = await this.prisma.customer.findFirst({
+      where: {
+        deletedAt: null,
+        customerNumber: { equals: number, mode: 'insensitive' },
+      },
+      include: {
+        fmCustomer: {
+          select: { id: true, fleetName: true, fmWebNumber: true },
+        },
+      },
+    })
+    if (!customer) throw new NotFoundException('Invalid Customer Number')
+    return customer
+  }
+
 
   //List API
   async list(params: {
@@ -516,10 +583,18 @@ export class CustomerService {
     sortKey?: string;
     sortDir?: 'asc' | 'desc';
     filters?: Record<string, string>;
+    accountType?: string;
   }) {
     const where: Prisma.CustomerWhereInput = {
       deletedAt: null,
     };
+
+    if (params.accountType?.trim()) {
+      where.accountType = {
+        equals: params.accountType.trim(),
+        mode: 'insensitive',
+      };
+    }
 
     if (params.search?.trim()) {
       const term = params.search.trim();

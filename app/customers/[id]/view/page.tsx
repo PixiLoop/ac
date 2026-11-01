@@ -339,6 +339,44 @@ export default function CustomerViewPage({ params }: any) {
           </Section>
 
           <Section title="Account Details">
+            <Info label="Account Type" value={customer.accountType} />
+            {/^depot$/i.test(customer.accountType ?? '') && (
+              <div>
+                <div className="text-xs text-slate-500">Main Account</div>
+                {customer.parentCustomer ? (
+                  <button
+                    type="button"
+                    onClick={() => router.push(`/customers/${customer.parentCustomer.id}/view`)}
+                    className="mt-0.5 font-medium text-blue-600 hover:underline"
+                  >
+                    {customer.parentCustomer.customerNumber} – {customer.parentCustomer.name}
+                  </button>
+                ) : (
+                  <div className="mt-0.5 font-medium text-slate-900">-</div>
+                )}
+              </div>
+            )}
+            {/^main$/i.test(customer.accountType ?? '') && (
+              <div className="col-span-2">
+                <div className="text-xs text-slate-500">Depot Accounts</div>
+                {customer.childAccounts?.length ? (
+                  <div className="mt-0.5 flex flex-wrap gap-x-4 gap-y-1">
+                    {customer.childAccounts.map((child: any) => (
+                      <button
+                        key={child.id}
+                        type="button"
+                        onClick={() => router.push(`/customers/${child.id}/view`)}
+                        className="font-medium text-blue-600 hover:underline"
+                      >
+                        {child.customerNumber} – {child.name}
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="mt-0.5 font-medium text-slate-900">-</div>
+                )}
+              </div>
+            )}
             <Info
               label="Credit Limit"
               value={

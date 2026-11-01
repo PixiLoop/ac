@@ -50,6 +50,19 @@ export class FMSubscriptionReportsService {
     }
 
     async create(dto: CreateSubscriptionReportDto) {
+        if (!dto.invoiceBy) {
+            const fm = await this.prisma.fMCustomer.findUnique({
+                where: { id: dto.fmCustomerId },
+                select: { invoiceBy: true },
+            });
+            const saved = fm?.invoiceBy === 'ALL_UNITS' ? 'All_Units'
+                : fm?.invoiceBy === 'FM_SERVICE' ? 'FM_Service'
+                : fm?.invoiceBy;
+            if (saved === 'All_Units' || saved === 'Depot' || saved === 'FM_Service' || saved === 'Option') {
+                dto.invoiceBy = saved;
+            }
+        }
+        await this.assertChargeRules(dto.fmCustomerId, dto);
         const subscriptionNumber = await this.generateSubscriptionNumber();
         return this.prisma.fMSubscriptionReport.create({
             data: {
@@ -66,12 +79,94 @@ export class FMSubscriptionReportsService {
         if (report.invoices.length > 0) {
             return null
         }
+        await this.assertChargeRules(report.fmCustomerId, { ...report, ...dto }, id);
         return this.prisma.fMSubscriptionReport.update({ where: { id }, data: dto });
     }
 
     async delete(id: string) {
         await this.findById(id);
         return this.prisma.fMSubscriptionReport.delete({ where: { id } });
+    }
+
+    private chargeKeys(report: any, customer: any): string[] {
+        const services = (customer.services ?? [])
+            .map((row: any) => row.product?.productCode)
+            .filter(Boolean)
+            .map((code: string) => `svc:${code}`);
+        const options = (customer.options ?? [])
+            .filter((row: any) => row.enabled)
+            .map((row: any) => row.option?.code)
+            .filter(Boolean)
+            .map((code: string) => `opt:${code}`);
+        const orgs = (customer.FMCustomerOrgIds ?? [])
+            .map((row: any) => row.organizations?.code)
+            .filter(Boolean)
+            .map((code: string) => `org:${code}`);
+        const by = report.invoiceBy || 'All_Units';
+        if (by === 'FM_Service') return report.filterServiceCode ? [`svc:${report.filterServiceCode}`] : [];
+        if (by === 'Depot') {
+            const depot = report.filterDepot || '*';
+            return services.map((key: string) => `${key}@${depot}`);
+        }
+        if (by === 'Option') return [`opt:${report.reportType}`];
+        if (report.reportType === 'SERVICE') return [...services, ...orgs];
+        if (report.reportType === 'SERVICE_OPTION') return [...services, ...options, ...orgs];
+        return [`opt:${report.reportType}`];
+    }
+
+    private keysOverlap(left: string[], right: string[]) {
+        for (const a of left) {
+            for (const b of right) {
+                const aBase = a.split('@')[0];
+                const bBase = b.split('@')[0];
+                if (aBase !== bBase) continue;
+                const aDepot = a.includes('@') ? a.split('@')[1] : '*';
+                const bDepot = b.includes('@') ? b.split('@')[1] : '*';
+                if (aDepot === '*' || bDepot === '*' || aDepot === bDepot) return true;
+            }
+        }
+        return false;
+    }
+
+    private async assertChargeRules(fmCustomerId: string, report: any, ignoreId?: string, requireFullCoverage = false) {
+        const customer = await this.prisma.fMCustomer.findUnique({
+            where: { id: fmCustomerId },
+            include: {
+                customer: { select: { id: true, deletedAt: true, orderRequired: true } },
+                services: { include: { product: { select: { productCode: true } } } },
+                options: { include: { option: true } },
+                FMCustomerOrgIds: { include: { organizations: true } },
+            },
+        });
+        if (!customer?.customer || customer.customer.deletedAt) {
+            throw new BadRequestException('Invalid Customer Number');
+        }
+        if (customer.customer.orderRequired && !String(report.orderNumber ?? '').trim()) {
+            throw new BadRequestException('Order number is required');
+        }
+
+        const others = await this.prisma.fMSubscriptionReport.findMany({
+            where: { fmCustomerId, isActive: true, ...(ignoreId ? { id: { not: ignoreId } } : {}) },
+        });
+        const mine = this.chargeKeys(report, customer);
+        if (others.some(other => this.keysOverlap(mine, this.chargeKeys(other, customer)))) {
+            throw new BadRequestException('This charge is already on a subscription');
+        }
+        if (!requireFullCoverage) return;
+
+        const required = [
+            ...(customer.services ?? []).map(row => `svc:${row.product?.productCode}`).filter(key => !key.endsWith('undefined')),
+            ...(customer.options ?? []).filter(row => row.enabled).map(row => `opt:${row.option?.code}`).filter(key => !key.endsWith('undefined')),
+            ...(customer.FMCustomerOrgIds ?? []).map(row => `org:${row.organizations?.code}`).filter(key => !key.endsWith('undefined')),
+        ];
+        const covered = [report, ...others];
+        const incomplete = required.some(key => {
+            const hits = covered.filter(row => this.keysOverlap([key], this.chargeKeys(row, customer))).length;
+            return hits !== 1;
+        });
+        if (incomplete) {
+            throw new BadRequestException('Every Service, Option and Organisation Option must be on one subscription');
+        }
     }
 
     private async computeLineItems(report: any) {
@@ -227,6 +322,7 @@ export class FMSubscriptionReportsService {
 
     async generate(id: string) {
         const report = await this.findById(id);
+        await this.assertChargeRules(report.fmCustomerId, report, id, true);
         if (report.reportTarget !== 'Invoice') {
             throw new BadRequestException('This report is Excel-target and cannot generate an invoice — use Export instead');
         }

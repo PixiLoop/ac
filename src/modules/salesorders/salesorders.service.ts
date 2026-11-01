@@ -8,6 +8,9 @@ import {
 } from '@prisma/client';
 
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertAccountStatus } from '../../common/account-status';
+import { resolveGstRate } from '../../common/gst';
+import { notInvoicedBySalesOrderLine } from '../../common/not-invoiced';
 
 import { ListSalesOrdersDto } from './dto/list-salesorders.dto';
 import { CreateSalesOrderDto } from './dto/create-salesorder.dto';
@@ -185,10 +188,13 @@ export class SalesOrdersService {
                 id: true,
                 productCode: true,
                 onHand: true,
+                committed: true,
+                isFmHardware: true,
               },
             },
           },
         },
+        InstallationJob: true,
         // Quote this SO was created from, if any — used to render a
         // "back to quote" link on the Sales Order screen.
         fromQuotation: {
@@ -197,14 +203,69 @@ export class SalesOrdersService {
         customer: {
           select: {
             name: true,
-            customerNumber: true
+            customerNumber: true,
+            orderRequired: true,
           }
         }
       },
     });
 
     if (!order) throw new NotFoundException('Sales order not found');
-    return order;
+    const { byLine } = await notInvoicedBySalesOrderLine(this.prisma, id);
+
+    const productIds = order.items
+  .map((i) => i.productId)
+  .filter((id, index, self) => id && self.indexOf(id) === index) as string[];
+    const committedByProduct = new Map<string, number>();
+    if (productIds.length > 0) {
+      const [sales, preinstalls] = await Promise.all([
+        this.prisma.salesOrderItem.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: productIds },
+            deletedAt: null,
+            salesOrder: { deletedAt: null, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+          },
+          _sum: { allocatedQty: true },
+        }),
+        this.prisma.fMPreinstallItem.groupBy({
+          by: ['productId'],
+          where: {
+            productId: { in: productIds },
+            deletedAt: null,
+            preinstall: { deletedAt: null, status: { notIn: ['INVOICED', 'COMPLETED'] } },
+          },
+          _sum: { quantity: true },
+        }),
+      ]);
+      for (const pid of productIds) committedByProduct.set(pid, 0);
+      for (const row of sales) {
+        committedByProduct.set(
+          row.productId,
+          (committedByProduct.get(row.productId) ?? 0) + Number(row._sum.allocatedQty ?? 0),
+        );
+      }
+      for (const row of preinstalls) {
+        committedByProduct.set(
+          row.productId,
+          (committedByProduct.get(row.productId) ?? 0) + Number(row._sum.quantity ?? 0),
+        );
+      }
+    }
+
+    return {
+      ...order,
+      items: order.items.map((item) => ({
+        ...item,
+        notInvoicedQty: byLine.get(item.id) ?? Number(item.quantity),
+        product: item.product
+          ? {
+              ...item.product,
+              committed: committedByProduct.get(item.productId) ?? 0,
+            }
+          : item.product,
+      })),
+    };
   }
 
 
@@ -227,6 +288,7 @@ export class SalesOrdersService {
   }
 
   async create(dto: CreateSalesOrderDto) {
+    await assertAccountStatus(this.prisma, dto.customerId, 'sales-order');
     this.assertForwardHasActionDate(dto.orderType, dto.actionDate);
     const orderNumber = await this.generateOrderNumber();
 
@@ -296,6 +358,7 @@ export class SalesOrdersService {
 
   async update(id: string, dto: UpdateSalesOrderDto) {
     const existing = await this.findById(id);
+    await assertAccountStatus(this.prisma, existing.customerId, 'sales-order');
     const orderType = dto.orderType ?? existing.orderType;
     const actionDate = dto.actionDate !== undefined ? dto.actionDate : existing.actionDate;
     this.assertForwardHasActionDate(orderType, actionDate);
@@ -406,10 +469,7 @@ export class SalesOrdersService {
       tradePrice: Number(i.tradePrice ?? 0),
       salesPartnerPrice: Number(i.salesPartnerPrice ?? 0),
       agentPrice: Number(i.agentPrice ?? 0),
-      lineTotal:
-        Number(i.quantity) *
-        Number(i.unitPrice) *
-        (1 - Number(i.discountPct ?? 0) / 100),
+      lineTotal: Number(i.quantity) * Number(i.unitPrice),
     }));
 
     const keepIds = cleanItems
@@ -459,23 +519,28 @@ export class SalesOrdersService {
       for (const item of cleanItems) {
         const product = await tx.product.findUnique({
           where: { id: item.productId },
-          select: { onHand: true },
+          select: { onHand: true, committed: true },
         });
 
-        const onHand = Number(product?.onHand ?? 0);
-        const backOrderQty = Math.max(0, item.quantity - onHand);
-        const allocatedQty = item.quantity - backOrderQty;
-
-        let prevBackOrderQty = 0;
+        // Match UI Available: free-to-promise (never below zero).
+        // When editing a line, add back its previous allocation so it is not double-counted.
         let prevAllocatedQty = 0;
+        let prevBackOrderQty = 0;
         if (item.id) {
           const existing = await tx.salesOrderItem.findUnique({
             where: { id: item.id },
-            select: { backOrderQty: true, allocatedQty: true, },
+            select: { backOrderQty: true, allocatedQty: true },
           });
           prevBackOrderQty = Number(existing?.backOrderQty ?? 0);
           prevAllocatedQty = Number(existing?.allocatedQty ?? 0);
         }
+
+        const available = Math.max(
+          0,
+          Number(product?.onHand ?? 0) - Number(product?.committed ?? 0) + prevAllocatedQty,
+        );
+        const backOrderQty = Math.max(0, item.quantity - available);
+        const allocatedQty = item.quantity - backOrderQty;
 
         await tx.salesOrderItem.upsert({
           where: { id: item.id ?? '__new__' },
@@ -554,23 +619,27 @@ export class SalesOrdersService {
   }
 
   private async recalculateTotals(id: string) {
-    const items = await this.prisma.salesOrderItem.findMany({
-      where: { salesOrderId: id, deletedAt: null },
-    });
+    const [items, order] = await Promise.all([
+      this.prisma.salesOrderItem.findMany({
+        where: { salesOrderId: id, deletedAt: null },
+      }),
+      this.prisma.salesOrder.findUnique({ where: { id } }),
+    ]);
 
-    const subtotal = items.reduce(
-      (sum, i) => sum + Number(i.lineTotal),
-      0,
-    );
-
-    const gst = subtotal * 0.1;
+    const parts = items.reduce((sum, i) => sum + Number(i.lineTotal), 0);
+    const subtotal = parts
+      + Number(order?.freight ?? 0)
+      + Number(order?.sundries ?? 0)
+      + Number(order?.labour ?? 0)
+      + Number(order?.otherCharges ?? 0);
+    const gst = subtotal * await resolveGstRate(this.prisma, order?.customerId);
 
     return this.prisma.salesOrder.update({
       where: { id },
       data: {
         subtotal,
         gst,
-        total: subtotal + gst,
+        total: subtotal + gst + Number(order?.rounding ?? 0),
       },
     });
   }

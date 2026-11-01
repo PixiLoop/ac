@@ -49,7 +49,7 @@ export const TechnicianDetail: React.FC<TechnicianDetailProps> = ({
   );
 
   return (
-    <div className="space-y-6 mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Back button */}
       <div className="flex items-center justify-between">
         <button

@@ -1,7 +1,7 @@
 // dto/create-template.dto.ts
 import { IsEnum, IsNotEmpty, IsOptional, IsString, ValidateNested, IsArray, IsBoolean, IsNumber } from 'class-validator';
 import { Type } from 'class-transformer';
-import { HardwareModel, HardwareCategory, TemplateStatus } from '@prisma/client';
+import { TemplateStatus } from '@prisma/client';
 
 export class CreateChecklistTemplateItemDto {
   @IsString()
@@ -46,11 +46,15 @@ export class CreateChecklistTemplateDto {
   @IsNotEmpty()
   hardwareType: string;
 
-  @IsEnum(HardwareModel)
-  hardwareModel: HardwareModel;
+  /** Accepts Prisma enum or Job Book display label (e.g. "HD Camera") */
+  @IsString()
+  @IsNotEmpty()
+  hardwareModel: string;
 
-  @IsEnum(HardwareCategory)
-  category: HardwareCategory;
+  /** Accepts Prisma enum or Job Book display label (e.g. "Camera & Video") */
+  @IsString()
+  @IsNotEmpty()
+  category: string;
 
   @IsString()
   @IsOptional()
@@ -80,13 +84,13 @@ export class UpdateChecklistTemplateDto {
   @IsOptional()
   hardwareType?: string;
 
-  @IsEnum(HardwareModel)
+  @IsString()
   @IsOptional()
-  hardwareModel?: HardwareModel;
+  hardwareModel?: string;
 
-  @IsEnum(HardwareCategory)
+  @IsString()
   @IsOptional()
-  category?: HardwareCategory;
+  category?: string;
 
   @IsString()
   @IsOptional()

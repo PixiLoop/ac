@@ -34,6 +34,7 @@ export class CustomerController {
       sortKey,
       sortDir,
       filters,
+      accountType: query?.accountType,
     });
   }
 
@@ -42,6 +43,12 @@ export class CustomerController {
   @Permissions('customers.create')
   create(@Body() body: any) {
     return this.service.create(body)
+  }
+
+  @Get('lookup')
+  @Permissions('customers.view')
+  lookup(@Query('number') number?: string) {
+    return this.service.findByNumber(number ?? '')
   }
 
   @Get(':id')

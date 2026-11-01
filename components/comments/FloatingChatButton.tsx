@@ -4,8 +4,8 @@ import { MessageCircle } from 'lucide-react'
 import { useComments } from '../../providers/CommentProvider'
 
 export function FloatingChatButton() {
-  const { open, unreadCount, isOpen } = useComments()
-  if (isOpen) return null
+  const { open, unreadCount, isOpen, context } = useComments()
+  if (isOpen || !context?.entityId) return null
   return (
     <button
       onClick={open}

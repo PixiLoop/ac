@@ -48,6 +48,12 @@ export class ProductsController {
         return this.productsService.list(category, search, isFmHardware)
     }
 
+    @Get('by-code')
+    @Permissions('inventory.view')
+    findByCode(@Query('code') code?: string) {
+        return this.productsService.findByCode(code ?? '');
+    }
+
     @Get(':id')
     @Permissions('inventory.view')
     getById(@Param('id') id: string) {

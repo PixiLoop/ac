@@ -10,7 +10,20 @@ import { useRouter, usePathname } from 'next/navigation';
 import { api } from '../lib/api-client';
 
 type AuthContextType = {
-  user: any | null;
+  user: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    displayName: string;
+    mfaEnabled: boolean;
+    mustChangePassword: boolean;
+    defaultLandingPage: string;
+    phone: string | null;
+    profilePhotoUrl: string | null;
+    secretQuestion?: string | null;
+    isActive: boolean;
+  } | null;
   roles: string[];
   permissions: string[];
   isSystem: boolean;
@@ -121,6 +134,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       router.push('/profile');
     } else if (effectiveUser?.defaultLandingPage === 'FieldServices') {
       router.push('/field-services');
+    } else if (effectiveUser?.defaultLandingPage === "technicians") {
+      router.push('/technician')
     } else {
       router.push('/profile');
     }
@@ -162,12 +177,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     await mutate();
   };
 
-    const roles = wrapped?.roles ?? [];
-    const rawPermissions = wrapped?.permissions ?? [];
-    // Detect system role
-    const isSystem = roles?.some((r: any) => r?.isSystem === true);
-    // If system role → grant virtual wildcard permission
-    const permissions = isSystem? ['*'] // virtual full-access
+  const roles = wrapped?.roles ?? [];
+  const rawPermissions = wrapped?.permissions ?? [];
+  // Detect system role
+  const isSystem = roles?.some((r: any) => r?.isSystem === true);
+  // If system role → grant virtual wildcard permission
+  const permissions = isSystem ? ['*'] // virtual full-access
     : rawPermissions;
 
   const value: AuthContextType = {

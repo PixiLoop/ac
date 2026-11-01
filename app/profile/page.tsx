@@ -116,10 +116,7 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!user) return;
 
-    const serverPath =
-    (user.profilePhotoUrl as string | undefined) ??
-    (user.avatarUrl as string | undefined) ??
-    null;
+    const serverPath = (user.profilePhotoUrl as string | undefined) ?? null;
 
     setAvatarUrl(resolveAvatarUrl(serverPath));
     setAvatarPreview(null);
@@ -138,7 +135,7 @@ export default function ProfilePage() {
     setAvatarFile(null);
     setAvatarError(null);
 
-    const serverAvatarPath = (user.profilePhotoUrl as string | undefined) ?? (user.avatarUrl as string | undefined) ?? null;
+    const serverAvatarPath = (user.profilePhotoUrl as string | undefined) ?? null;
     setAvatarPreview(resolvePublicUrl(serverAvatarPath));
   }, [user]);
 
@@ -168,7 +165,7 @@ export default function ProfilePage() {
       setPfPhone(user.phone ?? '');
     }
     // revert preview to current server avatar
-    const serverAvatarPath = (user?.profilePhotoUrl as string | undefined) ?? (user?.avatarUrl as string | undefined) ?? null;
+    const serverAvatarPath = (user?.profilePhotoUrl as string | undefined) ?? null;
     setAvatarPreview(resolvePublicUrl(serverAvatarPath));
     setAvatarFile(null);
     setEditingProfile(false);
@@ -207,7 +204,7 @@ export default function ProfilePage() {
         setPfLastName(freshUser.lastName ?? '');
         setPfDisplayName(freshUser.displayName ?? '');
         setPfPhone(freshUser.phone ?? '');
-        const newAvatar = (freshUser.profilePhotoUrl ?? freshUser.avatarUrl) ?? null;
+        const newAvatar = freshUser.profilePhotoUrl ?? null;
         setAvatarPreview(resolvePublicUrl(newAvatar, { cacheBust: !!opts?.cacheBustAvatar }));
       }
       return mePayload;

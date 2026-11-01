@@ -37,6 +37,15 @@ function suggestedOrderQty(backOrderQty: number, minQty: number, onOrder: number
   return Math.max(0, backOrderQty + minQty - onOrder);
 }
 
+/** True only when more stock is still needed after counting existing on-order qty. */
+function needsOrdering(p: any) {
+  return suggestedOrderQty(
+    Number(p.backOrdered ?? 0),
+    Number(p.minStock ?? 0),
+    Number(p.onOrder ?? 0),
+  ) > 0;
+}
+
 type GrnLine = {
   productId: string;
   productCode: string;
@@ -131,7 +140,10 @@ export function PurchaseOrderForm({ poId }: { poId?: string }) {
         label: `${p.productCode} — ${p.name}`,
         value: p.id,
       })));
-      setProductMap(Object.fromEntries(list.map((p: any) => [p.id, p])));
+      setProductMap(prev => ({
+        ...Object.fromEntries(list.map((p: any) => [p.id, p])),
+        ...prev,
+      }));
     }).catch(() => { });
   }, []);
 
@@ -153,7 +165,9 @@ export function PurchaseOrderForm({ poId }: { poId?: string }) {
     }).catch(() => { });
 
     setLoadingItems(true);
-    api.get(`/inventory/purchase-orders/supplier/${supplierId}/items`).then((res) => {
+    api.get(`/inventory/purchase-orders/supplier/${supplierId}/items`, {
+      params: poId ? { excludePoId: poId } : undefined,
+    }).then((res) => {
       const d = res.data?.data ?? res.data;
       const items = d?.items ?? [];
       setSupplierItems(items);
@@ -166,14 +180,9 @@ export function PurchaseOrderForm({ poId }: { poId?: string }) {
       //if (userEditedLinesRef.current) return;
       if (isEdit || userEditedLinesRef.current) return;
 
-      const filtered = items.filter((p: any) => {
-        const backOrdered = Number(p.backOrdered ?? 0);
-        const onOrder = Number(p.onOrder ?? 0);
-        const available = Number(p.onHand ?? 0) - Number(p.committed ?? 0);
-        const minStock = Number(p.minStock ?? 0);
-        return backOrdered > 0 || onOrder > 0 || (minStock > 0 && available < minStock);
-      });
-      const toLoad = filtered.length > 0 ? filtered : items;
+      // Only lines that still need ordering after subtracting on-order qty
+      // (e.g. need 70, on order 125 → suggested 0 → do not add the line).
+      const toLoad = items.filter(needsOrdering);
 
       setLines(toLoad.map((p: any) => {
         const backOrderQty = Number(p.backOrdered ?? 0);
@@ -199,7 +208,31 @@ export function PurchaseOrderForm({ poId }: { poId?: string }) {
 
     }).catch(() => { })
       .finally(() => setLoadingItems(false));
-  }, [supplierId]);
+  }, [supplierId, poId]);
+
+  const draftQtyApplied = React.useRef(false);
+  React.useEffect(() => {
+    if (!poId || status !== 'DRAFT' || draftQtyApplied.current) return;
+    if (!lines.some(line => line.productId) || !supplierItems.length) return;
+    draftQtyApplied.current = true;
+    setLines(prev => prev.map(line => {
+      const product = supplierItems.find((item: any) => item.id === line.productId);
+      if (!product) return line;
+      const backOrderQty = Number(product.backOrdered ?? 0);
+      const minQty = Number(product.minStock ?? 0);
+      const onOrder = Number(product.onOrder ?? 0);
+      const orderedQty = suggestedOrderQty(backOrderQty, minQty, onOrder);
+      return {
+        ...line,
+        onOrder,
+        backOrderQty,
+        minQty,
+        maxQty: Number(product.maxStock ?? 0),
+        orderedQty,
+        lineTotal: +(orderedQty * line.unitCost).toFixed(4),
+      };
+    }));
+  }, [poId, status, supplierItems, lines]);
 
   // ── Load existing PO
 
@@ -266,15 +299,7 @@ export function PurchaseOrderForm({ poId }: { poId?: string }) {
     //   Number(p.backOrdered ?? 0) > 0 || Number(p.onOrder ?? 0) > 0
     // );
 
-    const filtered = supplierItems.filter((p: any) => {   // ← supplierItems, not items
-      const backOrdered = Number(p.backOrdered ?? 0);
-      const onOrder = Number(p.onOrder ?? 0);
-      const available = Number(p.onHand ?? 0) - Number(p.committed ?? 0);
-      const minStock = Number(p.minStock ?? 0);
-      return backOrdered > 0 || onOrder > 0 || (minStock > 0 && available < minStock);
-    });
-
-    const toLoad = filtered.length > 0 ? filtered : supplierItems;
+    const toLoad = supplierItems.filter(needsOrdering);
     setLines(toLoad.map((p: any) => {
       const backOrderQty = Number(p.backOrdered ?? 0);
       const minQty = Number(p.minStock ?? 0);

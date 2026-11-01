@@ -89,7 +89,7 @@ export class GroupsService {
 
   async updateSettings(data: {
     roundBelow50?: number; roundBelow100?: number; roundAbove100?: number;
-    priceOffset?: number; minSalesPrice?: number;
+    priceOffset?: number; minSalesPrice?: number; gstFactor?: number;
   }) {
     const existing = await settings(this.prisma).findFirst();
     if (existing) {

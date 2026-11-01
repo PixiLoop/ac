@@ -38,6 +38,33 @@ export interface HardwareItem {
   category: 'Telematics Unit' | 'Camera & Video' | 'Connectivity' | 'Sensors' | 'Accessories' | 'Core Unit';
 }
 
+export interface InstallationLineItem {
+  id: string;
+  productId: string;
+  partNo: string;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  discountPct: number;
+  landedCost: number;
+  lineTotal: number;
+  availableQty?: number | null;
+}
+
+export interface ChecklistItemPhoto {
+  id: string;
+  url: string;
+  fileName?: string;
+  createdAt: string;
+}
+
+export interface ChecklistItemComment {
+  id: string;
+  text: string;
+  authorName?: string;
+  createdAt: string;
+}
+
 export interface ChecklistItem {
   id: string;
   templateItemId?: string;
@@ -51,6 +78,10 @@ export interface ChecklistItem {
   completedBy?: string;
   completedAt?: string;
   notes?: string;
+  /** Photos saved against this checklist item / job */
+  photos?: ChecklistItemPhoto[];
+  /** Threaded comments posted against this checklist item */
+  comments?: ChecklistItemComment[];
 }
 
 export interface ChecklistSection {
@@ -100,6 +131,9 @@ export interface TimelineEvent {
 export interface InstallationJob {
   id: string; // e.g. INSTALL-1042
   jobNumber: string;
+  assignedTo: "technician" | "contractor" | "subcontractor";
+  isWhiteboard?: boolean;
+  jobType?: 'Whiteboard' | 'FM Preinstall' | 'Standard';
   customerId: string;
   customerName: string;
   customerContact?: string;
@@ -114,6 +148,7 @@ export interface InstallationJob {
     makeModel: string;
   };
   hardware: HardwareItem[];
+  lineItems?: InstallationLineItem[];
   technicianId?: string;
   technicianName?: string;
   installationDate?: string; // YYYY-MM-DD
@@ -127,8 +162,7 @@ export interface InstallationJob {
   createdAt: string;
   canInvoice: boolean;
   invoiceId?: string;
-  preinstallId?: string;
-  preinstallNo?: string;
+  salesOrderId?: string;
 }
 
 export interface Technician {

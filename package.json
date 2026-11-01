@@ -7,7 +7,11 @@
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
     "dev": "concurrently \"nest start --watch\" \"next dev -p 3000\"",
-    "build": "next build",
+    "build:backend": "nest build",
+    "build:frontend": "next build",
+    "build": "nest build && next build",
+    "start:backend": "node dist/main",
+    "start:frontend": "next start",
     "start": "next start"
   },
   "dependencies": {
@@ -26,6 +30,7 @@
     "@nestjs/platform-socket.io": "^11.1.17",
     "@nestjs/websockets": "^11.1.17",
     "@prisma/client": "^5.22.0",
+    "@prisma/config": "^7.10.1",
     "axios": "^1.4.0",
     "bcrypt": "^5.1.0",
     "bcryptjs": "^3.0.3",

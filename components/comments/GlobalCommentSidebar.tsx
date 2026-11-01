@@ -128,6 +128,8 @@ export function GlobalCommentSidebar() {
     }
   }
 
+  if (!context?.entityId) return null
+
   return (
     <aside
       className={`fixed top-0 right-0 z-40 h-full w-96 bg-white border-l shadow-lg transition-transform flex flex-col

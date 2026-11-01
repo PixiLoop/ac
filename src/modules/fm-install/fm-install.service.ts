@@ -1,5 +1,15 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { InstallStatus, Prisma } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+
+const INSTALL_STATUSES = new Set<string>(Object.values(InstallStatus));
+
+function parseInstallStatus(v: unknown): InstallStatus | null | undefined {
+  if (v === undefined) return undefined;
+  if (v === null || v === '') return null;
+  const s = String(v);
+  return INSTALL_STATUSES.has(s) ? (s as InstallStatus) : undefined;
+}
 
 @Injectable()
 export class FMInstallService {
@@ -87,6 +97,55 @@ export class FMInstallService {
       include: { installDetail: true },
     });
     if (!record) throw new NotFoundException('FM Install not found');
+
+    // Backfill Author / Install By from linked preinstall when empty (legacy rows)
+    if (record.preinstallId && (!record.author || !record.installBy || !record.installInvoice)) {
+      const pre = await this.prisma.fMPreinstall.findFirst({
+        where: { id: record.preinstallId, deletedAt: null },
+        include: { installDetail: true },
+      });
+      if (pre) {
+        const resolveUserName = async (userId?: string | null) => {
+          if (!userId) return null;
+          if (!/^c[a-z0-9]{20,}$/i.test(userId)) return userId;
+          const user = await this.prisma.user.findUnique({
+            where: { id: userId },
+            select: { displayName: true, firstName: true, lastName: true, email: true },
+          });
+          return (
+            user?.displayName?.trim() ||
+            `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() ||
+            user?.email ||
+            userId
+          );
+        };
+        const patch: any = {};
+        if (!record.installBy) {
+          patch.installBy = await resolveUserName(pre.installDetail?.installer ?? null);
+        }
+        if (!record.author) {
+          patch.author = await resolveUserName(pre.assignedUserId || pre.createdBy || null);
+        }
+        if (!record.installInvoice && pre.invoiceId) {
+          const inv = await this.prisma.invoice.findUnique({
+            where: { id: pre.invoiceId },
+            select: { invoiceNumber: true },
+          });
+          if (inv?.invoiceNumber) {
+            patch.installInvoice = inv.invoiceNumber;
+            patch.invoiceRef = inv.invoiceNumber;
+          }
+        }
+        if (Object.keys(patch).length) {
+          return this.prisma.fMInstall.update({
+            where: { id },
+            data: patch,
+            include: { installDetail: true },
+          });
+        }
+      }
+    }
+
     return record;
   }
 
@@ -98,13 +157,59 @@ export class FMInstallService {
         customer: true,
         fmCustomer: true,
         installDetail: true,
+        Depots: true,
       },
     });
     if (!preinstall) throw new NotFoundException('Preinstall not found');
-    return preinstall;
+
+    const resolveUserName = async (userId?: string | null) => {
+      if (!userId) return null;
+      if (!/^c[a-z0-9]{20,}$/i.test(userId)) return userId;
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, firstName: true, lastName: true, email: true },
+      });
+      return (
+        user?.displayName?.trim() ||
+        `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() ||
+        user?.email ||
+        userId
+      );
+    };
+
+    const authorName = await resolveUserName(
+      preinstall.assignedUserId || preinstall.createdBy || null,
+    );
+    const installByName = await resolveUserName(
+      preinstall.installDetail?.installer ?? null,
+    );
+
+    return {
+      ...preinstall,
+      authorName,
+      installByName,
+    };
   }
 
   async create(dto: any) {
+    const mix = String(dto.mixCode ?? dto.installDetail?.mixCode ?? '').trim();
+    if (!String(dto.fmCustomerNum ?? '').trim()) {
+      throw new BadRequestException('Setup FM Customer First');
+    }
+    const fm = await this.prisma.fMCustomer.findFirst({
+      where: { fmWebNumber: { equals: String(dto.fmCustomerNum).trim(), mode: 'insensitive' } },
+      select: { id: true, customer: { select: { deletedAt: true } } },
+    });
+    if (!fm || fm.customer?.deletedAt) throw new BadRequestException('Invalid FMCusNum');
+    const serviceCode = String(dto.fmwService ?? dto.installDetail?.serviceCode ?? '').trim();
+    const service = serviceCode
+      ? await this.prisma.product.findFirst({
+          where: { productCode: { equals: serviceCode, mode: 'insensitive' }, isActive: true },
+          select: { id: true },
+        })
+      : null;
+    if (!service) throw new BadRequestException('Invalid Service');
+    if (!mix || mix === '0_0_0_0_0_0') throw new BadRequestException('Invalid MIXService_Code');
     // Link installDetail from preinstall if preinstallId given
     let installDetailId: string | undefined;
 
@@ -150,8 +255,36 @@ export class FMInstallService {
   }
 
   async update(id: string, dto: any) {
-    const existing = await this.prisma.fMInstall.findUnique({ where: { id } });
+    const existing = await this.prisma.fMInstall.findUnique({
+      where: { id },
+      include: { installDetail: { select: { serviceCode: true, mixCode: true } } },
+    });
     if (!existing) throw new NotFoundException('FM Install not found');
+    const fmCustomerNum = String(dto.fmCustomerNum || existing.fmCustomerNum || '').trim();
+    // Empty string from the form must fall back to existing / detail service code
+    const fmwService = String(
+      dto.fmwService ||
+        existing.fmwService ||
+        existing.installDetail?.serviceCode ||
+        '',
+    ).trim();
+    const mixCode = String(
+      dto.mixCode || existing.mixCode || existing.installDetail?.mixCode || '',
+    ).trim();
+    if (!fmCustomerNum) throw new BadRequestException('Setup FM Customer First');
+    const fm = await this.prisma.fMCustomer.findFirst({
+      where: { fmWebNumber: { equals: fmCustomerNum, mode: 'insensitive' } },
+      select: { id: true, customer: { select: { deletedAt: true } } },
+    });
+    if (!fm || fm.customer?.deletedAt) throw new BadRequestException('Invalid FMCusNum');
+    const service = fmwService
+      ? await this.prisma.product.findFirst({
+          where: { productCode: { equals: fmwService, mode: 'insensitive' }, isActive: true },
+          select: { id: true },
+        })
+      : null;
+    if (!service) throw new BadRequestException(`Invalid Service${fmwService ? ` — ${fmwService}` : ''}`);
+    if (!mixCode || mixCode === '0_0_0_0_0_0') throw new BadRequestException('Invalid MIXService_Code');
 
     const now = new Date();
     const effectiveStatus = dto.status ?? existing.status;
@@ -197,16 +330,29 @@ export class FMInstallService {
       chargeFlag = false;
     }
 
+    const parseDate = (v: unknown) => {
+      if (v === undefined) return undefined;
+      if (v === null || v === '') return null;
+      const d = new Date(String(v));
+      return Number.isNaN(d.getTime()) ? undefined : d;
+    };
+    const parseIntOrUndef = (v: unknown) => {
+      if (v === undefined || v === null || v === '') return undefined;
+      const n = Number(v);
+      return Number.isFinite(n) ? n : undefined;
+    };
+    const status = parseInstallStatus(dto.status);
+
     return this.prisma.fMInstall.update({
       where: { id },
       data: {
-        entryDate: dto.entryDate ? new Date(dto.entryDate) : undefined,
-        installDate: dto.installDate ? new Date(dto.installDate) : undefined,
+        entryDate: parseDate(dto.entryDate),
+        installDate: parseDate(dto.installDate),
         installInvoice: dto.installInvoice ?? undefined,
         author: dto.author ?? undefined,
         installBy: dto.installBy ?? undefined,
         aasCustomerNum: dto.aasCustomerNum ?? undefined,
-        fmCustomerNum: dto.fmCustomerNum ?? undefined,
+        fmCustomerNum: fmCustomerNum || undefined,
         mixOrgId: dto.mixOrgId ?? undefined,
         mixAssetNum: dto.mixAssetNum ?? undefined,
         baseUnit: dto.baseUnit ?? undefined,
@@ -217,12 +363,12 @@ export class FMInstallService {
         fiNumber: dto.fiNumber ?? undefined,
         depot: dto.depot ?? undefined,
         site: dto.site ?? undefined,
-        serviceNumber: dto.serviceNumber ? Number(dto.serviceNumber) : undefined,
-        fmwService: dto.fmwService ?? undefined,
-        mixCode: dto.mixCode ?? undefined,
-        status: dto.status ?? undefined,
-        commissionedDate: dto.commissionedDate ? new Date(dto.commissionedDate) : undefined,
-        decommissionedDate: dto.decommissionedDate ? new Date(dto.decommissionedDate) : undefined,
+        serviceNumber: parseIntOrUndef(dto.serviceNumber),
+        fmwService: fmwService || undefined,
+        mixCode: mixCode || undefined,
+        status,
+        commissionedDate: parseDate(dto.commissionedDate),
+        decommissionedDate: parseDate(dto.decommissionedDate),
         notCharged: dto.notCharged ?? undefined,
         chargeFlag,
         commissionMonth,
@@ -240,9 +386,25 @@ export class FMInstallService {
       include: { installDetail: true },
     });
     if (!install) throw new NotFoundException('FM Install not found');
-    if (!install.installDetailId) throw new NotFoundException('No install detail linked');
 
-    const clean = {
+    const installStatus = parseInstallStatus(detailData.installStatus) ?? null;
+
+    const cameraCount =
+      detailData.cameraCount === '' || detailData.cameraCount == null
+        ? null
+        : Number.isFinite(Number(detailData.cameraCount))
+          ? Number(detailData.cameraCount)
+          : null;
+
+    const installDate =
+      !detailData.installDate || detailData.installDate === ''
+        ? null
+        : (() => {
+            const d = new Date(detailData.installDate);
+            return Number.isNaN(d.getTime()) ? null : d;
+          })();
+
+    const cleanScalars = {
       installType: detailData.installType ?? null,
       fmUnitType: detailData.fmUnitType ?? null,
       fmUnitCode: detailData.fmUnitCode ?? null,
@@ -257,7 +419,7 @@ export class FMInstallService {
       unitIMEI: detailData.unitIMEI ?? null,
       visionType: detailData.visionType ?? null,
       cameraType: detailData.cameraType ?? null,
-      cameraCount: detailData.cameraCount ?? null,
+      cameraCount,
       mixSim2: detailData.mixSim2 ?? null,
       sim2Type: detailData.sim2Type ?? null,
       visSim: detailData.visSim ?? null,
@@ -278,13 +440,33 @@ export class FMInstallService {
       regoNumber: detailData.regoNumber ?? null,
       installLocation: detailData.installLocation ?? null,
       installer: detailData.installer ?? null,
-      installStatus: detailData.installStatus ?? null,
-      installDate: detailData.installDate ? new Date(detailData.installDate) : null,
+      installStatus,
+      installDate,
     };
+
+    // Create + link detail when missing (older / partial FM Install rows)
+    if (!install.installDetailId) {
+      if (!install.preinstallId) {
+        throw new BadRequestException('No install detail linked — open from a preinstall first');
+      }
+      const created = await this.prisma.fMInstallDetail.upsert({
+        where: { preinstallId: install.preinstallId },
+        create: {
+          preinstall: { connect: { id: install.preinstallId } },
+          ...cleanScalars,
+        } satisfies Prisma.FMInstallDetailCreateInput,
+        update: cleanScalars satisfies Prisma.FMInstallDetailUpdateInput,
+      });
+      await this.prisma.fMInstall.update({
+        where: { id: installId },
+        data: { installDetail: { connect: { id: created.id } } },
+      });
+      return created;
+    }
 
     return this.prisma.fMInstallDetail.update({
       where: { id: install.installDetailId },
-      data: clean,
+      data: cleanScalars,
     });
   }
 
@@ -329,6 +511,7 @@ export class FMInstallService {
         customer: true,
         fmCustomer: true,
         installDetail: true,
+        Depots: true,
       },
     });
 
@@ -340,8 +523,12 @@ export class FMInstallService {
       );
     }
 
+    // Idempotent — already accepted into FM Log
     if (preinstall.installId) {
-      throw new BadRequestException('FM Install already exists for this preinstall');
+      return this.prisma.fMInstall.findUnique({
+        where: { id: preinstall.installId },
+        include: { installDetail: true },
+      });
     }
 
     const d = preinstall.installDetail;
@@ -355,6 +542,61 @@ export class FMInstallService {
       );
     }
 
+    const resolveUserName = async (userId?: string | null) => {
+      if (!userId) return null;
+      if (!/^c[a-z0-9]{20,}$/i.test(userId)) return userId; // already a display name
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true, firstName: true, lastName: true, email: true },
+      });
+      return (
+        user?.displayName?.trim() ||
+        `${user?.firstName ?? ''} ${user?.lastName ?? ''}`.trim() ||
+        user?.email ||
+        userId
+      );
+    };
+
+    // Install By ← preinstall installer; Author ← assigned user / createdBy
+    const installBy = await resolveUserName(d?.installer ?? null);
+    const author = await resolveUserName(
+      preinstall.assignedUserId || preinstall.createdBy || null,
+    );
+
+    let invoiceRef: string | null = null;
+    let installInvoice: string | null = null;
+    if (preinstall.invoiceId) {
+      const inv = await this.prisma.invoice.findUnique({
+        where: { id: preinstall.invoiceId },
+        select: { invoiceNumber: true },
+      });
+      invoiceRef = inv?.invoiceNumber ?? null;
+      installInvoice = inv?.invoiceNumber ?? null;
+    }
+
+    const mapped = {
+      preinstallRef: preinstall.preinstallNo,
+      aasCustomerNum: preinstall.customer?.customerNumber ?? null,
+      fmCustomerNum: preinstall.fmCustomer?.fmWebNumber ?? null,
+      mixOrgId: d?.mixOrgId ?? null,
+      mixAssetNum: d?.assetNumber ?? null,
+      baseUnit: d?.fmUnitCode ?? null,
+      vehicleMake: d?.vehicleMake ?? null,
+      vehicleModel: d?.vehicleModel ?? null,
+      vehicleYear: d?.yearVariant ?? null,
+      rego: d?.regoNumber ?? null,
+      fiNumber: d?.fleetNumber ?? null,
+      depot: (preinstall as any).Depots?.name ?? d?.installLocation ?? null,
+      site: d?.installLocation ?? null,
+      fmwService: d?.serviceCode ?? null,
+      mixCode: d?.mixCode ?? null,
+      installDate: d?.installDate ?? null,
+      installBy,
+      author,
+      invoiceRef,
+      installInvoice,
+    };
+
     const now = new Date();
     const TYPES_UPDATING_TARGET = ['MODIFIED_INSTALL', 'WARRANTY', 'REPLACEMENT'];
     const shouldUpdateTarget = TYPES_UPDATING_TARGET.includes(preinstall.type) && !!preinstall.targetInstallId;
@@ -363,31 +605,7 @@ export class FMInstallService {
       const install = await this.prisma.fMInstall.update({
         where: { id: preinstall.targetInstallId! },
         data: {
-          preinstallRef: preinstall.preinstallNo,
-
-          // Customer info
-          aasCustomerNum: preinstall.customer?.customerNumber ?? undefined,
-          fmCustomerNum: preinstall.fmCustomer?.fmWebNumber ?? undefined,
-          mixOrgId: d?.mixOrgId ?? undefined,
-          mixAssetNum: d?.assetNumber ?? undefined,
-
-          // Vehicle
-          baseUnit: d?.fmUnitCode ?? undefined,
-          vehicleMake: d?.vehicleMake ?? undefined,
-          vehicleModel: d?.vehicleModel ?? undefined,
-          vehicleYear: d?.yearVariant ?? undefined,
-          rego: d?.regoNumber ?? undefined,
-
-
-          // Service — this is the part that actually changes on a Modify
-          // (e.g. a new camera adds vision to the service code)
-          fmwService: d?.serviceCode ?? undefined,
-          mixCode: d?.mixCode ?? undefined,
-
-          installDate: d?.installDate ?? undefined,
-
-          // Status/charge/commission fields are NOT touched — Modify/
-          // Warranty/Replacement don't reset billing state, only asset data
+          ...mapped,
           ...(d?.id && {
             installDetail: { connect: { id: d.id } },
           }),
@@ -407,36 +625,11 @@ export class FMInstallService {
     const install = await this.prisma.fMInstall.create({
       data: {
         preinstallId: preinstall.id,
-        preinstallRef: preinstall.preinstallNo,
-
-        // Customer info
-        aasCustomerNum: preinstall.customer?.customerNumber ?? null,
-        fmCustomerNum: preinstall.fmCustomer?.fmWebNumber ?? null,
-        mixOrgId: d?.mixOrgId ?? null,
-        mixAssetNum: d?.assetNumber ?? null,
-
-        // Vehicle
-        baseUnit: d?.fmUnitCode ?? null,
-        vehicleMake: d?.vehicleMake ?? null,
-        vehicleModel: d?.vehicleModel ?? null,
-        vehicleYear: d?.yearVariant ?? null,
-        rego: d?.regoNumber ?? null,
-
-
-        // Service
-        fmwService: d?.serviceCode ?? null,
-        mixCode: d?.mixCode ?? null,
-
-        // Install info
-        installDate: d?.installDate ?? null,
+        ...mapped,
         entryDate: now,
-
-        // Status — "Install" initially (not yet active/billing)
         status: 'INSTALL',
-        chargeFlag: false,  // user manually sets commission date → auto ON
-        commissionMonth: null,  // user sets later
-
-        // Link installDetail
+        chargeFlag: false,
+        commissionMonth: null,
         ...(d?.id && {
           installDetail: { connect: { id: d.id } },
         }),
@@ -444,7 +637,6 @@ export class FMInstallService {
       include: { installDetail: true },
     });
 
-    // Update preinstall — installId link
     await this.prisma.fMPreinstall.update({
       where: { id: preinstallId },
       data: { installId: install.id },

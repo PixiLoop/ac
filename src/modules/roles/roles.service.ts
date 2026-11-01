@@ -109,7 +109,7 @@ export class RolesService {
   async create(dto: CreateRoleDto) {
     // create role
     const role = await this.prisma.role.create({
-      data: { name: dto.name, description: dto.description ?? null, isTechnician: dto.isTechnician ?? false },
+      data: { name: dto.name, description: dto.description ?? null, isTechnician: dto.isTechnician ?? false, isContractor: dto.isContractor ?? false, isSubContractor: dto.isSubContractor ?? false },
     });
 
     if (dto.permissionIds && dto.permissionIds.length) {
@@ -131,6 +131,7 @@ export class RolesService {
         name: dto.name,
         description: dto.description ?? undefined,
         isTechnician: dto.isTechnician ?? false,
+        isContractor: dto.isContractor ?? false, isSubContractor: dto.isSubContractor ?? false
       },
     });
 

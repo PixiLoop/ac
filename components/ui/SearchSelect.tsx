@@ -32,9 +32,11 @@ export function SearchSelect({
   if (disabled) {
     return (
       <div ref={ref} className="relative w-full min-w-0">
-        <label className="font-medium text-slate-700 mb-1 block">
-          {placeholder}
-        </label>
+        {placeholder ? (
+          <label className="font-medium text-slate-700 mb-1 block">
+            {placeholder}
+          </label>
+        ) : null}
 
         <div
           className={cn(
@@ -68,9 +70,11 @@ export function SearchSelect({
 
   return (
     <div ref={ref} className="relative w-full min-w-0">
-      <label className="font-medium text-slate-700 mb-1 block">
-        {placeholder}
-      </label>
+      {placeholder ? (
+        <label className="font-medium text-slate-700 mb-1 block">
+          {placeholder}
+        </label>
+      ) : null}
 
       <div
         className={cn(
@@ -81,7 +85,7 @@ export function SearchSelect({
         )}
         onClick={() => !disabled && setOpen(o => !o)}
       >
-        {selected?.label || placeholder}
+        {selected?.label || placeholder || 'Select'}
       </div>
 
       {open && !disabled && (

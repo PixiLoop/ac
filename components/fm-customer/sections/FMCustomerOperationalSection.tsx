@@ -104,12 +104,14 @@ export function FMCustomerOperationalSection({ value, onChange, priceLevel,
           value={value.invoiceBy}
           onChange={v => update('invoiceBy', v)}
           options={[
-            { label: 'All Units', value: 'ALL_UNITS' },
-            { label: 'FM Service', value: 'FM_SERVICE' },
+            { label: 'All Units', value: 'All_Units' },
+            { label: 'Depot', value: 'Depot' },
+            { label: 'FM Service', value: 'FM_Service' },
+            { label: 'Option', value: 'Option' },
           ]}
         />
 
-        {value.invoiceBy === "ALL_UNITS" && <Select
+        {(value.invoiceBy === 'All_Units' || value.invoiceBy === 'ALL_UNITS') && <Select
           disabled={readOnly}
           label="Sort By"
           value={value.sortBy}

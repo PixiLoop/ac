@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { InstallationJob } from '../types/installation';
-import { Calendar, Clock, AlertTriangle, ArrowRight, X, CheckCircle2 } from 'lucide-react';
+import { Calendar, AlertTriangle, X } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
+import { useToast } from '../../ui/toast';
 
 interface RescheduleDialogProps {
   job: InstallationJob;
@@ -10,6 +11,7 @@ interface RescheduleDialogProps {
   targetStartTime?: string;
   targetEndTime?: string;
   onClose: () => void;
+  onSuccess?: (jobId: string, newDate: string, newStartTime: string, newEndTime: string) => void;
 }
 
 export const RescheduleDialog: React.FC<RescheduleDialogProps> = ({
@@ -19,12 +21,30 @@ export const RescheduleDialog: React.FC<RescheduleDialogProps> = ({
   targetStartTime: initialStart,
   targetEndTime: initialEnd,
   onClose,
+  onSuccess,
 }) => {
+  const { showToast } = useToast();
   const { rescheduleJob, checkTechnicianConflict } = useOperations();
-  const [newDate, setNewDate] = useState<string>(initialDate || '2026-10-11');
-  const [newStartTime, setNewStartTime] = useState<string>(initialStart || '14:00');
-  const [newEndTime, setNewEndTime] = useState<string>(initialEnd || '16:00');
+  const [newDate, setNewDate] = useState<string>(
+    initialDate || job.installationDate || ''
+  );
+  const [newStartTime, setNewStartTime] = useState<string>(
+    initialStart || job.startTime || '09:00'
+  );
+  const [newEndTime, setNewEndTime] = useState<string>(
+    initialEnd || job.endTime || '10:00'
+  );
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    setNewDate(initialDate || job.installationDate || '');
+    setNewStartTime(initialStart || job.startTime || '09:00');
+    setNewEndTime(initialEnd || job.endTime || '10:00');
+    setErrorMsg(null);
+    setSaving(false);
+  }, [isOpen, job.id, initialDate, initialStart, initialEnd, job.installationDate, job.startTime, job.endTime]);
 
   if (!isOpen) return null;
 
@@ -35,17 +55,33 @@ export const RescheduleDialog: React.FC<RescheduleDialogProps> = ({
   const handleConfirm = async () => {
     setErrorMsg(null);
     if (conflict.hasConflict) {
-      setErrorMsg(conflict.message || 'Technician has a scheduling conflict.');
+      const msg = conflict.message || 'Technician has a scheduling conflict.';
+      setErrorMsg(msg);
+      showToast({ type: 'error', title: 'Reschedule failed', message: msg, replace: true });
       return;
     }
 
-    const res = await rescheduleJob(job.id, newDate, newStartTime, newEndTime);
-    if (!res.success) {
-      setErrorMsg(res.conflict?.message || 'Could not reschedule job.');
-      return;
-    }
+    setSaving(true);
+    try {
+      const res = await rescheduleJob(job.id, newDate, newStartTime, newEndTime);
+      if (!res.success) {
+        const msg = res.conflict?.message || 'Could not reschedule job.';
+        setErrorMsg(msg);
+        showToast({ type: 'error', title: 'Reschedule failed', message: msg, replace: true });
+        return;
+      }
 
-    onClose();
+      showToast({
+        type: 'success',
+        title: 'Rescheduled successfully',
+        message: `${job.id} moved to ${newDate} (${newStartTime} – ${newEndTime})`,
+        replace: true,
+      });
+      onSuccess?.(job.id, newDate, newStartTime, newEndTime);
+      onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -155,17 +191,18 @@ export const RescheduleDialog: React.FC<RescheduleDialogProps> = ({
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors"
+              disabled={saving}
+              className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-700 hover:bg-slate-100 transition-colors disabled:opacity-50"
             >
               Cancel
             </button>
             <button
               type="button"
-              disabled={conflict.hasConflict}
+              disabled={conflict.hasConflict || saving}
               onClick={handleConfirm}
               className="px-4 py-2 rounded-xl text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 transition-colors shadow-xs"
             >
-              Confirm Reschedule
+              {saving ? 'Saving…' : 'Confirm Reschedule'}
             </button>
           </div>
         </div>

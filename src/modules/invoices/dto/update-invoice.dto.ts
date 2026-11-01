@@ -6,6 +6,10 @@ import { InvoiceItemDto } from './create-invoice.dto';
 export class UpdateInvoiceDto {
   @IsOptional()
   @IsString()
+  expectedUpdatedAt?: string;
+
+  @IsOptional()
+  @IsString()
   status?: string;
 
   @IsOptional()

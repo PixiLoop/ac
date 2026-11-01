@@ -1,9 +1,12 @@
 'use client'
 
 import { useEffect, useState, useRef } from 'react'
-import { useParams } from 'next/navigation'
+import { useParams, useRouter } from 'next/navigation'
 import { api } from '../../../../../lib/api-client'
 import { AdminShell } from '../../../../../components/layout/AdminShell'
+import { Button } from '../../../../../components/ui/button'
+import { AuthenticatedPhoto } from '../../../../../components/job-boards/operations/shared/AuthenticatedPhoto'
+import { useToast } from '../../../../../components/ui/toast'
 
 const ALLOWED_TRANSITIONS: Record<string, string[]> = {
   NOT_ACTIONED: ['WORKSHOP_SETUP'],
@@ -34,18 +37,27 @@ const STATUS_COLOR: Record<string, string> = {
 
 export default function CardEditPage() {
   const params = useParams()
+  const router = useRouter()
+  const { showToast } = useToast()
 
   const [card, setCard] = useState<any>(null)
+  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState<string | null>(null)
+  const [loadingCard, setLoadingCard] = useState(true)
   const [users, setUsers] = useState<any[]>([])
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [comment, setComment] = useState('')
+  const [replyingToId, setReplyingToId] = useState<string | null>(null)
+  const [replyText, setReplyText] = useState('')
+  const [showActivityDetails, setShowActivityDetails] = useState(true)
 
   const [addingItemChecklistId, setAddingItemChecklistId] = useState<string | null>(null)
   const [newItemText, setNewItemText] = useState('')
 
-  const [activePanel, setActivePanel] = useState<'members' | 'checklist' | 'dates' | 'attachment' | 'labels' | null>(null)
+  const [activePanel, setActivePanel] = useState<'members' | 'checklist' | 'dates' | 'attachment' | 'labels' | 'cover' | null>(null)
+  const coverInputRef = useRef<HTMLInputElement | null>(null)
 
   const titleRef = useRef<HTMLInputElement | null>(null)
   const panelRef = useRef<HTMLDivElement | null>(null)
@@ -53,11 +65,22 @@ export default function CardEditPage() {
   const [popupLabelName, setPopupLabelName] = useState('')
   const [popupLabelColor, setPopupLabelColor] = useState('#22c55e')
 
-  const [newChecklistTitle, setNewChecklistTitle] = useState('')
+  const [newChecklistTitle, setNewChecklistTitle] = useState('Checklist')
+  const [checklistCopyQuery, setChecklistCopyQuery] = useState('')
+  const [checklistSources, setChecklistSources] = useState<any[]>([])
+  const [selectedCopySource, setSelectedCopySource] = useState<{
+    id: string
+    sourceType: 'CARD' | 'TEMPLATE'
+    title: string
+  } | null>(null)
+  const [checklistSourcesLoading, setChecklistSourcesLoading] = useState(false)
+  const [addingChecklist, setAddingChecklist] = useState(false)
   const [newLabelName, setNewLabelName] = useState('')
   const [newLabelColor, setNewLabelColor] = useState('#22c55e')
   const [dueDate, setDueDate] = useState('')
+  const [dueDateEnabled, setDueDateEnabled] = useState(true)
   const [search, setSearch] = useState('')
+  const [labelSearch, setLabelSearch] = useState('')
   const [editingCommentId, setEditingCommentId] = useState<string | null>(null)
   const [editingCommentText, setEditingCommentText] = useState('')
 
@@ -73,12 +96,17 @@ export default function CardEditPage() {
   }
 
   const loadCard = async () => {
+    setLoadError(null)
     const res = await api.get(`/job-boards/cards/${params.id}`)
     const data = res.data?.data ?? res.data
+    if (!data?.id) {
+      throw new Error('Card not found')
+    }
     setCard(data)
     setTitle(data.title)
     setDescription(data.description || '')
     setDueDate(data.dueDate ? toLocalInput(data.dueDate) : '')
+    setDueDateEnabled(!!data.dueDate)
   }
 
   //Load linked FMPreinstall
@@ -130,12 +158,29 @@ export default function CardEditPage() {
 
   useEffect(() => {
     const load = async () => {
-      const u = await api.get('/users')
-      setUsers(u.data?.data?.items ?? [])
-      await loadCard()
-      await loadPreinstall(params.id as string)
+      setLoadingCard(true)
+      setLoadError(null)
+      try {
+        try {
+          const u = await api.get('/users')
+          setUsers(u.data?.data?.items ?? u.data?.items ?? [])
+        } catch {
+          setUsers([])
+        }
+        await loadCard()
+        await loadPreinstall(params.id as string)
+      } catch (err: any) {
+        const msg =
+          err?.response?.data?.message ||
+          err?.message ||
+          'Failed to load card'
+        setLoadError(typeof msg === 'string' ? msg : JSON.stringify(msg))
+        setCard(null)
+      } finally {
+        setLoadingCard(false)
+      }
     }
-    load()
+    if (params.id) load()
   }, [params.id])
 
   useEffect(() => {
@@ -155,12 +200,25 @@ export default function CardEditPage() {
   }, [title, card])
 
   const saveCard = async () => {
-    await api.patch(`/job-boards/cards/${card.id}`, {
-      title,
-      description,
-      dueDate: dueDate || null,
-    })
-    await loadCard()
+    if (!card?.id || saving) return
+    setSaving(true)
+    try {
+      await api.patch(`/job-boards/cards/${card.id}`, {
+        title: title.trim() || card.title,
+        description,
+        dueDate: dueDateEnabled && dueDate ? new Date(dueDate).toISOString() : null,
+      })
+      await loadCard()
+      showToast({ type: 'success', title: 'Card saved' })
+    } catch (err: any) {
+      const msg = err?.response?.data?.message || err?.message || 'Failed to save'
+      showToast({
+        type: 'error',
+        title: typeof msg === 'string' ? msg : 'Failed to save card',
+      })
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleMember = async (userId: string, assigned: boolean) => {
@@ -172,14 +230,82 @@ export default function CardEditPage() {
     await loadCard()
   }
 
+  const loadChecklistSources = async (q: string) => {
+    setChecklistSourcesLoading(true)
+    try {
+      // Search all boards + templates (do not scope to current board only)
+      const res = await api.get('/job-boards/checklists/search', {
+        params: { q: q || undefined },
+      })
+      let data = res.data?.data ?? res.data
+      if (!Array.isArray(data)) data = []
+
+      // Fallback: also pull Checklist Templates API if search returned none
+      if (data.length === 0 || !data.some((r: any) => r.sourceType === 'TEMPLATE')) {
+        try {
+          const tRes = await api.get('/templates', { params: { search: q || undefined } })
+          const raw = tRes.data?.data ?? tRes.data
+          const list = Array.isArray(raw) ? raw : raw?.data || []
+          const fromTemplates = (list || []).map((t: any) => {
+            const itemCount = (t.sections || []).reduce(
+              (n: number, s: any) => n + (s.items?.length || 0),
+              0,
+            )
+            return {
+              id: t.id,
+              sourceType: 'TEMPLATE' as const,
+              title: t.name,
+              subtitle: `Template · ${itemCount} items`,
+              itemCount,
+            }
+          })
+          const existingIds = new Set(data.map((r: any) => r.id))
+          data = [
+            ...fromTemplates.filter((t: any) => !existingIds.has(t.id)),
+            ...data,
+          ]
+        } catch {
+          /* templates module may be permission-gated */
+        }
+      }
+
+      setChecklistSources(data)
+    } catch {
+      setChecklistSources([])
+    } finally {
+      setChecklistSourcesLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (activePanel !== 'checklist' || !card) return
+    const t = setTimeout(() => {
+      loadChecklistSources(checklistCopyQuery)
+    }, 250)
+    return () => clearTimeout(t)
+  }, [activePanel, checklistCopyQuery, card?.id])
+
   const addChecklist = async () => {
-    if (!newChecklistTitle) return
-    await api.post(`/job-boards/cards/${card.id}/checklists`, {
-      title: newChecklistTitle,
-    })
-    setNewChecklistTitle('')
-    setActivePanel(null)
-    await loadCard()
+    if (!newChecklistTitle.trim()) return
+    setAddingChecklist(true)
+    try {
+      await api.post(`/job-boards/cards/${card.id}/checklists`, {
+        title: newChecklistTitle.trim(),
+        ...(selectedCopySource?.sourceType === 'CARD'
+          ? { copyFromChecklistId: selectedCopySource.id }
+          : {}),
+        ...(selectedCopySource?.sourceType === 'TEMPLATE'
+          ? { copyFromTemplateId: selectedCopySource.id }
+          : {}),
+      })
+      setNewChecklistTitle('Checklist')
+      setChecklistCopyQuery('')
+      setSelectedCopySource(null)
+      setActivePanel(null)
+      await loadCard()
+    } finally {
+      setAddingChecklist(false)
+    }
   }
 
   const toggleItem = async (item: any) => {
@@ -199,11 +325,22 @@ export default function CardEditPage() {
   }
 
   const addComment = async () => {
-    if (!comment) return
+    if (!comment.trim()) return
     await api.post(`/job-boards/cards/${card.id}/comments`, {
-      message: comment,
+      message: comment.trim(),
     })
     setComment('')
+    await loadCard()
+  }
+
+  const addReply = async (parentId: string) => {
+    if (!replyText.trim()) return
+    await api.post(`/job-boards/cards/${card.id}/comments`, {
+      message: replyText.trim(),
+      parentId,
+    })
+    setReplyText('')
+    setReplyingToId(null)
     await loadCard()
   }
 
@@ -221,14 +358,62 @@ export default function CardEditPage() {
     return d.toLocaleString()
   }
 
-  if (!card) return null
+  if (loadingCard) {
+    return (
+      <AdminShell title="Card detail">
+        <div className="p-6 text-sm text-slate-500">Loading card…</div>
+      </AdminShell>
+    )
+  }
+
+  if (loadError || !card) {
+    return (
+      <AdminShell title="Card detail">
+        <div className="p-6 space-y-3 max-w-lg">
+          <p className="text-sm text-red-600">
+            {loadError || 'Card not found'}
+          </p>
+          <p className="text-xs text-slate-500">
+            Use the hyphen URL: <code className="bg-slate-100 px-1 rounded">/admin/job-boards/cards/…</code>
+            (not <code className="bg-slate-100 px-1 rounded">job_boards</code>).
+          </p>
+          <Button variant="outline" onClick={() => router.push('/admin/job-boards')}>
+            ← Back to Job Boards
+          </Button>
+        </div>
+      </AdminShell>
+    )
+  }
+
+  const boardId = card.list?.boardId || card.list?.board?.id
 
   return (
-    <AdminShell title="">
-      <div className="max-w-7xl mx-auto flex gap-6 py-6 h-[calc(100vh-120px)] overflow-hidden bg-gray-50 rounded-xl px-6">
+    <AdminShell title={card.title || 'Card detail'}>
+      <div className="mb-3">
+        <Button
+          variant="outline"
+          onClick={() =>
+            router.push(boardId ? `/admin/job-boards/${boardId}` : '/admin/job-boards')
+          }
+        >
+          ← Back to Board
+        </Button>
+      </div>
+      <div className="w-full max-w-none flex gap-6 py-4 h-[calc(100vh-160px)] overflow-hidden bg-gray-50 rounded-xl px-3 sm:px-4">
 
         {/*LEFT*/}
         <div className="flex-1 space-y-3 overflow-y-auto pr-2">
+
+          {/* COVER IMAGE */}
+          {card.coverImageUrl && (
+            <div className="bg-white rounded-lg shadow-sm overflow-hidden">
+              <AuthenticatedPhoto
+                src={card.coverImageUrl}
+                alt="Card cover"
+                className="w-full max-h-56 object-cover"
+              />
+            </div>
+          )}
 
           {/* HEADER */}
           <div className="bg-white p-4 rounded-lg shadow-sm relative">
@@ -246,25 +431,100 @@ export default function CardEditPage() {
               className="w-full text-2xl font-semibold border-b outline-none pb-2"
             />
 
-            {/* ACTION BAR */}
+            {/* ACTION BAR — Add / Checklist / Attachment / Cover (Trello-style) */}
             <div className="flex gap-2 mt-4 flex-wrap">
-              <button onClick={() => setActivePanel(activePanel === 'members' ? null : 'members')} className="btn">Members</button>
-              <button onClick={() => setActivePanel(activePanel === 'checklist' ? null : 'checklist')} className="btn">Checklist</button>
-              <button onClick={() => setActivePanel(activePanel === 'dates' ? null : 'dates')} className="btn">Dates</button>
-              <button onClick={() => setActivePanel(activePanel === 'attachment' ? null : 'attachment')} className="btn">Attachment</button>
-              <button onClick={() => setActivePanel(activePanel === 'labels' ? null : 'labels')} className="btn">Labels</button>
+              <button
+                onClick={() => setActivePanel(activePanel === 'members' ? null : 'members')}
+                className="btn"
+              >
+                + Add
+              </button>
+              <button
+                onClick={() => setActivePanel(activePanel === 'checklist' ? null : 'checklist')}
+                className="btn"
+              >
+                Checklist
+              </button>
+              <button
+                onClick={() => setActivePanel(activePanel === 'attachment' ? null : 'attachment')}
+                className="btn"
+              >
+                Attachment
+              </button>
+              <button
+                onClick={() => coverInputRef.current?.click()}
+                className="btn"
+              >
+                Add Picture
+              </button>
+              <button
+                onClick={() => setActivePanel(activePanel === 'dates' ? null : 'dates')}
+                className="btn"
+              >
+                Dates
+              </button>
+              <button
+                onClick={() => setActivePanel(activePanel === 'labels' ? null : 'labels')}
+                className="btn"
+              >
+                Labels
+              </button>
+              <input
+                ref={coverInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden"
+                onChange={async (e) => {
+                  const file = e.target.files?.[0]
+                  if (!file) return
+                  const formData = new FormData()
+                  formData.append('file', file)
+                  await api.post(`/job-boards/cards/${card.id}/cover`, formData, {
+                    headers: { 'Content-Type': 'multipart/form-data' },
+                  })
+                  e.target.value = ''
+                  await loadCard()
+                }}
+              />
             </div>
 
             {/* MEMBERS DROPDOWN */}
             {activePanel === 'members' && (
               <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-4 mt-3 w-80 z-50">
-                <h4 className="font-semibold mb-3">Members</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold">Members</h4>
+                  <button type="button" className="text-slate-400 text-sm" onClick={() => setActivePanel(null)}>✕</button>
+                </div>
                 <input
                   placeholder="Search members"
-                  className="border rounded-lg p-2 w-full mb-3"
+                  className="border rounded-lg p-2 w-full mb-3 text-sm"
+                  value={search}
                   onChange={e => setSearch(e.target.value)}
                 />
-                <div className="max-h-56 overflow-y-auto space-y-2">
+                {card.members?.length > 0 && (
+                  <div className="mb-3">
+                    <div className="text-xs font-semibold text-slate-500 mb-1">Card members</div>
+                    <div className="space-y-1">
+                      {card.members.map((m: any) => (
+                        <div key={m.id} className="flex items-center justify-between p-2 rounded hover:bg-gray-50">
+                          <div className="flex items-center gap-2">
+                            <span className="w-7 h-7 rounded-full bg-violet-500 text-white text-[11px] flex items-center justify-center font-semibold">
+                              {m.user?.displayName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
+                            </span>
+                            <span className="text-sm">{m.user?.displayName}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="text-slate-400 hover:text-red-500 text-xs"
+                            onClick={() => toggleMember(m.userId, true)}
+                          >✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="text-xs font-semibold text-slate-500 mb-1">Board members</div>
+                <div className="max-h-48 overflow-y-auto space-y-1">
                   {users
                     .filter(u => u.displayName?.toLowerCase().includes((search || '').toLowerCase()))
                     .map(u => {
@@ -273,9 +533,12 @@ export default function CardEditPage() {
                         <div
                           key={u.id}
                           onClick={() => toggleMember(u.id, assigned)}
-                          className={`flex justify-between items-center p-2 rounded-lg cursor-pointer ${assigned ? 'bg-blue-100' : 'hover:bg-gray-100'}`}
+                          className={`flex items-center gap-2 p-2 rounded-lg cursor-pointer ${assigned ? 'bg-blue-50' : 'hover:bg-gray-100'}`}
                         >
-                          <span>{u.displayName}</span>
+                          <span className="w-7 h-7 rounded-full bg-slate-400 text-white text-[11px] flex items-center justify-center font-semibold shrink-0">
+                            {u.displayName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
+                          </span>
+                          <span className="text-sm flex-1">{u.displayName}</span>
                           {assigned && <span className="text-blue-600 text-sm">✓</span>}
                         </div>
                       )
@@ -284,63 +547,164 @@ export default function CardEditPage() {
               </div>
             )}
 
-            {/* CHECKLIST DROPDOWN */}
+            {/* ADD CHECKLIST — Copy items from existing card checklists + templates */}
             {activePanel === 'checklist' && (
-              <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-4 mt-3 w-80 z-50">
+              <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-4 mt-3 w-[360px] z-50">
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold">Add checklist</h4>
+                  <button type="button" className="text-slate-400 text-sm" onClick={() => setActivePanel(null)}>✕</button>
+                </div>
+                <label className="text-xs font-medium text-slate-500">Title</label>
                 <input
-                  placeholder="Checklist title"
-                  className="border p-2 w-full mb-2"
+                  placeholder="Checklist"
+                  className="border rounded-lg p-2 w-full mb-3 text-sm"
                   value={newChecklistTitle}
                   onChange={e => setNewChecklistTitle(e.target.value)}
                 />
-                <button onClick={addChecklist} className="btn-primary w-full">Add</button>
+                <label className="text-xs font-medium text-slate-500">Copy items from...</label>
+                <input
+                  placeholder="Search checklists or templates..."
+                  className="border rounded-lg p-2 w-full mt-1 mb-2 text-sm"
+                  value={checklistCopyQuery}
+                  onChange={e => {
+                    setChecklistCopyQuery(e.target.value)
+                    setSelectedCopySource(null)
+                  }}
+                />
+                {selectedCopySource && (
+                  <div className="mb-2 flex items-center justify-between rounded-lg bg-aqua/10 border border-aqua/30 px-2 py-1.5 text-xs">
+                    <span className="truncate pr-2">
+                      {selectedCopySource.title}
+                      <span className="text-slate-500"> · {selectedCopySource.sourceType === 'TEMPLATE' ? 'Template' : 'Checklist'}</span>
+                    </span>
+                    <button type="button" className="text-slate-500 shrink-0" onClick={() => setSelectedCopySource(null)}>Clear</button>
+                  </div>
+                )}
+                <div className="max-h-48 overflow-y-auto border rounded-lg mb-3">
+                  {checklistSourcesLoading && (
+                    <div className="p-3 text-xs text-slate-400">Loading…</div>
+                  )}
+                  {!checklistSourcesLoading && checklistSources.length === 0 && (
+                    <div className="p-3 text-xs text-slate-400">No matching checklists</div>
+                  )}
+                  {!checklistSourcesLoading && checklistSources.map((s: any) => (
+                    <button
+                      key={`${s.sourceType}-${s.id}`}
+                      type="button"
+                      onClick={() => {
+                        setSelectedCopySource({
+                          id: s.id,
+                          sourceType: s.sourceType,
+                          title: s.title,
+                        })
+                        if (!newChecklistTitle || newChecklistTitle === 'Checklist') {
+                          setNewChecklistTitle(
+                            s.sourceType === 'TEMPLATE'
+                              ? s.title
+                              : (String(s.subtitle || '').split('·')[0] || 'Checklist').trim(),
+                          )
+                        }
+                      }}
+                      className={`w-full text-left px-3 py-2 border-b last:border-b-0 hover:bg-slate-50 ${
+                        selectedCopySource?.id === s.id && selectedCopySource?.sourceType === s.sourceType
+                          ? 'bg-blue-50'
+                          : ''
+                      }`}
+                    >
+                      <div className="flex items-start gap-2">
+                        <span
+                          className={`mt-0.5 shrink-0 text-[10px] px-1.5 py-0.5 rounded font-medium ${
+                            s.sourceType === 'TEMPLATE'
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : 'bg-slate-100 text-slate-600'
+                          }`}
+                        >
+                          {s.sourceType === 'TEMPLATE' ? 'Template' : 'Checklist'}
+                        </span>
+                        <div className="min-w-0">
+                          <div className="text-sm text-slate-800 line-clamp-2">{s.title}</div>
+                          <div className="text-[11px] text-slate-500">{s.subtitle}</div>
+                        </div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+                <button
+                  onClick={addChecklist}
+                  disabled={addingChecklist || !newChecklistTitle.trim()}
+                  className="btn-primary w-full disabled:opacity-50"
+                >
+                  {addingChecklist ? 'Adding…' : 'Add'}
+                </button>
               </div>
             )}
 
             {/* DATES DROPDOWN */}
             {activePanel === 'dates' && (
               <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-5 mt-3 w-80 z-50">
-                <h4 className="font-semibold mb-3">Dates</h4>
+                <div className="flex items-center justify-between mb-3">
+                  <h4 className="font-semibold">Dates</h4>
+                  <button type="button" className="text-slate-400 text-sm" onClick={() => setActivePanel(null)}>✕</button>
+                </div>
                 <div className="mb-3">
-                  <label className="text-sm text-gray-500">Due date</label>
+                  <label className="flex items-center gap-2 text-sm text-slate-700 mb-1">
+                    <input
+                      type="checkbox"
+                      checked={dueDateEnabled}
+                      onChange={e => setDueDateEnabled(e.target.checked)}
+                      style={{ width: 14, height: 14 }}
+                    />
+                    Due date
+                  </label>
                   <input
                     type="datetime-local"
                     value={dueDate}
+                    disabled={!dueDateEnabled}
                     onChange={e => setDueDate(e.target.value)}
-                    className="w-full border rounded-lg p-2 mt-1"
+                    className="w-full border rounded-lg p-2 mt-1 disabled:bg-slate-100 disabled:text-slate-400"
                   />
                 </div>
-                <div className="flex justify-between mt-4">
-                  <button
-                    onClick={async () => {
-                      await api.patch(`/job-boards/cards/${card.id}`, { dueDate: null })
-                      setDueDate('')
-                      setActivePanel(null)
-                      await loadCard()
-                    }}
-                    className="text-red-500 text-sm"
-                  >Remove</button>
-                  <button
-                    onClick={async () => {
-                      await api.patch(`/job-boards/cards/${card.id}`, {
-                        dueDate: dueDate ? new Date(dueDate).toISOString() : null,
-                      })
-                      setActivePanel(null)
-                      await loadCard()
-                    }}
-                    className="bg-blue-600 text-white px-4 py-1 rounded-lg text-sm"
-                  >Save</button>
-                </div>
+                <button
+                  onClick={async () => {
+                    await api.patch(`/job-boards/cards/${card.id}`, {
+                      dueDate: dueDateEnabled && dueDate ? new Date(dueDate).toISOString() : null,
+                    })
+                    setActivePanel(null)
+                    await loadCard()
+                  }}
+                  className="w-full bg-blue-600 text-white px-4 py-2 rounded-lg text-sm mb-2"
+                >Save</button>
+                <button
+                  onClick={async () => {
+                    await api.patch(`/job-boards/cards/${card.id}`, { dueDate: null })
+                    setDueDate('')
+                    setDueDateEnabled(false)
+                    setActivePanel(null)
+                    await loadCard()
+                  }}
+                  className="w-full bg-slate-100 text-slate-700 px-4 py-2 rounded-lg text-sm"
+                >Remove</button>
               </div>
             )}
 
             {/* LABELS DROPDOWN */}
             {activePanel === 'labels' && (
-              <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-5 mt-3 w-80 z-50 space-y-4">
-                <h4 className="font-semibold">Labels</h4>
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {card.labels?.map((l: any) => (
-                    <div key={l.id} className="flex items-center gap-3 p-2 rounded hover:bg-gray-100">
+              <div ref={panelRef} className="absolute bg-white shadow-xl border rounded-xl p-5 mt-3 w-80 z-50 space-y-3">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-semibold">Labels</h4>
+                  <button type="button" className="text-slate-400 text-sm" onClick={() => setActivePanel(null)}>✕</button>
+                </div>
+                <input
+                  placeholder="Search labels..."
+                  className="border rounded-lg p-2 w-full text-sm"
+                  value={labelSearch}
+                  onChange={e => setLabelSearch(e.target.value)}
+                />
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {card.labels
+                    ?.filter((l: any) => l.name?.toLowerCase().includes(labelSearch.toLowerCase()))
+                    .map((l: any) => (
+                    <div key={l.id} className="flex items-center gap-3 p-1 rounded hover:bg-gray-100">
                       <input
                         type="checkbox"
                         checked
@@ -348,14 +712,18 @@ export default function CardEditPage() {
                           await api.delete(`/job-boards/cards/${card.id}/labels/${l.id}`)
                           await loadCard()
                         }}
-                        className="w-4 h-4 accent-blue-600"
+                        style={{ width: 14, height: 14 }}
                       />
                       <div className="flex-1 text-white px-2 py-1 rounded text-sm" style={{ backgroundColor: l.color }}>
                         {l.name}
                       </div>
                     </div>
                   ))}
+                  {(!card.labels || card.labels.length === 0) && (
+                    <p className="text-xs text-slate-400">No labels on this card yet</p>
+                  )}
                 </div>
+                <div className="text-xs font-medium text-slate-500">Create a new label</div>
                 <div className="flex items-center gap-2">
                   <input
                     placeholder="Label name"
@@ -430,7 +798,33 @@ export default function CardEditPage() {
                     >✕</button>
                   </div>
                 ))}
+                <button
+                  type="button"
+                  onClick={() => setActivePanel('members')}
+                  className="w-8 h-8 rounded-full border border-dashed border-slate-300 text-slate-400 text-sm hover:bg-slate-50"
+                >+</button>
               </div>
+            </div>
+          )}
+
+          {card.dueDate && (
+            <div className="mt-2">
+              <div className="text-sm text-gray-600 mb-1 font-medium">Due date</div>
+              <button
+                type="button"
+                onClick={() => setActivePanel('dates')}
+                className="inline-flex items-center gap-2 text-sm bg-white border rounded-lg px-3 py-1.5 shadow-sm"
+              >
+                {new Date(card.dueDate).toLocaleString('en-AU', {
+                  month: 'short',
+                  day: 'numeric',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                {new Date(card.dueDate).getTime() < Date.now() + 2 * 86400000 && (
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">Due soon</span>
+                )}
+              </button>
             </div>
           )}
 
@@ -558,13 +952,103 @@ export default function CardEditPage() {
 
           {/* DESCRIPTION */}
           <div className="bg-white p-4 rounded-lg shadow-sm">
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="font-semibold text-sm">Description</h4>
+              <button
+                type="button"
+                onClick={saveCard}
+                disabled={saving}
+                className="text-xs text-blue-600 hover:underline disabled:opacity-50"
+              >
+                {saving ? 'Saving…' : 'Save'}
+              </button>
+            </div>
             <textarea
               rows={6}
               value={description}
               onChange={e => setDescription(e.target.value)}
+              onBlur={() => {
+                if (description !== (card.description || '')) saveCard()
+              }}
               className="w-full bg-gray-50 rounded-md px-3 py-2 text-sm resize-y min-h-[120px] focus:bg-white focus:ring-1 focus:ring-blue-500 leading-relaxed"
               placeholder="Add a more detailed description..."
             />
+          </div>
+
+          {/* ATTACHMENTS */}
+          <div className="bg-white p-4 rounded-lg shadow-sm">
+            <div className="flex justify-between items-center mb-3">
+              <h4 className="font-semibold">Attachments</h4>
+              <button
+                onClick={() => setActivePanel(activePanel === 'attachment' ? null : 'attachment')}
+                className="text-xs text-blue-600 hover:underline"
+              >
+                + Add
+              </button>
+            </div>
+            {(!card.attachments || card.attachments.length === 0) && (
+              <p className="text-sm text-gray-400">No attachments</p>
+            )}
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {card.attachments?.map((a: any) => {
+                const isImage = /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.fileName || a.fileUrl || '')
+                return (
+                  <div
+                    key={a.id}
+                    className="relative group/att border rounded-lg overflow-hidden hover:shadow-md transition"
+                  >
+                    <button
+                      type="button"
+                      title="Delete attachment"
+                      className="absolute top-1 right-1 z-10 w-6 h-6 rounded-full bg-white/95 text-red-600 text-xs shadow border border-slate-200 opacity-100 sm:opacity-0 sm:group-hover/att:opacity-100 hover:bg-red-50"
+                      onClick={async (e) => {
+                        e.stopPropagation()
+                        if (!confirm(`Delete "${a.fileName}"?`)) return
+                        try {
+                          await api.delete(`/job-boards/attachments/${a.id}`)
+                          showToast({ type: 'success', title: 'Attachment deleted' })
+                          await loadCard()
+                        } catch {
+                          showToast({ type: 'error', title: 'Failed to delete attachment' })
+                        }
+                      }}
+                    >
+                      ✕
+                    </button>
+                    {isImage ? (
+                      <AuthenticatedPhoto
+                        src={a.fileUrl}
+                        alt={a.fileName}
+                        className="h-24 w-full object-cover"
+                      />
+                    ) : (
+                      <div className="h-24 flex items-center justify-center bg-slate-50 text-xs text-slate-500 px-2 text-center">
+                        {a.fileName}
+                      </div>
+                    )}
+                    <div className="px-2 py-1 flex items-center justify-between gap-1">
+                      <span className="text-[11px] truncate text-slate-600">{a.fileName}</span>
+                      <button
+                        type="button"
+                        className="text-[11px] text-red-600 hover:underline shrink-0"
+                        onClick={async () => {
+                          if (!confirm(`Delete "${a.fileName}"?`)) return
+                          try {
+                            await api.delete(`/job-boards/attachments/${a.id}`)
+                            showToast({ type: 'success', title: 'Attachment deleted' })
+                            await loadCard()
+                          } catch {
+                            showToast({ type: 'error', title: 'Failed to delete attachment' })
+                          }
+                        }}
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
           </div>
 
           {/* CHECKLISTS */}
@@ -582,25 +1066,51 @@ export default function CardEditPage() {
             const percent = total === 0 ? 0 : Math.round((done / total) * 100)
             return (
               <div key={cl.id} className="bg-white p-4 rounded-lg shadow-sm">
-                <div className="flex justify-between items-center mb-2">
-                  <h4 className="font-semibold">{cl.title}</h4>
-                  <span className="text-sm text-gray-500">{percent}%</span>
+                <div className="flex justify-between items-center mb-2 gap-2">
+                  <h4 className="font-semibold flex-1">{cl.title}</h4>
+                  <span className="text-sm text-gray-500 shrink-0">{percent}%</span>
+                  <button
+                    type="button"
+                    className="text-xs text-red-600 hover:underline shrink-0"
+                    onClick={async () => {
+                      if (!confirm(`Delete checklist "${cl.title}"?`)) return
+                      try {
+                        await api.delete(`/job-boards/checklists/${cl.id}`)
+                        showToast({ type: 'success', title: 'Checklist deleted' })
+                        await loadCard()
+                      } catch {
+                        showToast({ type: 'error', title: 'Failed to delete checklist' })
+                      }
+                    }}
+                  >
+                    Delete
+                  </button>
                 </div>
                 <div className="h-2 bg-gray-200 rounded mb-3">
                   <div className="h-2 bg-blue-600 rounded transition-all" style={{ width: `${percent}%` }} />
                 </div>
                 <div className="space-y-3">
                   {cl.items.map((item: any) => (
-                    <div key={item.id} className="flex items-center gap-3">
+                    <div key={item.id} className="flex items-center gap-3 group/item">
                       <input
                         type="checkbox"
                         checked={item.isCompleted}
                         onChange={() => toggleItem(item)}
-                        className="w-4 h-4 accent-blue-600"
+                        style={{ width: 14, height: 14 }}
                       />
-                      <span className={`text-sm ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+                      <span className={`text-sm flex-1 ${item.isCompleted ? 'line-through text-gray-400' : 'text-gray-700'}`}>
                         {item.content}
                       </span>
+                      <button
+                        type="button"
+                        className="text-[11px] text-slate-400 hover:text-red-500 opacity-0 group-hover/item:opacity-100"
+                        onClick={async () => {
+                          await api.delete(`/job-boards/checklist-items/${item.id}`)
+                          await loadCard()
+                        }}
+                      >
+                        ✕
+                      </button>
                     </div>
                   ))}
                 </div>
@@ -613,11 +1123,18 @@ export default function CardEditPage() {
                         placeholder="Enter item name"
                         className="border p-2 rounded w-full text-sm"
                         autoFocus
+                        onKeyDown={async (e) => {
+                          if (e.key !== 'Enter' || !newItemText.trim()) return
+                          await api.post(`/job-boards/checklists/${cl.id}/items`, { content: newItemText.trim() })
+                          setNewItemText('')
+                          setAddingItemChecklistId(null)
+                          await loadCard()
+                        }}
                       />
                       <button
                         onClick={async () => {
                           if (!newItemText.trim()) return
-                          await api.post(`/job-boards/checklists/${cl.id}/items`, { content: newItemText })
+                          await api.post(`/job-boards/checklists/${cl.id}/items`, { content: newItemText.trim() })
                           setNewItemText('')
                           setAddingItemChecklistId(null)
                           await loadCard()
@@ -640,33 +1157,66 @@ export default function CardEditPage() {
             )
           })}
 
-          <button onClick={saveCard} className="btn-primary">Save Changes</button>
+          <p className="text-xs text-slate-500">
+            Checklist ticks and items save automatically. Use Save for title, description, and due date.
+          </p>
+          <button
+            type="button"
+            onClick={saveCard}
+            disabled={saving}
+            className="btn-primary disabled:opacity-50"
+          >
+            {saving ? 'Saving…' : 'Save Changes'}
+          </button>
         </div>
 
         {/*RIGHT SIDE COMMENTS*/}
         <div className="w-80 bg-white border rounded-xl shadow-sm p-4 flex flex-col h-full">
-          <h3 className="font-semibold mb-3">Comments and Activity</h3>
+          <div className="flex items-center justify-between mb-3">
+            <h3 className="font-semibold">Comments and Activity</h3>
+            <button
+              type="button"
+              className="text-xs text-blue-600 hover:underline"
+              onClick={() => setShowActivityDetails(v => !v)}
+            >
+              {showActivityDetails ? 'Hide details' : 'Show details'}
+            </button>
+          </div>
           <textarea
             placeholder="Write a comment..."
             value={comment}
             onChange={e => setComment(e.target.value)}
-            className="w-full border p-2 mb-2"
+            className="w-full border p-2 mb-2 text-sm rounded"
+            rows={3}
           />
           <button onClick={addComment} className="btn-primary w-full mb-4">Comment</button>
 
-          <div className="space-y-3 overflow-y-auto pr-2 flex-1 text-sm">
-            {card.activities?.map((a: any) => (
-              <div key={a.id} className="flex gap-3 items-start group">
-                <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
-                  {a.user?.displayName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
-                </div>
-                <div className="flex-1 leading-tight">
-                  <div className="text-[13px]">
-                    <span className="font-semibold">{a.user?.displayName}</span>{' '}
-                    {a.type !== 'COMMENT' && <span className="text-gray-700">{a.message}</span>}
+          <div className="space-y-4 overflow-y-auto pr-2 flex-1 text-sm">
+            {(() => {
+              const activities = card.activities || []
+              const comments = activities.filter((a: any) => a.type === 'COMMENT')
+              const topLevel = comments.filter((a: any) => !a.parentId)
+              const repliesByParent: Record<string, any[]> = {}
+              for (const c of comments) {
+                if (!c.parentId) continue
+                if (!repliesByParent[c.parentId]) repliesByParent[c.parentId] = []
+                repliesByParent[c.parentId].push(c)
+              }
+              const otherActivity = showActivityDetails
+                ? activities.filter((a: any) => a.type !== 'COMMENT')
+                : []
+
+              const renderComment = (a: any, isReply = false) => (
+                <div key={a.id} className={`flex gap-3 items-start group ${isReply ? 'ml-2 mt-2' : ''}`}>
+                  <div className="w-8 h-8 rounded-full bg-gray-400 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
+                    {a.user?.displayName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
                   </div>
-                  {a.type === 'COMMENT' && (
-                    editingCommentId === a.id ? (
+                  <div className="flex-1 leading-tight min-w-0">
+                    <div className="text-[13px] flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                      <span className="font-semibold">{a.user?.displayName}</span>
+                      <span className="text-[11px] text-gray-400 whitespace-nowrap">{formatDate(a.createdAt)}</span>
+                    </div>
+                    {editingCommentId === a.id ? (
                       <div className="mt-1 space-y-1">
                         <textarea
                           className="w-full border rounded px-2 py-1 text-sm resize-none focus:ring-1 focus:ring-blue-500"
@@ -687,34 +1237,88 @@ export default function CardEditPage() {
                         </div>
                       </div>
                     ) : (
-                      <div className="mt-0.5 bg-gray-50 border rounded px-2 py-1.5 text-gray-800 text-[13px]">
+                      <div className="mt-0.5 bg-gray-50 border rounded px-2 py-1.5 text-gray-800 text-[13px] whitespace-pre-wrap">
                         {a.message}
                       </div>
-                    )
-                  )}
-                  <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-[11px] text-gray-400">{formatDate(a.createdAt)}</span>
-                    {a.type === 'COMMENT' && editingCommentId !== a.id && (
-                      <div className="hidden group-hover:flex items-center gap-2">
-                        <button
-                          onClick={() => { setEditingCommentId(a.id); setEditingCommentText(a.message) }}
-                          className="text-[11px] text-gray-400 hover:text-blue-600"
-                        >Edit</button>
-                        <button
-                          onClick={async () => {
-                            if (confirm('Delete this comment?')) {
-                              await api.delete(`/job-boards/comments/${a.id}`)
-                              await loadCard()
-                            }
-                          }}
-                          className="text-[11px] text-gray-400 hover:text-red-500"
-                        >Delete</button>
+                    )}
+                    <div className="flex items-center gap-3 mt-1">
+                      {editingCommentId !== a.id && (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReplyingToId(a.id)
+                              setReplyText('')
+                            }}
+                            className="text-[11px] text-gray-500 hover:text-blue-600"
+                          >Reply</button>
+                          <button
+                            type="button"
+                            onClick={() => { setEditingCommentId(a.id); setEditingCommentText(a.message) }}
+                            className="text-[11px] text-gray-400 hover:text-blue-600"
+                          >Edit</button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (confirm('Delete this comment?')) {
+                                await api.delete(`/job-boards/comments/${a.id}`)
+                                await loadCard()
+                              }
+                            }}
+                            className="text-[11px] text-gray-400 hover:text-red-500"
+                          >Delete</button>
+                        </>
+                      )}
+                    </div>
+
+                    {replyingToId === a.id && (
+                      <div className="mt-2 space-y-1">
+                        <textarea
+                          className="w-full border rounded px-2 py-1 text-sm resize-none"
+                          rows={2}
+                          placeholder="Write a reply..."
+                          value={replyText}
+                          onChange={e => setReplyText(e.target.value)}
+                          autoFocus
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={() => addReply(a.id)}
+                            className="bg-blue-600 text-white px-3 py-0.5 rounded text-xs"
+                          >Reply</button>
+                          <button
+                            type="button"
+                            onClick={() => { setReplyingToId(null); setReplyText('') }}
+                            className="text-gray-500 text-xs"
+                          >Cancel</button>
+                        </div>
                       </div>
                     )}
+
+                    {(repliesByParent[a.id] || []).map((r: any) => renderComment(r, true))}
                   </div>
                 </div>
-              </div>
-            ))}
+              )
+
+              return (
+                <>
+                  {topLevel.map((a: any) => renderComment(a))}
+                  {otherActivity.map((a: any) => (
+                    <div key={a.id} className="flex gap-3 items-start text-[13px] text-slate-600">
+                      <div className="w-8 h-8 rounded-full bg-slate-300 text-white flex items-center justify-center text-[11px] font-semibold shrink-0">
+                        {a.user?.displayName?.split(' ').map((n: string) => n[0]).join('').substring(0, 2).toUpperCase()}
+                      </div>
+                      <div>
+                        <span className="font-semibold text-slate-800">{a.user?.displayName}</span>{' '}
+                        {a.message}
+                        <div className="text-[11px] text-gray-400 mt-0.5">{formatDate(a.createdAt)}</div>
+                      </div>
+                    </div>
+                  ))}
+                </>
+              )
+            })()}
           </div>
         </div>
 

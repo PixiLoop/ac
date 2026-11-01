@@ -25,6 +25,12 @@ export class CreateSubscriptionReportDto {
   filterOptionCode?: string;
 
   @IsOptional() @IsString()
+  filterDepot?: string;
+
+  @IsOptional() @IsString()
+  orderNumber?: string;
+
+  @IsOptional() @IsString()
   sortBy?: string;
 
   @IsOptional()

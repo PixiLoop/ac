@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { JobBoardsService } from '../job-boards/job-boards.service'
 
@@ -107,6 +107,7 @@ export class FMPreinstallService {
         vehicleModel: true,
         status: true,
         baseUnit: true,
+        fmCustomerNum: true,
       },
       take: 20,
     });
@@ -149,6 +150,12 @@ export class FMPreinstallService {
       include: {
         items: {
           where: { deletedAt: null },
+          include: {
+            product: { select: { onHand: true, committed: true } },
+          },
+        },
+        customer: {
+          select: { id: true, name: true, customerNumber: true, orderRequired: true },
         },
         installDetail: {
           include: {
@@ -164,6 +171,7 @@ export class FMPreinstallService {
   }
 
   async create(dto: any, userId: string) {
+    
     const TYPES_REQUIRING_TARGET = ['MODIFIED_INSTALL', 'WARRANTY', 'REPLACEMENT', 'TRANSFER_UNIT'];
     if (TYPES_REQUIRING_TARGET.includes(dto.type) && !dto.targetInstallId) {
       throw new Error('Target Record is required for this install type');
@@ -171,12 +179,56 @@ export class FMPreinstallService {
 
     if (dto.targetInstallId) {
       const target = await this.prisma.fMInstall.findUnique({ where: { id: dto.targetInstallId } });
-      if (!target) throw new Error('Target record not found');
-
+      if (!target) throw new BadRequestException('Target record not found');
+      const fm = dto.fmCustomerId
+        ? await this.prisma.fMCustomer.findUnique({ where: { id: dto.fmCustomerId }, select: { fmWebNumber: true } })
+        : null;
+      const owner = String(target.fmCustomerNum ?? '').trim();
+      const selected = String(fm?.fmWebNumber ?? '').trim();
+      if (owner && selected && owner.toLowerCase() !== selected.toLowerCase()) {
+        throw new BadRequestException(`Record belongs to FMCus ${owner}`);
+      }
       if (dto.type === 'TRANSFER_UNIT' && target.status !== 'DECOMMISSIONED') {
-        throw new Error('Set Install Record to Decommissioned first');
+        throw new BadRequestException('Set Install Record to Decom. First');
+      }
+      if (['MODIFIED_INSTALL', 'WARRANTY', 'REPLACEMENT'].includes(dto.type) && target.status === 'DECOMMISSIONED') {
+        throw new BadRequestException('Install Record Set to Decom. Activate First');
       }
     }
+
+    if (!dto.type) {
+      throw new BadRequestException('An Install Type Would Help, Select Type then Press Enter');
+    }
+
+    const customer = dto.customerId
+      ? await this.prisma.customer.findFirst({
+          where: { id: dto.customerId, deletedAt: null },
+          select: { id: true, fmCustomer: { select: { id: true } } },
+        })
+      : null;
+
+    if (!customer) throw new BadRequestException('Invalid Customer Number');
+
+    if (!customer.fmCustomer) throw new BadRequestException('Not an FM Customer');
+
+    const serviceCode = String(dto.installDetail?.serviceCode ?? '').trim();
+
+    // if (!serviceCode) throw new BadRequestException('Invalid Service Code');
+
+    const serviceItem = await this.prisma.product.findFirst({
+      where: { productCode: { equals: serviceCode, mode: 'insensitive' }, isActive: true },
+      select: { id: true },
+    });
+
+    // if (!serviceItem) throw new BadRequestException('Invalid Service Code');
+
+    const cameraOn = dto.installDetail?.visionType || dto.installDetail?.cameraType;
+
+    const unit = String(dto.installDetail?.fmUnitType ?? '').trim().toUpperCase();
+
+    // if (cameraOn && !['SA', 'SA_M2', 'M2', 'FMS'].includes(unit)) {
+    //   throw new BadRequestException('Base Unit must be SA, SA_M2, M2 or FMS to support a Camera System');
+    // }
 
     const preinstallNo = await this.generateNumber();
 
@@ -196,13 +248,14 @@ export class FMPreinstallService {
         shippingName: dto.shippingName,
         shippingAddress1: dto.shippingAddress1 ?? null,
         shippingAddress2: dto.shippingAddress2 ?? null,
-        shippingAddress3: null, //not used
+        shippingAddress3: dto.shippingAddress3 ?? null, // postcode
 
         billingName: dto.billingName,
         billingAddress1: dto.billingAddress1 ?? null,
         billingAddress2: dto.billingAddress2 ?? null,
-        billingAddress3: null, //not used
+        billingAddress3: dto.billingAddress3 ?? null, // postcode
         notes: dto?.notes || "",
+        orderNumber: dto.orderNumber?.trim() || null,
         assignedUserId: dto.assignedUserId || userId,
         customer: {
           connect: { id: dto.customerId },
@@ -355,50 +408,8 @@ export class FMPreinstallService {
           isScheduled: !!(i.installer && installDate),
           status: 'NOT_ACTIONED',
           notes: `Created from FM Preinstall ${preinstall.preinstallNo}. Location: ${i.installLocation || 'Main Workshop'}. Unit Code: ${i.fmUnitCode || 'N/A'}.`,
-          timeline: {
-            create: {
-              status: 'NOT_ACTIONED',
-              updatedByName: 'Operations Dispatch',
-              note: `Installation job created from FM Preinstall ${preinstall.preinstallNo}.`,
-            },
-          },
         },
       });
-
-      // Also create default checklist sections and hardware items on DB
-      try {
-        await (this.prisma as any).jobChecklistSection.create({
-          data: {
-            jobId: installationJob.id,
-            title: 'Hardware & Harness Pre-Check',
-            hardwareName: i.fmUnitCode || 'Telematics Hardware',
-            displayOrder: 1,
-            items: {
-              create: [
-                { title: 'Verify serial and IMEI against preinstall sheet', isRequired: true, displayOrder: 1, section: 'Hardware & Harness Pre-Check' },
-                { title: 'Inspect harness cables and inline fuses', isRequired: true, displayOrder: 2, section: 'Hardware & Harness Pre-Check' },
-              ],
-            },
-          },
-        });
-        await (this.prisma as any).jobChecklistSection.create({
-          data: {
-            jobId: installationJob.id,
-            title: 'Vehicle Installation & Telemetry Verification',
-            hardwareName: i.fmUnitCode || 'Telematics Hardware',
-            displayOrder: 2,
-            items: {
-              create: [
-                { title: 'Secure mounting in cabin away from moving linkages', isRequired: true, displayOrder: 1, section: 'Vehicle Installation & Telemetry Verification' },
-                { title: 'Connect ignition and continuous 12V/24V power lines', isRequired: true, displayOrder: 2, section: 'Vehicle Installation & Telemetry Verification' },
-                { title: 'Confirm GPS fix and telematics cellular heartbeat', isRequired: true, displayOrder: 3, section: 'Vehicle Installation & Telemetry Verification' },
-              ],
-            },
-          },
-        });
-      } catch (chkErr) {
-        console.warn('Checklist section creation note:', chkErr);
-      }
 
       await this.prisma.fMPreinstall.update({
         where: { id: preinstall.id },
@@ -545,6 +556,11 @@ export class FMPreinstallService {
       await this.handleStatusChange(id, existing.status, dto.status);
     }
 
+    const numOr = (v: unknown, fallback = 0) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : fallback;
+    };
+
     //UPDATE MAIN RECORD
     const updated = await this.prisma.fMPreinstall.update({
       where: { id },
@@ -562,6 +578,7 @@ export class FMPreinstallService {
         billingAddress2: dto.billingAddress2 ?? dto.city,
         billingAddress3: dto.billingAddress3 ?? dto.state,
         notes: dto?.notes || "",
+        ...(dto.orderNumber !== undefined && { orderNumber: dto.orderNumber?.trim() || null }),
         ...(dto.assignedUserId !== undefined && {
           assignedUserId: dto.assignedUserId || null,
         }),
@@ -573,6 +590,27 @@ export class FMPreinstallService {
         ...(dto.fmCustomerId && {
           fmCustomer: { connect: { id: dto.fmCustomerId } },
         }),
+
+        ...(dto.depotId !== undefined && {
+          Depots: dto.depotId
+            ? { connect: { id: dto.depotId } }
+            : { disconnect: true },
+        }),
+
+        ...(dto.dispatchMethod !== undefined && {
+          dispatchMethod: dto.dispatchMethod || null,
+        }),
+        ...(dto.dispatchRef !== undefined && {
+          dispatchRef: dto.dispatchRef || null,
+        }),
+
+        ...(dto.chargeParts !== undefined && { chargeParts: numOr(dto.chargeParts) }),
+        ...(dto.chargeSundries !== undefined && { chargeSundries: numOr(dto.chargeSundries) }),
+        ...(dto.chargeLabour !== undefined && { chargeLabour: numOr(dto.chargeLabour) }),
+        ...(dto.chargeFreight !== undefined && { chargeFreight: numOr(dto.chargeFreight) }),
+        ...(dto.chargeGst !== undefined && { chargeGst: numOr(dto.chargeGst) }),
+        ...(dto.chargeRounding !== undefined && { chargeRounding: numOr(dto.chargeRounding) }),
+        ...(dto.chargeTotal !== undefined && { chargeTotal: numOr(dto.chargeTotal) }),
       },
     });
 
@@ -669,9 +707,20 @@ export class FMPreinstallService {
 
   async updateItems(id: string, items: any[]) {
     // Skip rows with no product selected
-    const validItems = items.filter(i => i.productId && i.productId !== '');
+    const validItems = (items ?? []).filter(i => i.productId && i.productId !== '');
+    const keepIds = validItems.map(i => i.id).filter(Boolean) as string[];
 
     await this.prisma.$transaction(async tx => {
+      // Soft-delete lines removed in the UI
+      await tx.fMPreinstallItem.updateMany({
+        where: {
+          preinstallId: id,
+          deletedAt: null,
+          ...(keepIds.length > 0 ? { id: { notIn: keepIds } } : {}),
+        },
+        data: { deletedAt: new Date() },
+      });
+
       for (const item of validItems) {
         if (item.id) {
           await tx.fMPreinstallItem.update({
@@ -684,6 +733,7 @@ export class FMPreinstallService {
               unitPrice: item.unitPrice || 0,
               discountPct: item.discountPct ?? null,
               lineTotal: item.lineTotal ?? null,
+              deletedAt: null,
             },
           });
         } else {
@@ -702,6 +752,8 @@ export class FMPreinstallService {
         }
       }
     });
+
+    return this.findById(id);
   }
 
   async updateInstallDetail(preinstallId: string, dto: any) {
@@ -730,54 +782,6 @@ export class FMPreinstallService {
   async getSegments(query: any) {
     const { type, dependsOn } = query;
 
-    // Self-heal: ensure all inventory items with isFmHardware: true have a corresponding FMServiceSegment
-    try {
-      const hardwareItems = await this.prisma.product.findMany({
-        where: {
-          OR: [
-            { isFmHardware: true },
-            { status: 'FM Service' },
-          ],
-          deletedAt: null,
-        },
-      });
-
-      for (const item of hardwareItems) {
-        const itemCode = item.fmUnitCode || item.productCode;
-        const existing = await this.prisma.fMServiceSegment.findFirst({
-          where: {
-            OR: [
-              { productId: item.id },
-              { code: itemCode },
-            ],
-          },
-        });
-
-        if (!existing) {
-          await this.prisma.fMServiceSegment.create({
-            data: {
-              segment: item.isVision ? 3 : 1,
-              type: item.isVision ? 'VISION' : 'UNIT_CODE',
-              code: itemCode,
-              label: item.name ? `${item.productCode} - ${item.name}` : item.productCode,
-              mixCode: item.fmMixCode || null,
-              dependsOn: null,
-              productId: item.id,
-              isActive: true,
-              sortOrder: 100,
-            },
-          });
-        } else if (!existing.productId) {
-          await this.prisma.fMServiceSegment.update({
-            where: { id: existing.id },
-            data: { productId: item.id, isActive: true },
-          });
-        }
-      }
-    } catch (err) {
-      console.warn('Sync segments notice:', err);
-    }
-
     return this.prisma.fMServiceSegment.findMany({
       where: {
         isActive: true,
@@ -790,9 +794,6 @@ export class FMPreinstallService {
             { dependsOn: null },
           ],
         }),
-      },
-      include: {
-        Product: true,
       },
       orderBy: {
         sortOrder: 'asc',

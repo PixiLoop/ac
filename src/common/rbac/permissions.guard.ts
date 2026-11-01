@@ -44,7 +44,7 @@ export class PermissionsGuard implements CanActivate {
 
     if (!hasAll) {
       throw new ForbiddenException(
-        'You do not have permission to perform this action',
+        'You Do Not Have Access to This Process. Contact for Authorisation.',
       );
     }
     return true;

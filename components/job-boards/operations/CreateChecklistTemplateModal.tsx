@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { ChecklistTemplate, ChecklistTemplateSection, ChecklistTemplateItem, HardwareModel } from '../types/installation';
+import React, { useEffect, useState } from 'react';
+import { ChecklistTemplate, ChecklistTemplateSection, HardwareModel } from '../types/installation';
 import {
     CheckSquare,
     Plus,
@@ -7,7 +7,6 @@ import {
     X,
     Sparkles,
     Layers,
-    HelpCircle,
     Check,
     AlertCircle,
     Cpu,
@@ -16,6 +15,8 @@ import {
     Navigation,
     ShieldCheck,
     Sliders,
+    Library,
+    FilePlus2,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
 
@@ -23,6 +24,28 @@ interface CreateChecklistTemplateModalProps {
     isOpen: boolean;
     onClose: () => void;
     onCreated?: (templateId: string) => void;
+    /** Open modal as a deep clone of an existing saved template (never mutates source). */
+    reuseFrom?: ChecklistTemplate | null;
+}
+
+type BuilderSection = {
+    id: string;
+    title: string;
+    items: { id: string; title: string; description?: string; isRequired: boolean }[];
+};
+
+function deepCloneSectionsFromTemplate(tmpl: ChecklistTemplate): BuilderSection[] {
+    const stamp = Date.now();
+    return (tmpl.sections || []).map((sec, sIdx) => ({
+        id: `sec-reuse-${stamp}-${sIdx}`,
+        title: sec.title,
+        items: (sec.items || []).map((it, iIdx) => ({
+            id: `it-reuse-${stamp}-${sIdx}-${iIdx}`,
+            title: it.title,
+            description: it.description,
+            isRequired: it.isRequired,
+        })),
+    }));
 }
 
 interface StarterPreset {
@@ -274,11 +297,14 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     isOpen,
     onClose,
     onCreated,
+    reuseFrom = null,
 }) => {
-    const { createChecklistTemplate, setSelectedTemplateId } = useOperations();
+    const { createChecklistTemplate, setSelectedTemplateId, checklistTemplates } =
+        useOperations();
 
-    // Selected Preset or custom
+    // Selected Preset / blank / saved library clone
     const [activePresetIndex, setActivePresetIndex] = useState<number | null>(0);
+    const [activeLibraryId, setActiveLibraryId] = useState<string | null>(null);
 
     // Form Fields
     const [name, setName] = useState<string>(STARTER_PRESETS[0].name);
@@ -291,14 +317,8 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     const [status, setStatus] = useState<'Active' | 'Draft'>('Active');
     const [description, setDescription] = useState<string>(STARTER_PRESETS[0].description);
 
-    // Sections & Items builder
-    const [sections, setSections] = useState<
-        {
-            id: string;
-            title: string;
-            items: { id: string; title: string; description?: string; isRequired: boolean }[];
-        }[]
-    >(
+    // Sections & Items builder (always local copies — never shared with library templates)
+    const [sections, setSections] = useState<BuilderSection[]>(
         STARTER_PRESETS[0].sections.map((sec, secIdx) => ({
             id: `sec-preset-${secIdx}`,
             title: sec.title,
@@ -325,11 +345,43 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
     const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
     const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
+    // Apply a saved library template as an independent clone
+    const handleSelectLibraryTemplate = (tmpl: ChecklistTemplate) => {
+        setActivePresetIndex(null);
+        setActiveLibraryId(tmpl.id);
+        setName(`${tmpl.name} (Custom)`);
+        setHardwareModel(tmpl.hardwareModel);
+        setIsCustomModel(!PREDEFINED_MODELS.includes(tmpl.hardwareModel as HardwareModel));
+        setCustomModelInput(
+            PREDEFINED_MODELS.includes(tmpl.hardwareModel as HardwareModel)
+                ? ''
+                : tmpl.hardwareModel
+        );
+        setHardwareType(tmpl.hardwareType);
+        // UI category labels (reverse of CATEGORY_TO_ENUM when needed)
+        const catLabel =
+            Object.entries(CATEGORY_TO_ENUM).find(([, v]) => v === tmpl.category)?.[0] ||
+            tmpl.category;
+        setCategory(CATEGORIES.includes(catLabel) ? catLabel : CATEGORIES[0]);
+        setVersion(tmpl.version || 'v1.0');
+        setStatus('Draft');
+        setDescription(tmpl.description || '');
+        setSections(deepCloneSectionsFromTemplate(tmpl));
+    };
+
+    // When opened via "Reuse" from the list, seed a deep clone once
+    useEffect(() => {
+        if (!isOpen || !reuseFrom) return;
+        handleSelectLibraryTemplate(reuseFrom);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isOpen, reuseFrom?.id]);
+
     if (!isOpen) return null;
 
     // Apply a starter preset
     const handleSelectPreset = (idx: number | null) => {
         setActivePresetIndex(idx);
+        setActiveLibraryId(null);
         if (idx !== null) {
             const preset = STARTER_PRESETS[idx];
             setName(preset.name);
@@ -457,8 +509,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
         0
     );
 
-    const handleSubmit = async (e: React.FormEvent) => {
-        e.preventDefault();
+    const saveTemplate = async (saveStatus: 'Active' | 'Draft') => {
         setErrorMessage(null);
 
         const finalModel = isCustomModel ? customModelInput.trim() : hardwareModel;
@@ -486,12 +537,15 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
 
         try {
             setIsSubmitting(true);
+            setStatus(saveStatus);
 
+            // Fresh ids every save — never reuse source template section/item ids
+            const stamp = Date.now();
             const formattedSections: ChecklistTemplateSection[] = sections.map((sec, secIdx) => ({
-                id: `sec-${secIdx + 1}-${Date.now()}`,
+                id: `sec-${secIdx + 1}-${stamp}`,
                 title: sec.title,
                 items: sec.items.map((it, itIdx) => ({
-                    id: `item-${secIdx + 1}-${itIdx + 1}-${Date.now()}`,
+                    id: `item-${secIdx + 1}-${itIdx + 1}-${stamp}`,
                     title: it.title,
                     description: it.description,
                     section: sec.title,
@@ -507,7 +561,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                 category: CATEGORY_TO_ENUM[category] || category,
                 description: description.trim(),
                 version: version.trim() || 'v1.0',
-                status: (STATUS_TO_ENUM[status] || status) as any,
+                status: (STATUS_TO_ENUM[saveStatus] || saveStatus) as any,
                 sections: formattedSections,
             });
 
@@ -523,6 +577,11 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
             setIsSubmitting(false);
             setErrorMessage(err.message || 'Failed to create template. Please try again.');
         }
+    };
+
+    const handleSubmit = async (e: React.FormEvent) => {
+        e.preventDefault();
+        await saveTemplate(status);
     };
 
     return (
@@ -566,19 +625,21 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                             <button
                                 type="button"
                                 onClick={() => handleSelectPreset(null)}
-                                className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors ${activePresetIndex === null
+                                className={`text-xs font-semibold px-2.5 py-1 rounded-lg transition-colors inline-flex items-center gap-1 ${
+                                    activePresetIndex === null && !activeLibraryId
                                         ? 'bg-blue-600 text-white'
                                         : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
-                                    }`}
+                                }`}
                             >
-                                + Blank Custom Template
+                                <FilePlus2 className="w-3.5 h-3.5" />
+                                Blank Custom Template
                             </button>
                         </div>
 
                         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
                             {STARTER_PRESETS.map((preset, idx) => {
                                 const Icon = preset.icon;
-                                const isSelected = activePresetIndex === idx;
+                                const isSelected = activePresetIndex === idx && !activeLibraryId;
                                 return (
                                     <button
                                         key={preset.name}
@@ -607,6 +668,56 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                             })}
                         </div>
                     </div>
+
+                    {/* Reuse saved templates (deep clone — source stays unchanged) */}
+                    {checklistTemplates.length > 0 && (
+                        <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                                <div>
+                                    <label className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
+                                        <Library className="w-3.5 h-3.5 text-ink" />
+                                        Reuse a Saved Template
+                                    </label>
+                                    <p className="text-[11px] text-slate-500 mt-0.5">
+                                        Starts a new copy you can customise. Saving creates a separate template — the original is not changed.
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-40 overflow-y-auto pr-0.5">
+                                {checklistTemplates.map((tmpl) => {
+                                    const selected = activeLibraryId === tmpl.id;
+                                    const itemCount = tmpl.sections.reduce(
+                                        (acc, s) => acc + s.items.length,
+                                        0
+                                    );
+                                    return (
+                                        <button
+                                            key={tmpl.id}
+                                            type="button"
+                                            onClick={() => handleSelectLibraryTemplate(tmpl)}
+                                            className={`text-left rounded-xl border px-3 py-2.5 transition-all ${
+                                                selected
+                                                    ? 'bg-ink/5 border-ink ring-2 ring-ink/15'
+                                                    : 'bg-slate-50 border-slate-200 hover:border-slate-300 hover:bg-white'
+                                            }`}
+                                        >
+                                            <div className="flex items-center justify-between gap-2">
+                                                <p className="text-[11px] font-bold text-slate-900 truncate">
+                                                    {tmpl.name}
+                                                </p>
+                                                {selected && (
+                                                    <Check className="w-3.5 h-3.5 text-ink shrink-0" />
+                                                )}
+                                            </div>
+                                            <p className="text-[10px] text-slate-500 mt-0.5 truncate">
+                                                {tmpl.hardwareModel} · {itemCount} items · {tmpl.status}
+                                            </p>
+                                        </button>
+                                    );
+                                })}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Form Information */}
                     <form id="create-template-form" onSubmit={handleSubmit} className="space-y-6">
@@ -1006,7 +1117,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                         Standardizing telematics installations ensures fleet compliance and zero missed wiring steps.
                     </div>
 
-                    <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap">
                         <button
                             type="button"
                             onClick={onClose}
@@ -1016,13 +1127,21 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                             Cancel
                         </button>
                         <button
-                            type="submit"
-                            form="create-template-form"
+                            type="button"
                             disabled={isSubmitting}
+                            onClick={() => void saveTemplate('Draft')}
+                            className="inline-flex items-center gap-2 px-4 py-2 text-xs font-bold text-slate-800 bg-white hover:bg-slate-50 disabled:opacity-50 rounded-xl border border-slate-300 transition-colors"
+                        >
+                            Save as Draft
+                        </button>
+                        <button
+                            type="button"
+                            disabled={isSubmitting}
+                            onClick={() => void saveTemplate('Active')}
                             className="inline-flex items-center gap-2 px-5 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-xl shadow-xs transition-colors"
                         >
                             <CheckSquare className="w-4 h-4" />
-                            {isSubmitting ? 'Creating Template...' : 'Save & Publish Template'}
+                            {isSubmitting ? 'Saving…' : 'Save & Publish Template'}
                         </button>
                     </div>
                 </div>

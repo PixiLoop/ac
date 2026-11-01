@@ -15,6 +15,7 @@ import DataTable from '../../components/common/DataTable';
 import RowActions from '../../components/common/RowActions';
 import { useAuth } from '../../providers/auth-provider';
 import { createPermissionChecker } from '../../lib/permission'
+//just comments gg 
 
 export default function CustomersListPage() {
   const router = useRouter();
@@ -126,7 +127,7 @@ export default function CustomersListPage() {
   if (!canView) {
     return (
       <AdminShell title="Customers">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     )
   }

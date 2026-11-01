@@ -138,7 +138,7 @@ export function BulkImport() {
   if (!canImport) {
     return (
       <div className="flex items-center justify-center p-12 text-sm text-slate-600">
-        You do not have permission to import inventory.
+        You Do Not Have Access to This Process. Contact for Authorisation.
       </div>
     );
   }

@@ -35,8 +35,11 @@ export class PurchaseOrdersController {
   // Supplier's linked products — for pre-filling PO lines
   @Get('supplier/:supplierId/items')
   @Permissions('purchaseorders.view')
-  supplierItems(@Param('supplierId') supplierId: string) {
-    return this.svc.supplierItems(supplierId);
+  supplierItems(
+    @Param('supplierId') supplierId: string,
+    @Query('excludePoId') excludePoId?: string,
+  ) {
+    return this.svc.supplierItems(supplierId, excludePoId);
   }
 
   @Post()

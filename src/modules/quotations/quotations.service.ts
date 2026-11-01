@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { Prisma } from '@prisma/client';
+import { resolveGstRate } from '../../common/gst';
 
 import { CreateQuotationDto } from './dto/create-quotation.dto';
 import { UpdateQuotationDto } from './dto/update-quotation.dto';
@@ -44,12 +45,17 @@ export class QuotationsService {
           include: {
             items: {
               where: { deletedAt: null },
+              include: {
+                product: { select: { onHand: true, committed: true } },
+              },
             },
           },
         },
         customer: {
           select: {
-            gstExempt: true
+            gstExempt: true,
+            name: true,
+            customerNumber: true,
           }
         }
       },
@@ -188,10 +194,7 @@ export class QuotationsService {
       tradePrice: Number(i.tradePrice ?? 0),
       salesPartnerPrice: Number(i.salesPartnerPrice ?? 0),
       agentPrice: Number(i.agentPrice ?? 0),
-      lineTotal:
-        Number(i.quantity) *
-        Number(i.unitPrice) *
-        (1 - Number(i.discountPct ?? 0) / 100),
+      lineTotal: Number(i.quantity) * Number(i.unitPrice),
     }));
 
     const keepIds = cleanItems
@@ -291,6 +294,10 @@ export class QuotationsService {
   }
 
   private async recalculateGroupTotals(groupId: string) {
+    const group = await this.prisma.quotationGroup.findUnique({
+      where: { id: groupId },
+      include: { quotation: { select: { customerId: true } } },
+    });
     const items = await this.prisma.quotationItem.findMany({
       where: { groupId, deletedAt: null },
     });
@@ -300,7 +307,7 @@ export class QuotationsService {
       0,
     );
 
-    const gst = subtotal * 0.1;
+    const gst = subtotal * await resolveGstRate(this.prisma, group?.quotation?.customerId);
     const total = subtotal + gst;
 
     return this.prisma.quotationGroup.update({

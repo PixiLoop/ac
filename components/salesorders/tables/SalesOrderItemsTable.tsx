@@ -8,6 +8,40 @@ import { SearchSelect } from '../../../components/ui/SearchSelect';
 import { api } from '../../../lib/api-client'
 import { calcLineTotal } from '../utils/salesOrderCalc';
 import { useToast } from '../../ui/toast';
+import { useAuth } from '../../../providers/auth-provider';
+import {
+  clampPriceAdjustment,
+  isDoNotOrder,
+  isFmPricedProduct,
+  marginRatio,
+  marginTone,
+  netUnit,
+  pricedList,
+} from '../../../lib/line-pricing';
+import { availableStock } from '../../../lib/available-stock';
+
+/** Stock shortfall on Sales Order: max(0, Qty − max(0, Available)). */
+function stockBackOrderQty(qty: number, availableQty: unknown) {
+  if (availableQty == null || availableQty === '') return 0;
+  const avail = Math.max(0, Number(availableQty));
+  if (!Number.isFinite(avail)) return 0;
+  return Math.max(0, Number(qty) - avail);
+}
+
+/** Shared Available / B/Ord cell colours from free stock vs qty. */
+function stockCellTone(availableQty: unknown, qty: number) {
+  if (availableQty == null || availableQty === '') {
+    return 'bg-slate-50 text-slate-400';
+  }
+  const avail = Number(availableQty);
+  if (!Number.isFinite(avail) || avail <= 0) {
+    return 'bg-red-50 text-red-600 border-red-200';
+  }
+  if (avail < qty) {
+    return 'bg-amber-50 text-amber-600 border-amber-200';
+  }
+  return 'bg-emerald-50 text-emerald-600 border-emerald-200';
+}
 
 type Props = {
   items: any[];
@@ -16,6 +50,7 @@ type Props = {
   category?: string;
   showBackorderQty?: boolean;
   lockedReduceOnly?: boolean;
+  useAvailableStock?: boolean;
   form: any
 };
 
@@ -26,9 +61,12 @@ export function SalesOrderItemsTable({
   category,
   showBackorderQty = true,
   lockedReduceOnly = false,
+  useAvailableStock = false,
   form
 }: Props) {
   const { showToast } = useToast();
+  const { isSystem, roles } = useAuth();
+  const canEditPrice = !!isSystem || (roles ?? []).some((role: any) => /admin/i.test(String(role?.name ?? role ?? '')));
   const qtyRefs = useRef<(HTMLInputElement | null)[]>([]);
   const discRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -39,9 +77,29 @@ export function SalesOrderItemsTable({
     availableQty: null,
     backOrderQty: 0,
     unitPrice: 0,
+    listPrice: 0,
     qty: 1,
     discountPct: 0,
   });
+
+  const resolveReplacement = async (replacedBy: string) => {
+    try {
+      const byId = await api.get(`/products/${replacedBy}`);
+      const product = byId.data?.data ?? byId.data;
+      if (product?.id) return product;
+    } catch {
+      /* replacedBy may be a product code */
+    }
+    try {
+      const res = await api.get('/products', { params: { search: replacedBy } });
+      const list = res.data?.data ?? res.data ?? [];
+      return (Array.isArray(list) ? list : []).find(
+        (p: any) => p.productCode?.toLowerCase() === replacedBy.toLowerCase(),
+      ) ?? null;
+    } catch {
+      return null;
+    }
+  };
 
   const updateRow = (index: number, patch: any) => {
     setItems(
@@ -59,6 +117,7 @@ export function SalesOrderItemsTable({
     { label: string; value: string }[]
   >([])
   const [soOutstanding, setSoOutstanding] = useState<Record<string, number>>({})
+  const [soBackOrder, setSoBackOrder] = useState<Record<string, number>>({})
   const outstandingRef = useRef<Record<string, number>>({})
   outstandingRef.current = {
     ...soOutstanding,
@@ -118,15 +177,32 @@ export function SalesOrderItemsTable({
         const d = res.data?.data ?? res.data;
         const map: Record<string, number> = {};
         const backOrders: Record<string, number> = {};
+        for (const [productId, qty] of Object.entries(d?.salesOrderBackOrder ?? {})) {
+          backOrders[productId] = Number(qty);
+        }
         for (const line of d?.uninvoicedItems ?? []) {
           if (!line?.productId) continue;
           // Repeated on every sales-order line for this product. Do not add them.
           map[line.productId] = Number(line.uninvoicedQty ?? line.quantity ?? 0);
-          backOrders[line.productId] = Number(line.backOrderQty ?? 0);
+          if (backOrders[line.productId] == null) {
+            backOrders[line.productId] = Number(line.notInvoicedQty ?? line.quantity ?? 0);
+          }
         }
         if (!cancelled) {
           soBackOrderRef.current = backOrders;
+          setSoBackOrder(backOrders);
           setSoOutstanding(map);
+          setItems(prev => prev.map(row => {
+            if (!row.itemId || backOrders[row.itemId] == null) return row;
+            const notInvoicedQty = backOrders[row.itemId];
+            return {
+              ...row,
+              uninvoicedQty: map[row.itemId] ?? row.uninvoicedQty,
+              notInvoicedQty,
+              backOrderQty: notInvoicedQty,
+              backorderQty: notInvoicedQty,
+            };
+          }));
         }
       })
       .catch(() => {});
@@ -147,46 +223,22 @@ export function SalesOrderItemsTable({
   }, [form?._uninvoicedByProduct, soOutstanding, setItems]);
 
   useEffect(() => {
-    if (!form?.priceLevel) return;
-
-    const getPriceByLevel = (item: any, level: string) => {
-      switch (level) {
-        case 'RETAIL':
-          return item.retailPrice ?? item.unitPrice;
-        case 'TRADE':
-          return item.tradePrice ?? item.unitPrice;
-        case 'SALES_PARTNER':
-          return item.salesPartnerPrice ?? item.unitPrice;
-        case 'AGENT':
-          return item.agentPrice ?? item.unitPrice;
-        default:
-          return item.unitPrice;
-      }
-    };
-
-    // Compute current multiplier factor
-    const factorMultiplier = form.salesFactor
-      ? Number(form.salesFactor) / 1000
-      : 1;
+    if (!form?.priceLevel && !form?.fmPriceLevel) return;
 
     setItems(prev =>
       prev.map(item => {
-        if (!item.itemId) return item;
-
-        const rawPrice = getPriceByLevel(item, form.priceLevel);
-        const parsedPrice = Number(rawPrice);
-        const basePrice = Number.isFinite(parsedPrice) ? parsedPrice : 0;
-
-        // Calculate marked up price using salesFactor
-        const markedUpPrice = basePrice * factorMultiplier;
-
+        if (!item.itemId || item.priceOverridden || item.replacedNote) return item;
+        if (item.retailPrice == null && item.tradePrice == null && item.agentPrice == null) return item;
+        const listPrice = pricedList(item, form);
+        const discountPct = Number(item.discountPct) || 0;
         return {
           ...item,
-          unitPrice: markedUpPrice,
+          listPrice,
+          unitPrice: netUnit(listPrice, discountPct),
         };
       })
     );
-  }, [form?.priceLevel, form?.salesFactor]); // <-- Added form?.salesFactor here
+  }, [form?.priceLevel, form?.salesFactor, form?.fmPriceLevel, form?.fmPriceFactor]);
 
   return (
     <div className="space-y-4 overflow-visible">
@@ -197,17 +249,35 @@ export function SalesOrderItemsTable({
         const safeDisc = Number(item.discountPct) || 0;
         const safeCost = Number(item.landedCost) || 0;
 
-        const backOrderShown = Number(item.backOrderQty ?? item.backorderQty ?? 0);
+        // Invoice-from-SO: remaining to send from SO.
+        // Sales Order form: stock shortfall max(0, Qty − Available).
+        const salesOrderRemaining = fromSalesOrder && item.itemId
+          ? soBackOrder[item.itemId]
+          : undefined;
+        const backOrderShown = fromSalesOrder
+          ? (salesOrderRemaining != null
+            ? Number(salesOrderRemaining)
+            : Number(item.notInvoicedQty ?? item.backOrderQty ?? item.backorderQty ?? 0))
+          : stockBackOrderQty(safeQty, item.availableQty);
 
         const lineTotal = calcLineTotal({
           qty: safeQty,
           unitPrice: safePrice,
           discountPct: safeDisc,
+          listPrice: item.listPrice,
+          priceOverridden: item.priceOverridden,
         });
-        const effectivePrice = safePrice * (1 - safeDisc / 100);
-        const totalMargin = (effectivePrice - safeCost) * safeQty;
+        const ratio = marginRatio(safePrice, safeCost);
+        const tone = marginTone(ratio);
+        const rowTone = tone === 'red'
+          ? 'bg-red-50'
+          : tone === 'yellow'
+            ? 'bg-yellow-50'
+            : tone === 'green'
+              ? 'bg-green-50'
+              : '';
         return (
-          <div key={i} className="flex flex-col gap-1">
+          <div key={i} className={`flex flex-col gap-1 rounded ${rowTone}`}>
             <div
               className={`grid gap-3 items-end ${showBackorderQty
                 ? 'grid-cols-[2fr_1fr_3fr_1fr_1fr_1fr_1fr_1fr_auto]'
@@ -226,31 +296,88 @@ export function SalesOrderItemsTable({
                   }
 
                   try {
-                    // 1. Fetch initial product data
                     const res = await api.get(`/products/${id}`);
-                    let data = res.data?.data ?? res.data;
+                    const data = res.data?.data ?? res.data;
 
-                    let isReplacement = false;
-                    let originalItemName = '';
-
-                    // 2. Check if product should be replaced (e.g. description matches another product ID)
-                    if (data.description && data.description.trim() !== '') {
-                      try {
-                        // Attempt to fetch replacement product using description as product ID
-                        const replacementRes = await api.get(`/products/${data.description.trim()}`);
-                        const replacementData = replacementRes.data?.data ?? replacementRes.data;
-
-                        if (replacementData && replacementData.id) {
-                          originalItemName = `${data.productCode} - ${data.name}`;
-                          data = replacementData; // Swap data to replacement item
-                          isReplacement = true;
-                        }
-                      } catch {
-                        // If description is not a valid product ID, retain original item
-                      }
+                    if (isDoNotOrder(data.status)) {
+                      showToast({
+                        type: 'error',
+                        title: 'Item Marked DO NOT ORDER',
+                        message: 'Item Marked DO NOT ORDER',
+                      });
+                      return;
                     }
 
-                    // 3. Calculate stock and line parameters for the active item
+                    const makeLine = (product: any, qtyValue: number, extra: any = {}) => {
+                      const onHand = Number(product.onHand ?? 0);
+                      const listPrice = pricedList({ ...product, isFmPriced: isFmPricedProduct(product) }, form);
+                      const avail = useAvailableStock ? availableStock(product) : onHand;
+                      const notInvoicedQty = fromSalesOrder
+                        ? Number(soBackOrderRef.current[product.id] ?? qtyValue)
+                        : Math.max(0, qtyValue - Number(extra.invoicedQty ?? 0));
+                      const backOrderQty = fromSalesOrder
+                        ? notInvoicedQty
+                        : stockBackOrderQty(qtyValue, avail);
+                      return {
+                        itemId: product.id,
+                        partNo: product.productCode,
+                        description: product.name,
+                        availableQty: avail,
+                        uninvoicedQty: outstandingRef.current[product.id] != null
+                          ? Number(outstandingRef.current[product.id])
+                          : null,
+                        notInvoicedQty,
+                        backOrderQty,
+                        backorderQty: backOrderQty,
+                        retailPrice: Number(product.retailPrice ?? 0),
+                        tradePrice: Number(product.tradePrice ?? 0),
+                        salesPartnerPrice: Number(product.salesPartnerPrice ?? 0),
+                        agentPrice: Number(product.agentPrice ?? 0),
+                        isFmHardware: product.isFmHardware,
+                        fieldServiceType: product.fieldServiceType,
+                        status: product.status,
+                        listPrice,
+                        unitPrice: listPrice,
+                        landedCost: Number(product.landedCost ?? 0),
+                        qty: qtyValue,
+                        discountPct: 0,
+                        ...extra,
+                      };
+                    };
+
+                    if (data.replacedBy) {
+                      const replacement = await resolveReplacement(String(data.replacedBy));
+                      if (!replacement?.id) {
+                        showToast({
+                          type: 'error',
+                          title: 'Replacement',
+                          message: `Replacement item ${data.replacedBy} was not found`,
+                        });
+                        return;
+                      }
+                      if (isDoNotOrder(replacement.status)) {
+                        showToast({
+                          type: 'error',
+                          title: 'Item Marked DO NOT ORDER',
+                          message: 'Item Marked DO NOT ORDER',
+                        });
+                        return;
+                      }
+                      const note = {
+                        ...makeLine(data, 0),
+                        description: ` Replaced by > ${replacement.productCode}`,
+                        unitPrice: 0,
+                        listPrice: 0,
+                        replacedNote: true,
+                      };
+                      const replacementLine = makeLine(replacement, 1);
+                      const updated = items.map((row, index) => (index === i ? note : row));
+                      updated.splice(i + 1, 0, replacementLine);
+                      if (!updated.some(row => !row.itemId)) updated.push(createEmptyRow());
+                      setItems(applyOutstanding(updated));
+                      return;
+                    }
+
                     const onHand = Number(data.onHand ?? 0);
                     const sameProduct = item.itemId === data.id;
                     const uninvoicedQty = outstandingRef.current[data.id] != null
@@ -264,51 +391,14 @@ export function SalesOrderItemsTable({
                     const qty = sameProduct
                       ? (Number.isFinite(Number(item.qty)) ? Number(item.qty) : 0)
                       : (room != null ? Math.min(Math.max(onHand, 0), room) : 1);
-                    const backOrderQty = fromSalesOrder
-                      ? (sameProduct
-                        ? Number(item.backOrderQty ?? item.backorderQty ?? 0)
-                        : Number(soBackOrderRef.current[data.id] ?? 0))
-                      : Math.max(0, qty - onHand);
-                    const landedCost = Number(data.landedCost ?? 0);
+                    const line = makeLine(data, qty);
+                    line.uninvoicedQty = uninvoicedQty;
+                    if (sameProduct && Number(item.unitPrice) && item.priceOverridden) {
+                      line.unitPrice = Number(item.unitPrice);
+                      line.priceOverridden = true;
+                    }
 
-                    // Get base unit price according to selected price level
-                    const baseUnitPrice = Number(
-                      (form?.priceLevel === 'TRADE' ? data.tradePrice :
-                        form?.priceLevel === 'SALES_PARTNER' ? data.salesPartnerPrice :
-                          form?.priceLevel === 'AGENT' ? data.agentPrice :
-                            data.retailPrice) ?? 0
-                    );
-
-                    // Apply 1.2 multiplier to unit price
-                    const markedUpUnitPrice = baseUnitPrice * (form.salesFactor ? (Number(form.salesFactor || 0) / 1000) : 1);
-
-                    const updated = items.map((row, index) =>
-                      index === i
-                        ? {
-                          itemId: data.id,
-                          partNo: data.productCode,
-                          description: data.name,
-                          availableQty: onHand,
-                          uninvoicedQty,
-                          backOrderQty,
-                          backorderQty: backOrderQty,
-                          // Store all price tiers for level switching
-                          retailPrice: Number(data.retailPrice ?? 0),
-                          tradePrice: Number(data.tradePrice ?? 0),
-                          salesPartnerPrice: Number(data.salesPartnerPrice ?? 0),
-                          agentPrice: Number(data.agentPrice ?? 0),
-                          // Set initial unitPrice matching active priceLevel
-                          unitPrice: sameProduct && Number(item.unitPrice)
-                            ? Number(item.unitPrice)
-                            : markedUpUnitPrice,
-                          landedCost,
-                          qty,
-                          discountPct: 0,
-                          isReplacement,
-                          originalItemName,
-                        }
-                        : row
-                    );
+                    const updated = items.map((row, index) => (index === i ? line : row));
 
                     if (i === items.length - 1) {
                       updated.push(createEmptyRow());
@@ -333,16 +423,8 @@ export function SalesOrderItemsTable({
 
 
               <div>
-                {i === 0 && <label className="text-sm font-medium">Current Stock</label>}
-                <div className={`h-10 px-3 flex items-center border rounded text-sm font-medium
-    ${item.availableQty === null
-                    ? 'bg-slate-50 text-slate-400'
-                    : item.availableQty <= 0
-                      ? 'bg-red-50 text-red-600 border-red-200'
-                      : item.availableQty < (Number(item.qty) || 1)
-                        ? 'bg-amber-50 text-amber-600 border-amber-200'
-                        : 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                  }`}>
+                {i === 0 && <label className="text-sm font-medium">{useAvailableStock ? 'Available' : 'Current Stock'}</label>}
+                <div className={`h-10 px-3 flex items-center border rounded text-sm font-medium ${stockCellTone(item.availableQty, safeQty)}`}>
                   {item.availableQty === null ? '—' : item.availableQty}
                 </div>
               </div>
@@ -365,18 +447,57 @@ export function SalesOrderItemsTable({
                     newQty = Math.min(newQty, Number(item.originalQty));
                   }
 
+                  const prevQty = Number(item.qty) || 0;
+
+                  if (fromSalesOrder && item.uninvoicedQty != null) {
+                    const alreadyOnForm = qtyOfProduct(
+                      items.filter((_: any, index: number) => index !== i),
+                      item.itemId,
+                    );
+                    const room = Math.max(0, Number(item.uninvoicedQty) - alreadyOnForm);
+                    if (newQty > room) {
+                      // Toast once when first exceeding order room, not on every keystroke
+                      if (prevQty <= room) {
+                        const label = item.partNo || item.description || 'Item';
+                        showToast({
+                          type: 'error',
+                          title: 'Supply Exceeds Order',
+                          message: `${label}: qty ${newQty} exceeds remaining order qty ${room}`,
+                        });
+                      }
+                      newQty = room;
+                    }
+                  }
+
+                  const stock = item.availableQty == null ? null : Number(item.availableQty);
+                  if (stock != null && newQty > stock) {
+                    // Toast once when qty first goes over stock, not on every keystroke while still over
+                    if (prevQty <= stock) {
+                      const label = item.partNo || item.description || 'Item';
+                      const stockTitle = useAvailableStock
+                        ? 'Supply Exceeds Available Stock'
+                        : 'Supply Exceeds Stock on Hand';
+                      showToast({
+                        type: 'error',
+                        title: stockTitle,
+                        message: `${label}: qty ${newQty} exceeds stock ${stock}`,
+                      });
+                    }
+                  }
+
                   if (fromSalesOrder) {
                     updateRow(i, { qty: newQty });
                     return;
                   }
 
-                  const newBackOrder = newQty > 0
-                    ? Math.max(0, newQty - Number(item.availableQty ?? 0))
-                    : 0;
+                  const invoiced = Number(item.invoicedQty ?? 0);
+                  const notInvoicedQty = Math.max(0, newQty - invoiced);
+                  const backOrderQty = stockBackOrderQty(newQty, item.availableQty);
                   updateRow(i, {
                     qty: newQty,
-                    backOrderQty: newBackOrder,
-                    backorderQty: newBackOrder,
+                    notInvoicedQty,
+                    backOrderQty,
+                    backorderQty: backOrderQty,
                   });
                 }}
                 onKeyDown={e => {
@@ -388,12 +509,19 @@ export function SalesOrderItemsTable({
               />
               {showBackorderQty && (
                 <div>
-                  {i === 0 && <label className="text-sm font-medium text-amber-600">B/Ord</label>}
-                  <div className={`h-10 px-3 flex items-center border rounded text-sm font-medium
-    ${backOrderShown > 0
-                      ? 'bg-amber-50 text-amber-600 border-amber-200'
-                      : 'bg-slate-50 text-slate-400'
-                    }`}>
+                  {i === 0 && (
+                    <label className={`text-sm font-medium ${item.availableQty == null
+                      ? 'text-slate-500'
+                      : item.availableQty <= 0
+                        ? 'text-red-600'
+                        : item.availableQty < safeQty
+                          ? 'text-amber-600'
+                          : 'text-emerald-600'
+                      }`}>
+                      B/Ord
+                    </label>
+                  )}
+                  <div className={`h-10 px-3 flex items-center border rounded text-sm font-medium ${stockCellTone(item.availableQty, safeQty)}`}>
                     {backOrderShown > 0 ? backOrderShown : '—'}
                   </div>
                 </div>
@@ -402,8 +530,17 @@ export function SalesOrderItemsTable({
 
               <Input
                 label={i === 0 ? 'Unit' : undefined}
+                type="number"
                 value={safePrice}
-                disabled
+                disabled={mode === 'view' || !canEditPrice}
+                onChange={e => {
+                  const price = Number(e.target.value);
+                  updateRow(i, {
+                    unitPrice: Number.isFinite(price) ? price : 0,
+                    priceOverridden: true,
+                    discountPct: 0,
+                  });
+                }}
               />
 
               <Input
@@ -415,27 +552,20 @@ export function SalesOrderItemsTable({
                 }}
                 value={safeDisc}
                 onChange={e => {
-                  const rawDisc = Number(e.target.value) || 0;
-
-                  // Calculate maximum allowable discount percentage based on landedCost
-                  let maxDisc = 100;
-                  if (safePrice > 0 && safeCost > 0) {
-                    const calculatedMax = ((safePrice - safeCost) / safePrice) * 100;
-                    maxDisc = Math.max(0, calculatedMax);
+                  const rawDisc = Number(e.target.value);
+                  const { value, message } = clampPriceAdjustment(
+                    Number.isFinite(rawDisc) ? rawDisc : 0,
+                    canEditPrice,
+                  );
+                  if (message) {
+                    showToast({ type: 'error', title: message, message });
                   }
-
-                  if (rawDisc > maxDisc) {
-                    showToast({
-                      type: "error",
-                      title: 'Discount Limit Reached',
-                      message: `Discount cannot reduce item cost below landed price ($${safeCost.toFixed(2)}). Max allowed discount is ${maxDisc.toFixed(2)}%.`,
-                    });
-                  }
-
-                  const cappedDisc = Math.min(maxDisc, Math.max(0, rawDisc));
-
+                  const listPrice = Number(item.listPrice ?? item.unitPrice) || 0;
                   updateRow(i, {
-                    discountPct: Number(cappedDisc.toFixed(2)),
+                    discountPct: Number(value.toFixed(2)),
+                    listPrice,
+                    unitPrice: netUnit(listPrice, value),
+                    priceOverridden: false,
                   });
                 }}
                 disabled={mode === 'view' || lockedReduceOnly}
@@ -452,13 +582,8 @@ export function SalesOrderItemsTable({
               {/* MARGIN COLUMN */}
               <div>
                 {i === 0 && <label className="text-sm font-medium">Margin</label>}
-                <div
-                  className={`h-10 px-3 flex items-center border rounded font-medium ${totalMargin < 0
-                    ? 'bg-red-50 text-red-600 border-red-200'
-                    : 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                    }`}
-                >
-                  ${totalMargin.toFixed(2)}
+                <div className="h-10 px-3 flex items-center border rounded font-medium bg-white/70">
+                  {ratio == null ? '—' : ratio.toFixed(3)}
                 </div>
               </div>
 
@@ -478,13 +603,6 @@ export function SalesOrderItemsTable({
 
 
             </div>
-            {
-              item.isReplacement && (
-                <div className="text-xs text-amber-600 bg-amber-50 border border-amber-200 rounded px-2 py-1 font-medium w-fit">
-                  * Replacement item for: <span className="font-semibold">{item.originalItemName}</span>
-                </div>
-              )
-            }
           </div>
         );
       })}

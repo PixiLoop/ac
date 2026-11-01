@@ -1,5 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { AzureStorageService } from '../../common/azure/azure-storage.service';
+import { extname } from 'path';
+import { randomUUID } from 'crypto';
+import { InstallationJob } from '@prisma/client';
 
 const statusMappingToFrontend: Record<string, string> = {
   NOT_ACTIONED: 'Not Actioned',
@@ -19,11 +23,191 @@ const statusMappingToDb: Record<string, any> = {
   Completed: 'COMPLETED',
 };
 
+/** Frontend Job Book labels ↔ Prisma HardwareModel */
+const hardwareModelToDb: Record<string, string> = {
+  MIX4000: 'MIX4000',
+  FM3306: 'FM3306',
+  'HD Camera': 'HD_CAMERA',
+  HD_CAMERA: 'HD_CAMERA',
+  'Standard Camera': 'STANDARD_CAMERA',
+  STANDARD_CAMERA: 'STANDARD_CAMERA',
+  'Base Unit': 'BASE_UNIT',
+  BASE_UNIT: 'BASE_UNIT',
+  SIM: 'SIM',
+  'GPS Unit': 'GPS_UNIT',
+  GPS_UNIT: 'GPS_UNIT',
+  'CAN Bus Interface': 'CAN_BUS_INTERFACE',
+  CAN_BUS_INTERFACE: 'CAN_BUS_INTERFACE',
+  'Driver ID Keypad': 'DRIVER_ID_KEYPAD',
+  DRIVER_ID_KEYPAD: 'DRIVER_ID_KEYPAD',
+};
+
+const hardwareModelToFrontend: Record<string, string> = {
+  MIX4000: 'MIX4000',
+  FM3306: 'FM3306',
+  HD_CAMERA: 'HD Camera',
+  STANDARD_CAMERA: 'Standard Camera',
+  BASE_UNIT: 'Base Unit',
+  SIM: 'SIM',
+  GPS_UNIT: 'GPS Unit',
+  CAN_BUS_INTERFACE: 'CAN Bus Interface',
+  DRIVER_ID_KEYPAD: 'Driver ID Keypad',
+};
+
+const hardwareCategoryToDb: Record<string, string> = {
+  'Telematics Unit': 'TELEMATICS_UNIT',
+  TELEMATICS_UNIT: 'TELEMATICS_UNIT',
+  'Camera & Video': 'CAMERA_AND_VIDEO',
+  CAMERA_AND_VIDEO: 'CAMERA_AND_VIDEO',
+  Connectivity: 'CONNECTIVITY',
+  CONNECTIVITY: 'CONNECTIVITY',
+  Sensors: 'SENSORS',
+  SENSORS: 'SENSORS',
+  'Core Unit': 'CORE_UNIT',
+  CORE_UNIT: 'CORE_UNIT',
+  Accessories: 'ACCESSORIES',
+  ACCESSORIES: 'ACCESSORIES',
+};
+
+const hardwareCategoryToFrontend: Record<string, string> = {
+  TELEMATICS_UNIT: 'Telematics Unit',
+  CAMERA_AND_VIDEO: 'Camera & Video',
+  CONNECTIVITY: 'Connectivity',
+  SENSORS: 'Sensors',
+  CORE_UNIT: 'Core Unit',
+  ACCESSORIES: 'Accessories',
+};
+
 @Injectable()
 export class InstallationsService {
   private readonly logger = new Logger(InstallationsService.name);
 
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private azure: AzureStorageService,
+  ) { }
+
+  private userDisplayName(user?: {
+    displayName?: string | null;
+    firstName?: string | null;
+    lastName?: string | null;
+    email?: string | null;
+  } | null) {
+    if (!user) return undefined;
+    const display = String(user.displayName ?? '').trim();
+    if (display) return display;
+    const full = `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim();
+    if (full) return full;
+    return user.email || undefined;
+  }
+
+  private toDbHardwareModel(model?: string | null): string | null {
+    if (!model) return null;
+    return hardwareModelToDb[model] || hardwareModelToDb[String(model).replace(/\s+/g, '_').toUpperCase()] || null;
+  }
+
+  private toFrontendHardwareModel(model?: string | null): string | undefined {
+    if (!model) return undefined;
+    return hardwareModelToFrontend[model] || model;
+  }
+
+  private toDbHardwareCategory(category?: string | null): string {
+    if (!category) return 'TELEMATICS_UNIT';
+    return hardwareCategoryToDb[category] || 'TELEMATICS_UNIT';
+  }
+
+  private toFrontendHardwareCategory(category?: string | null): string | undefined {
+    if (!category) return undefined;
+    return hardwareCategoryToFrontend[category] || category;
+  }
+
+  /**
+   * Attach ACTIVE checklist templates for the given hardware models onto a job.
+   * Skips models that already have at least one checklist section on the job.
+   */
+  private async attachChecklistsForModels(jobId: string, models: string[]) {
+    const uniqueDbModels = Array.from(
+      new Set(
+        models
+          .map((m) => this.toDbHardwareModel(m))
+          .filter((m): m is string => !!m),
+      ),
+    );
+
+    for (const dbModel of uniqueDbModels) {
+      const existingCount = await (this.prisma as any).jobChecklistSection.count({
+        where: { jobId, hardwareModel: dbModel },
+      });
+      if (existingCount > 0) continue;
+
+      const tmpl = await (this.prisma as any).checklistTemplate.findFirst({
+        where: { hardwareModel: dbModel, status: 'ACTIVE' },
+        include: {
+          sections: {
+            orderBy: { displayOrder: 'asc' },
+            include: {
+              items: { orderBy: { displayOrder: 'asc' } },
+            },
+          },
+        },
+        orderBy: { updatedAt: 'desc' },
+      });
+      if (!tmpl?.sections?.length) continue;
+
+      const label = this.toFrontendHardwareModel(dbModel) || dbModel;
+      let sectionOrder =
+        (await (this.prisma as any).jobChecklistSection.count({ where: { jobId } })) + 1;
+
+      for (const sec of tmpl.sections) {
+        await (this.prisma as any).jobChecklistSection.create({
+          data: {
+            jobId,
+            title: `${label} Checklist — ${sec.title}`,
+            hardwareModel: dbModel,
+            hardwareName: tmpl.hardwareType,
+            displayOrder: sectionOrder++,
+            items: {
+              create: (sec.items || []).map((item: any, idx: number) => ({
+                templateItemId: item.id,
+                title: item.title,
+                description: item.description || null,
+                section: sec.title,
+                hardwareModel: dbModel,
+                isRequired: item.isRequired ?? true,
+                displayOrder: item.displayOrder ?? idx + 1,
+                completed: false,
+                notes: '',
+                photos: [],
+                comments: [],
+              })),
+            },
+          },
+        });
+      }
+    }
+  }
+
+  /** Resolve technician names when userId was never linked (legacy rows). */
+  private async technicianNameMap(jobs: any[]) {
+    const missing = Array.from(
+      new Set(
+        jobs
+          .filter((j) => j.technicianId && !this.userDisplayName(j.user))
+          .map((j) => j.technicianId as string),
+      ),
+    );
+    if (!missing.length) return new Map<string, string>();
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: missing } },
+      select: { id: true, displayName: true, firstName: true, lastName: true, email: true },
+    });
+    const map = new Map<string, string>();
+    for (const u of users) {
+      const name = this.userDisplayName(u);
+      if (name) map.set(u.id, name);
+    }
+    return map;
+  }
 
   async listJobs(query: Record<string, any> = {}) {
     const { status, technicianId, search } = query;
@@ -44,64 +228,213 @@ export class InstallationsService {
       ];
     }
 
-    try {
-      const jobs = await (this.prisma as any).installationJob.findMany({
-        where,
+    // List view does not need line items — including them breaks the whole
+    // list if InstallationJobItem migration has not been applied yet.
+    const baseListInclude = {
+      customer: true,
+      vehicle: true,
+      user: true,
+      hardware: true,
+      timeline: {
+        orderBy: { timestamp: 'desc' },
+      },
+    };
+
+    const itemSelectFull = {
+      id: true,
+      sectionId: true,
+      templateItemId: true,
+      title: true,
+      description: true,
+      section: true,
+      hardwareModel: true,
+      isRequired: true,
+      displayOrder: true,
+      completed: true,
+      completedById: true,
+      completedByName: true,
+      completedAt: true,
+      notes: true,
+      photos: true,
+      comments: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+
+    const itemSelectNoComments = { ...itemSelectFull, comments: undefined };
+    delete (itemSelectNoComments as any).comments;
+    const itemSelectMinimal = { ...itemSelectNoComments, photos: undefined };
+    delete (itemSelectMinimal as any).photos;
+
+    const withItemSelect = (itemSelect: Record<string, boolean>) => ({
+      ...baseListInclude,
+      checklistSections: {
+        orderBy: { id: 'asc' },
         include: {
-          customer: true,
-          vehicle: true,
-          user: true,
-          hardware: true,
-          checklistSections: {
-            include: {
-              items: {
-                orderBy: { displayOrder: 'asc' },
-              },
-            },
-            orderBy: { id: 'asc' },
+          items: {
+            select: itemSelect,
+            orderBy: { displayOrder: 'asc' },
           },
-          timeline: {
-            orderBy: { timestamp: 'desc' },
-          },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-
-      const mapped = jobs.map((j: any) => this.mapJobToFrontend(j));
-      return { data: mapped, total: mapped.length };
-    } catch (err: any) {
-      this.logger.warn(`listJobs error: ${err?.message}`);
-      return { data: [], total: 0 };
-    }
-  }
-
-  async getJob(id: string) {
-    const job = await (this.prisma as any).installationJob.findUnique({
-      where: { id },
-      include: {
-        customer: true,
-        vehicle: true,
-        user: true,
-        hardware: true,
-        checklistSections: {
-          include: {
-            items: {
-              orderBy: { displayOrder: 'asc' },
-            },
-          },
-          orderBy: { id: 'asc' },
-        },
-        timeline: {
-          orderBy: { timestamp: 'desc' },
         },
       },
     });
+
+    const attempts = [
+      withItemSelect(itemSelectFull),
+      withItemSelect(itemSelectNoComments),
+      withItemSelect(itemSelectMinimal),
+      {
+        ...baseListInclude,
+        checklistSections: { orderBy: { id: 'asc' } },
+      },
+      baseListInclude,
+    ];
+
+    let lastError: any;
+    for (const include of attempts) {
+      try {
+        const jobs = await (this.prisma as any).installationJob.findMany({
+          where,
+          include,
+          orderBy: { createdAt: 'desc' },
+        });
+        const nameById = await this.technicianNameMap(jobs);
+        const mapped = jobs.map((j: any) => this.mapJobToFrontend(j, nameById));
+        return { data: mapped, total: mapped.length };
+      } catch (err: any) {
+        lastError = err;
+        this.logger.warn(`listJobs include attempt failed: ${err?.message}`);
+      }
+    }
+
+    this.logger.error(`listJobs exhausted fallbacks: ${lastError?.message}`);
+    // Surface failure instead of silently emptying the Job Book
+    throw new BadRequestException(
+      lastError?.message ||
+      'Failed to load installation jobs. Apply pending Prisma migrations (comments/photos columns).',
+    );
+  }
+
+  private lineItemsInclude() {
+    return {
+      where: { deletedAt: null },
+      include: {
+        product: {
+          select: { id: true, productCode: true, onHand: true, landedCost: true },
+        },
+      },
+      orderBy: { createdAt: 'asc' as const },
+    };
+  }
+
+  private baseJobInclude(withLineItems: boolean) {
+    return {
+      customer: true,
+      vehicle: true,
+      user: true,
+      hardware: true,
+      ...(withLineItems ? { lineItems: this.lineItemsInclude() } : {}),
+      checklistSections: {
+        include: {
+          items: {
+            orderBy: { displayOrder: 'asc' },
+          },
+        },
+        orderBy: { id: 'asc' },
+      },
+      timeline: {
+        orderBy: { timestamp: 'desc' },
+      },
+    };
+  }
+
+  async getJob(id: string) {
+    const itemSelectFull = {
+      id: true,
+      sectionId: true,
+      templateItemId: true,
+      title: true,
+      description: true,
+      section: true,
+      hardwareModel: true,
+      isRequired: true,
+      displayOrder: true,
+      completed: true,
+      completedById: true,
+      completedByName: true,
+      completedAt: true,
+      notes: true,
+      photos: true,
+      comments: true,
+      createdAt: true,
+      updatedAt: true,
+    };
+    const itemSelectNoComments = { ...itemSelectFull } as any;
+    delete itemSelectNoComments.comments;
+    const itemSelectMinimal = { ...itemSelectNoComments };
+    delete itemSelectMinimal.photos;
+
+    const buildInclude = (withLineItems: boolean, itemSelect?: Record<string, boolean>) => ({
+      customer: true,
+      vehicle: true,
+      user: true,
+      hardware: true,
+      ...(withLineItems ? { lineItems: this.lineItemsInclude() } : {}),
+      checklistSections: itemSelect
+        ? {
+          orderBy: { id: 'asc' },
+          include: {
+            items: {
+              select: itemSelect,
+              orderBy: { displayOrder: 'asc' },
+            },
+          },
+        }
+        : {
+          orderBy: { id: 'asc' },
+        },
+      timeline: {
+        orderBy: { timestamp: 'desc' },
+      },
+    });
+
+    const attempts = [
+      () => this.baseJobInclude(true),
+      () => this.baseJobInclude(false),
+      () => buildInclude(false, itemSelectFull),
+      () => buildInclude(false, itemSelectNoComments),
+      () => buildInclude(false, itemSelectMinimal),
+      () => buildInclude(false),
+    ];
+
+    let job: any;
+    let lastError: any;
+    for (const build of attempts) {
+      try {
+        job = await this.prisma.installationJob.findUnique({
+          where: { id },
+          include: build() as any,
+        });
+        lastError = null;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        this.logger.warn(`getJob include attempt failed: ${err?.message}`);
+      }
+    }
+
+    if (lastError && !job) {
+      throw new BadRequestException(
+        lastError?.message || 'Failed to load installation job. Apply pending Prisma migrations.',
+      );
+    }
 
     if (!job) {
       throw new NotFoundException(`Installation job with ID ${id} not found`);
     }
 
-    return this.mapJobToFrontend(job);
+    const nameById = await this.technicianNameMap([job]);
+    return this.mapJobToFrontend(job, nameById);
   }
 
   async createJob(dto: any) {
@@ -132,6 +465,7 @@ export class InstallationsService {
     const jobNumber = dto.jobNumber || `JOB-2026-${Date.now().toString().slice(-4)}`;
     const dbStatus = statusMappingToDb[dto.status] || 'NOT_ACTIONED';
 
+    const techId = dto.technicianId || null;
     const job = await (this.prisma as any).installationJob.create({
       data: {
         id,
@@ -140,13 +474,16 @@ export class InstallationsService {
         projectId: dto.projectId || 'proj-fleet-telematics',
         vehicleId,
         location: dto.location || 'Main Workshop',
-        technicianId: dto.technicianId || null,
+        technicianId: techId,
+        // user relation is on userId — keep in sync with technicianId
+        userId: techId,
         installationDate: dto.installationDate ? new Date(dto.installationDate) : null,
         startTime: dto.startTime || null,
         endTime: dto.endTime || null,
         isScheduled: !!dto.isScheduled,
         status: dbStatus,
         notes: dto.notes || '',
+        salesOrderId: dto.salesOrderId ?? undefined,
         timeline: {
           create: {
             status: dbStatus,
@@ -155,107 +492,161 @@ export class InstallationsService {
           },
         },
       },
-      include: {
-        customer: true,
-        vehicle: true,
-        user: true,
-        hardware: true,
-        checklistSections: {
-          include: { items: true },
-        },
-        timeline: true,
-      },
     });
 
-    return this.mapJobToFrontend(job);
+    const hardwareList: any[] = Array.isArray(dto.hardware) ? dto.hardware : [];
+    const createdModels: string[] = [];
+    for (const hw of hardwareList) {
+      const dbModel = this.toDbHardwareModel(hw?.model) || 'MIX4000';
+      const serial =
+        hw?.serialNumber || `SN-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+      try {
+        await (this.prisma as any).hardwareItem.create({
+          data: {
+            model: dbModel,
+            name: hw?.name || `${this.toFrontendHardwareModel(dbModel) || dbModel} Unit`,
+            category: this.toDbHardwareCategory(hw?.category),
+            serialNumber: serial,
+            imei: hw?.imei || null,
+            allocatedJobId: job.id,
+            status: 'ALLOCATED',
+          },
+        });
+        createdModels.push(dbModel);
+      } catch (err) {
+        this.logger.warn(`Failed to attach hardware ${dbModel} on create: ${(err as Error)?.message}`);
+      }
+    }
+
+    if (createdModels.length) {
+      await this.attachChecklistsForModels(job.id, createdModels);
+    }
+
+    return this.getJob(job.id);
   }
 
   async scheduleJob(
     id: string,
-    payload: { technicianId: string; date: string; startTime: string; endTime: string; notes?: string }
+    payload: { technicianId: string; assignedTo: "technician" | "contractor" | "subcontractor", date: string; startTime: string; endTime: string; notes?: string }
   ) {
-    const job = await (this.prisma as any).installationJob.update({
+    const tech = await this.prisma.user.findUnique({
+      where: { id: payload.technicianId },
+      select: { id: true, displayName: true, firstName: true, lastName: true, email: true },
+    });
+    const techName = this.userDisplayName(tech) || 'Assigned Technician';
+
+    const existing = await (this.prisma as any).installationJob.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    // Scheduling advances the job into the install flow
+    const nextStatus =
+      !existing?.status || existing.status === 'NOT_ACTIONED'
+        ? 'WAITING_INSTALL'
+        : existing.status;
+
+    const job = await this.prisma.installationJob.update({
       where: { id },
       data: {
         technicianId: payload.technicianId,
+        assignedTo: payload.assignedTo ?? 'technician',
+        userId: payload.technicianId,
         installationDate: new Date(payload.date),
         startTime: payload.startTime,
         endTime: payload.endTime,
         isScheduled: true,
+        status: nextStatus,
         notes: payload.notes !== undefined ? payload.notes : undefined,
         timeline: {
           create: {
-            status: 'WAITING_INSTALL',
+            status: nextStatus,
             updatedByName: 'Scheduler',
-            note: `Scheduled with technician ${payload.technicianId} for ${payload.date} (${payload.startTime} - ${payload.endTime})`,
+            note: `Scheduled with technician ${techName} for ${payload.date} (${payload.startTime} - ${payload.endTime})`,
           },
-        },
-      },
-      include: {
-        customer: true,
-        vehicle: true,
-        user: true,
-        hardware: true,
-        checklistSections: {
-          include: { items: true },
-        },
-        timeline: {
-          orderBy: { timestamp: 'desc' },
         },
       },
     });
 
-    return this.mapJobToFrontend(job);
+    return this.getJob(id);
   }
 
   async updateStatus(
     id: string,
     payload: { newStatus: string; note?: string; updatedBy?: string; bypassValidation?: boolean }
   ) {
+    const flow = [
+      'NOT_ACTIONED',
+      'WORKSHOP_SETUP',
+      'WAITING_INSTALL',
+      'INSTALLED',
+      'INVOICED',
+      'COMPLETED',
+    ] as const;
+
+    const existing = await (this.prisma as any).installationJob.findUnique({
+      where: { id },
+      select: { status: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Installation job with ID ${id} not found`);
+    }
+
     const dbStatus = statusMappingToDb[payload.newStatus] || payload.newStatus;
+    const toIdx = flow.indexOf(dbStatus as typeof flow[number]);
+
+    if (toIdx === -1) {
+      throw new BadRequestException(`Invalid status: ${payload.newStatus}`);
+    }
+
+    const userNote = String(payload.note ?? '').trim();
+    const timelineNote = userNote
+      ? userNote
+      : `Status transitioned to ${payload.newStatus}`;
 
     const job = await (this.prisma as any).installationJob.update({
       where: { id },
       data: {
         status: dbStatus,
-        canInvoice: dbStatus === 'COMPLETED' || dbStatus === 'INSTALLED',
+        canInvoice: dbStatus === 'COMPLETED' || dbStatus === 'INSTALLED' || dbStatus === 'INVOICED',
         timeline: {
           create: {
             status: dbStatus,
             updatedByName: payload.updatedBy || 'Operations Dispatch',
-            note: payload.note || `Status transitioned to ${payload.newStatus}`,
+            note: timelineNote,
           },
         },
       },
-      include: {
-        customer: true,
-        vehicle: true,
-        user: true,
-        hardware: true,
-        checklistSections: {
-          include: { items: true },
-        },
-        timeline: {
-          orderBy: { timestamp: 'desc' },
-        },
-      },
     });
 
-    return this.mapJobToFrontend(job);
+    return this.getJob(id);
   }
 
   async addHardware(id: string, hardware: any) {
-    const hw = await (this.prisma as any).hardwareItem.create({
+    const existing = await (this.prisma as any).installationJob.findUnique({
+      where: { id },
+      select: { id: true },
+    });
+    if (!existing) {
+      throw new NotFoundException(`Installation job with ID ${id} not found`);
+    }
+
+    const dbModel = this.toDbHardwareModel(hardware?.model) || 'MIX4000';
+    const serial =
+      hardware?.serialNumber || `SN-${Date.now().toString().slice(-6)}-${Math.floor(Math.random() * 900 + 100)}`;
+
+    await (this.prisma as any).hardwareItem.create({
       data: {
-        model: hardware.model || 'MIX4000',
-        name: hardware.name || 'Hardware Unit',
-        category: hardware.category || 'Telematics Unit',
-        serialNumber: hardware.serialNumber || `SN-${Date.now().toString().slice(-6)}`,
-        imei: hardware.imei || null,
+        model: dbModel,
+        name: hardware?.name || `${this.toFrontendHardwareModel(dbModel) || dbModel} Unit`,
+        category: this.toDbHardwareCategory(hardware?.category),
+        serialNumber: serial,
+        imei: hardware?.imei || null,
         allocatedJobId: id,
+        status: 'ALLOCATED',
       },
     });
 
+    await this.attachChecklistsForModels(id, [dbModel]);
     return this.getJob(id);
   }
 
@@ -267,6 +658,168 @@ export class InstallationsService {
     return this.getJob(id);
   }
 
+  /** Build missing checklist sections from ACTIVE templates for hardware already on the job. */
+  async regenerateChecklist(id: string) {
+    const job = await (this.prisma as any).installationJob.findUnique({
+      where: { id },
+      include: { hardware: true },
+    });
+    if (!job) {
+      throw new NotFoundException(`Installation job with ID ${id} not found`);
+    }
+
+    const models = (job.hardware || []).map((h: any) => h.model).filter(Boolean);
+    if (!models.length) {
+      throw new BadRequestException(
+        'Add hardware to this job first, then generate the checklist from matching templates.',
+      );
+    }
+
+    await this.attachChecklistsForModels(id, models);
+    return this.getJob(id);
+  }
+
+  private lineTotal(qty: number, unitPrice: number, discountPct: number) {
+    return Number((qty * unitPrice * (1 - (discountPct || 0) / 100)).toFixed(2));
+  }
+
+  async addLineItem(id: string, body: any) {
+    const job = await (this.prisma as any).installationJob.findUnique({ where: { id } });
+    if (!job) throw new NotFoundException(`Installation job with ID ${id} not found`);
+
+    const productId = String(body.productId || body.itemId || '').trim();
+    const productCodeHint = String(body.partNo || body.productCode || '').trim();
+    if (!productId && !productCodeHint) {
+      throw new BadRequestException('Product is required — select an item from the list.');
+    }
+
+    // Resolve by id first, then product code (stock qty is NOT a reason to reject)
+    let product = productId
+      ? await this.prisma.product.findFirst({
+        where: { id: productId },
+        select: {
+          id: true,
+          productCode: true,
+          name: true,
+          retailPrice: true,
+          landedCost: true,
+          deletedAt: true,
+          isActive: true,
+        },
+      })
+      : null;
+
+    if (!product && (productCodeHint || productId)) {
+      product = await this.prisma.product.findFirst({
+        where: {
+          productCode: { equals: productCodeHint || productId, mode: 'insensitive' },
+        },
+        select: {
+          id: true,
+          productCode: true,
+          name: true,
+          retailPrice: true,
+          landedCost: true,
+          deletedAt: true,
+          isActive: true,
+        },
+      });
+    }
+
+    if (!product) {
+      throw new BadRequestException(
+        `Product not found (${productCodeHint || productId}). Select the item again.`,
+      );
+    }
+    if (product.deletedAt) {
+      throw new BadRequestException(
+        `Product ${product.productCode} has been deleted and cannot be added.`,
+      );
+    }
+    if (product.isActive === false) {
+      throw new BadRequestException(
+        `Product ${product.productCode} is inactive and cannot be added.`,
+      );
+    }
+
+    const quantity = Math.max(1, Number(body.quantity ?? 1) || 1);
+    const unitPrice = Number(body.unitPrice ?? product.retailPrice ?? 0) || 0;
+    const discountPct = Number(body.discountPct ?? 0) || 0;
+    const landedCost = Number(body.landedCost ?? product.landedCost ?? 0) || 0;
+    const description = String(body.description || product.name || product.productCode).trim();
+
+    try {
+      await (this.prisma as any).installationJobItem.create({
+        data: {
+          jobId: id,
+          productId: product.id,
+          partNo: product.productCode,
+          description,
+          quantity,
+          unitPrice,
+          discountPct,
+          landedCost,
+          lineTotal: this.lineTotal(quantity, unitPrice, discountPct),
+        },
+      });
+    } catch (err: any) {
+      const msg = String(err?.message ?? '');
+      if (/InstallationJobItem does not exist/i.test(msg)) {
+        throw new BadRequestException(
+          'Line items are not set up on this server yet. Run database migrations (InstallationJobItem).',
+        );
+      }
+      if (/Foreign key constraint/i.test(msg) && /productId/i.test(msg)) {
+        throw new BadRequestException(
+          `Product ${product.productCode} could not be linked. Select the item again.`,
+        );
+      }
+      throw new BadRequestException(
+        msg.split('\n').map((l: string) => l.trim()).filter(Boolean).pop() || 'Failed to add line item',
+      );
+    }
+
+    return this.getJob(id);
+  }
+
+  async updateLineItem(id: string, itemId: string, body: any) {
+    const existing = await (this.prisma as any).installationJobItem.findFirst({
+      where: { id: itemId, jobId: id, deletedAt: null },
+    });
+    if (!existing) throw new NotFoundException('Line item not found');
+
+    const quantity = body.quantity !== undefined
+      ? Math.max(1, Number(body.quantity) || 1)
+      : Number(existing.quantity);
+    const unitPrice = body.unitPrice !== undefined
+      ? Number(body.unitPrice) || 0
+      : Number(existing.unitPrice);
+    const discountPct = body.discountPct !== undefined
+      ? Number(body.discountPct) || 0
+      : Number(existing.discountPct);
+
+    await (this.prisma as any).installationJobItem.update({
+      where: { id: itemId },
+      data: {
+        ...(body.description !== undefined ? { description: String(body.description) } : {}),
+        quantity,
+        unitPrice,
+        discountPct,
+        lineTotal: this.lineTotal(quantity, unitPrice, discountPct),
+      },
+    });
+
+    return this.getJob(id);
+  }
+
+  async removeLineItem(id: string, itemId: string) {
+    await (this.prisma as any).installationJobItem.updateMany({
+      where: { id: itemId, jobId: id, deletedAt: null },
+      data: { deletedAt: new Date() },
+    });
+    return this.getJob(id);
+  }
+
   async updateChecklistItem(
     id: string,
     sectionId: string,
@@ -274,11 +827,11 @@ export class InstallationsService {
     payload: { completed?: boolean; notes?: string; completedBy?: string }
   ) {
     await (this.prisma as any).jobChecklistItem.updateMany({
-      where: { id: itemId },
+      where: { id: itemId, sectionId },
       data: {
         completed: payload.completed !== undefined ? payload.completed : undefined,
         notes: payload.notes !== undefined ? payload.notes : undefined,
-        completedBy: payload.completedBy || undefined,
+        completedByName: payload.completedBy || undefined,
         completedAt: payload.completed ? new Date() : null,
       },
     });
@@ -287,10 +840,301 @@ export class InstallationsService {
     return { item: { id: itemId, ...payload }, job };
   }
 
-  private mapJobToFrontend(j: any) {
+  private parsePhotos(raw: unknown): Array<{
+    id: string;
+    url: string;
+    blobName?: string;
+    fileName?: string;
+    createdAt: string;
+  }> {
+    if (!Array.isArray(raw)) return [];
+    return raw.filter(
+      (p) => p && typeof p === 'object' && typeof (p as any).id === 'string' && typeof (p as any).url === 'string',
+    ) as any;
+  }
+
+  private parseComments(
+    raw: unknown,
+    legacyNotes?: string | null,
+  ): Array<{ id: string; text: string; authorName?: string; createdAt: string }> {
+    const fromJson = Array.isArray(raw)
+      ? raw.filter(
+        (c) =>
+          c &&
+          typeof c === 'object' &&
+          typeof (c as any).id === 'string' &&
+          typeof (c as any).text === 'string' &&
+          String((c as any).text).trim(),
+      )
+      : [];
+
+    if (fromJson.length) return fromJson as any;
+
+    const note = String(legacyNotes ?? '').trim();
+    if (!note) return [];
+    return [
+      {
+        id: 'legacy-note',
+        text: note,
+        authorName: 'Installer',
+        createdAt: new Date(0).toISOString(),
+      },
+    ];
+  }
+
+  async addChecklistComment(
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    payload: { text: string; authorName?: string },
+  ) {
+    const text = String(payload?.text ?? '').trim();
+    if (!text) {
+      throw new BadRequestException('Comment text is required');
+    }
+    if (text.length > 2000) {
+      throw new BadRequestException('Comment must be 2000 characters or fewer');
+    }
+
+    const item = await (this.prisma as any).jobChecklistItem.findFirst({
+      where: { id: itemId, sectionId },
+      select: {
+        id: true,
+        comments: true,
+        notes: true,
+        checklistSection: { select: { jobId: true } },
+      },
+    });
+    if (!item || item.checklistSection?.jobId !== jobId) {
+      throw new NotFoundException('Checklist item not found on this job');
+    }
+
+    const comment = {
+      id: randomUUID(),
+      text,
+      authorName: String(payload?.authorName || 'Installer').trim() || 'Installer',
+      createdAt: new Date().toISOString(),
+    };
+
+    const hasStoredComments = Array.isArray(item.comments) && item.comments.length > 0;
+    let base = this.parseComments(item.comments);
+    if (!hasStoredComments && String(item.notes ?? '').trim()) {
+      base = [
+        {
+          id: randomUUID(),
+          text: String(item.notes).trim(),
+          authorName: 'Installer',
+          createdAt: new Date().toISOString(),
+        },
+      ];
+    }
+
+    const merged = [...base, comment];
+    await (this.prisma as any).jobChecklistItem.update({
+      where: { id: itemId },
+      data: { comments: merged },
+    });
+
+    const job = await this.getJob(jobId);
+    return { comment, job };
+  }
+
+  async removeChecklistComment(
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    commentId: string,
+  ) {
+    const item = await (this.prisma as any).jobChecklistItem.findFirst({
+      where: { id: itemId, sectionId },
+      select: {
+        id: true,
+        comments: true,
+        notes: true,
+        checklistSection: { select: { jobId: true } },
+      },
+    });
+    if (!item || item.checklistSection?.jobId !== jobId) {
+      throw new NotFoundException('Checklist item not found on this job');
+    }
+
+    const hasStoredComments = Array.isArray(item.comments) && item.comments.length > 0;
+    const existing = hasStoredComments
+      ? this.parseComments(item.comments)
+      : this.parseComments(item.comments, item.notes);
+
+    const next = existing
+      .filter((c) => c.id !== commentId)
+      .map((c) =>
+        c.id === 'legacy-note'
+          ? {
+            id: randomUUID(),
+            text: c.text,
+            authorName: c.authorName || 'Installer',
+            createdAt: c.createdAt || new Date().toISOString(),
+          }
+          : c,
+      );
+
+    if (next.length === existing.length) {
+      throw new NotFoundException('Comment not found');
+    }
+
+    await (this.prisma as any).jobChecklistItem.update({
+      where: { id: itemId },
+      data: {
+        comments: next,
+        ...(commentId === 'legacy-note' ? { notes: null } : {}),
+      },
+    });
+
+    const job = await this.getJob(jobId);
+    return { success: true, job };
+  }
+
+  async addChecklistPhoto(
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    file: Express.Multer.File,
+  ) {
+    if (!file?.buffer?.length) {
+      throw new BadRequestException('No photo file uploaded');
+    }
+
+    const item = await (this.prisma as any).jobChecklistItem.findFirst({
+      where: { id: itemId, sectionId },
+      select: { id: true, photos: true, checklistSection: { select: { jobId: true } } },
+    });
+    if (!item || item.checklistSection?.jobId !== jobId) {
+      throw new NotFoundException('Checklist item not found on this job');
+    }
+
+    const ext = (extname(file.originalname || '') || '.jpg').toLowerCase();
+    const allowed = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.heic'];
+    if (!allowed.includes(ext)) {
+      throw new BadRequestException('Only image files are allowed (jpg, png, webp, gif)');
+    }
+
+    const photoId = randomUUID();
+    const blobName = `checklist/${jobId}/${itemId}/${photoId}${ext}`;
+    const contentType = file.mimetype || 'image/jpeg';
+    const url = await this.azure.upload('media', blobName, file.buffer, contentType);
+
+    const photo = {
+      id: photoId,
+      url,
+      blobName,
+      fileName: file.originalname || `${photoId}${ext}`,
+      createdAt: new Date().toISOString(),
+    };
+
+    const photos = [...this.parsePhotos(item.photos), photo];
+    await (this.prisma as any).jobChecklistItem.update({
+      where: { id: itemId },
+      data: { photos },
+    });
+
+    const job = await this.getJob(jobId);
+    return { photo, job };
+  }
+
+  private resolvePhotoBlobName(photo: {
+    url?: string;
+    blobName?: string;
+  }): string | null {
+    if (photo.blobName) return photo.blobName;
+    if (!photo.url) return null;
+    const marker = '/media/';
+    const idx = photo.url.indexOf(marker);
+    if (idx < 0) return null;
+    // Strip query string (SAS) if present
+    const raw = photo.url.slice(idx + marker.length).split('?')[0];
+    try {
+      return decodeURIComponent(raw);
+    } catch {
+      return raw;
+    }
+  }
+
+  async getChecklistPhotoFile(
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    photoId: string,
+  ) {
+    const item = await (this.prisma as any).jobChecklistItem.findFirst({
+      where: { id: itemId, sectionId },
+      select: { id: true, photos: true, checklistSection: { select: { jobId: true } } },
+    });
+    if (!item || item.checklistSection?.jobId !== jobId) {
+      throw new NotFoundException('Checklist item not found on this job');
+    }
+
+    const photo = this.parsePhotos(item.photos).find((p) => p.id === photoId);
+    if (!photo) {
+      throw new NotFoundException('Photo not found');
+    }
+
+    const blobName = this.resolvePhotoBlobName(photo);
+    if (!blobName) {
+      throw new NotFoundException('Photo blob path missing');
+    }
+
+    return this.azure.download('media', blobName);
+  }
+
+  async removeChecklistPhoto(
+    jobId: string,
+    sectionId: string,
+    itemId: string,
+    photoId: string,
+  ) {
+    const item = await (this.prisma as any).jobChecklistItem.findFirst({
+      where: { id: itemId, sectionId },
+      select: { id: true, photos: true, checklistSection: { select: { jobId: true } } },
+    });
+    if (!item || item.checklistSection?.jobId !== jobId) {
+      throw new NotFoundException('Checklist item not found on this job');
+    }
+
+    const photos = this.parsePhotos(item.photos);
+    const target = photos.find((p) => p.id === photoId);
+    if (!target) {
+      throw new NotFoundException('Photo not found');
+    }
+
+    const next = photos.filter((p) => p.id !== photoId);
+    await (this.prisma as any).jobChecklistItem.update({
+      where: { id: itemId },
+      data: { photos: next },
+    });
+
+    // Best-effort Azure blob cleanup
+    try {
+      const blobName = this.resolvePhotoBlobName(target);
+      if (blobName) {
+        await this.azure.delete('media', blobName);
+      }
+    } catch (e) {
+      this.logger.warn(`Failed to delete checklist photo blob ${photoId}: ${e}`);
+    }
+
+    const job = await this.getJob(jobId);
+    return { success: true, job };
+  }
+
+  private mapJobToFrontend(j: any, nameById?: Map<string, string>) {
+    const techId = j.technicianId || j.userId || undefined;
+    const technicianName =
+      this.userDisplayName(j.user) ||
+      (techId ? nameById?.get(techId) : undefined) ||
+      undefined;
+
     return {
       id: j.id,
       jobNumber: j.jobNumber,
+      assignedTo: j.assignedTo,
       customerId: j.customerId,
       customerName: j.customer?.name || 'Customer',
       customerContact: j.customer?.contactPerson || 'Fleet Operations',
@@ -306,14 +1150,26 @@ export class InstallationsService {
       },
       hardware: (j.hardware || []).map((h: any) => ({
         id: h.id,
-        model: h.model,
+        model: this.toFrontendHardwareModel(h.model) || h.model,
         name: h.name,
         serialNumber: h.serialNumber,
         imei: h.imei,
-        category: h.category,
+        category: this.toFrontendHardwareCategory(h.category) || h.category,
       })),
-      technicianId: j.technicianId || undefined,
-      technicianName: j.user ? `${j.user.firstName} ${j.user.lastName}` : (j.technicianId || undefined),
+      lineItems: (j.lineItems || []).map((li: any) => ({
+        id: li.id,
+        productId: li.productId,
+        partNo: li.partNo || li.product?.productCode || '',
+        description: li.description,
+        quantity: Number(li.quantity ?? 1),
+        unitPrice: Number(li.unitPrice ?? 0),
+        discountPct: Number(li.discountPct ?? 0),
+        landedCost: Number(li.landedCost ?? li.product?.landedCost ?? 0),
+        lineTotal: Number(li.lineTotal ?? 0),
+        availableQty: li.product?.onHand != null ? Number(li.product.onHand) : null,
+      })),
+      technicianId: techId,
+      technicianName,
       installationDate: j.installationDate ? new Date(j.installationDate).toISOString().split('T')[0] : undefined,
       startTime: j.startTime || undefined,
       endTime: j.endTime || undefined,
@@ -322,36 +1178,49 @@ export class InstallationsService {
       checklistSections: (j.checklistSections || []).map((sec: any) => ({
         id: sec.id,
         title: sec.title,
-        hardwareModel: sec.hardwareModel,
+        hardwareModel: this.toFrontendHardwareModel(sec.hardwareModel) || sec.hardwareModel,
         hardwareName: sec.hardwareName,
         items: (sec.items || []).map((it: any) => ({
           id: it.id,
           title: it.title,
           description: it.description,
           section: sec.title,
-          hardwareModel: it.hardwareModel,
+          hardwareModel: this.toFrontendHardwareModel(it.hardwareModel) || it.hardwareModel,
           isRequired: it.isRequired,
           displayOrder: it.displayOrder,
           completed: it.completed,
-          completedBy: it.completedBy,
+          completedBy: it.completedByName || it.completedBy,
           completedAt: it.completedAt ? new Date(it.completedAt).toISOString() : undefined,
           notes: it.notes,
+          comments: this.parseComments(it.comments, it.notes),
+          // Private Azure containers block anonymous blob URLs — serve via authenticated API proxy
+          photos: this.parsePhotos(it.photos).map((p) => ({
+            id: p.id,
+            fileName: p.fileName,
+            createdAt: p.createdAt,
+            blobName: p.blobName,
+            url: `/installations/${j.id}/checklist/${sec.id}/items/${it.id}/photos/${p.id}/file`,
+          })),
         })),
       })),
-      timeline: (j.timeline || []).map((t: any) => ({
-        id: t.id,
-        status: statusMappingToFrontend[t.status] || t.status,
-        timestamp: t.timestamp ? new Date(t.timestamp).toISOString() : new Date().toISOString(),
-        updatedBy: t.updatedByName || 'Operations Dispatch',
-        note: t.note,
-      })),
+      timeline: (j.timeline || []).map((t: any) => {
+        let note = t.note as string | undefined;
+        // Rewrite legacy timeline notes that embedded the raw technician id
+        if (note && techId && technicianName && note.includes(techId)) {
+          note = note.split(techId).join(technicianName);
+        }
+        return {
+          id: t.id,
+          status: statusMappingToFrontend[t.status] || t.status,
+          timestamp: t.timestamp ? new Date(t.timestamp).toISOString() : new Date().toISOString(),
+          updatedBy: t.updatedByName || 'Operations Dispatch',
+          note,
+        };
+      }),
       notes: j.notes,
       createdAt: j.createdAt ? new Date(j.createdAt).toISOString() : new Date().toISOString(),
       canInvoice: j.canInvoice,
       invoiceId: j.invoiceId,
-      preinstallNo: j.jobNumber?.startsWith('JOB-PI-')
-        ? j.jobNumber.replace('JOB-', '')
-        : (j.notes?.match(/PI-\d+/)?.[0] || undefined),
     };
   }
 

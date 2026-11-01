@@ -141,6 +141,12 @@ async function main() {
     'dispatches.create',
     'dispatches.edit',
     'dispatches.delete',
+    
+    // CONTRACTOR
+    'contractor.view',
+
+    // SUBCONTRACTOR
+    'subcontractor.view'
   ]
 
   const permissions = []

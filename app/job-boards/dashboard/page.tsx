@@ -6,7 +6,9 @@ import { AdminShell } from '../../../components/layout/AdminShell';
 export default function OperationsDashboardPage() {
     return (
         <AdminShell title="Operations Dashboard | Job Book" showTableDensity>
-            <OperationsDashboard />
+            <div className="flex-1 min-h-0 h-full w-full max-w-none flex flex-col">
+                <OperationsDashboard />
+            </div>
         </AdminShell>
     );
 }

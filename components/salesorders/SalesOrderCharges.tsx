@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { Input } from '../../components/ui/input';
 import { calcPartsTotal } from './utils/salesOrderTotals';
+import { api } from '../../lib/api-client';
 
 /* ---------------- HELPERS ---------------- */
 
@@ -66,6 +67,16 @@ export function SalesOrderCharges({
   useEffect(() => { setLabourInput(String(labour ?? 0)); }, [labour]);
   useEffect(() => { setOtherChargesInput(String(otherCharges ?? 0)); }, [otherCharges]);
   useEffect(() => { setRoundingInput(String(rounding ?? 0)); }, [rounding]);
+  const [gstPercent, setGstPercent] = useState(10);
+  useEffect(() => {
+    api.get('/inventory/groups/gst-factor')
+      .then(res => {
+        const data = res.data?.data ?? res.data;
+        const rate = Number(data?.gstFactor);
+        if (Number.isFinite(rate)) setGstPercent(rate);
+      })
+      .catch(() => {});
+  }, []);
   const parts = calcPartsTotal(items);
 
   const subTotal =
@@ -75,7 +86,7 @@ export function SalesOrderCharges({
     n(freight) +
     n(otherCharges);
 
-  const gst = subTotal * (gstExempt ? 0 : 0.1);
+  const gst = subTotal * (gstExempt ? 0 : gstPercent / 100);
 
   // 1. Calculate unrounded total before rounding adjustment
   const unroundedTotal = subTotal + gst;
@@ -120,6 +131,7 @@ export function SalesOrderCharges({
         <Input
           type="number"
           step="any"
+          className="text-right"
           value={sundriesInput}
           onChange={e => {
             setSundriesInput(e.target.value);
@@ -134,6 +146,7 @@ export function SalesOrderCharges({
         <Input
           type="number"
           step="any"
+          className="text-right"
           value={labourInput}
           onChange={e => {
             setLabourInput(e.target.value);
@@ -150,6 +163,7 @@ export function SalesOrderCharges({
         <Input
           type="number"
           step="any"
+          className="text-right"
           value={otherChargesInput}
           onChange={e => {
             setOtherChargesInput(e.target.value);
@@ -162,7 +176,7 @@ export function SalesOrderCharges({
 
       <Divider />
 
-      <Row label="GST (10%)" value={!gstExempt ? gst : 'GST Exempt'} />
+      <Row label={gstExempt ? 'GST (Exempt)' : `GST (${gstPercent}%)`} value={!gstExempt ? gst : 'GST Exempt'} />
 
       <Row
         label="Rounding"

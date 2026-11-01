@@ -1,18 +1,24 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import * as fs from 'fs';
 import * as path from 'path';
 import { Prisma, InvoiceStatus, InvoiceType } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
+import { assertAccountStatus } from '../../common/account-status';
+import { resolveGstRate } from '../../common/gst';
+import { sellingUnitPrice } from '../../common/line-price';
+import { notInvoicedBySalesOrderLine } from '../../common/not-invoiced';
 import { CreateInvoiceDto } from './dto/create-invoice.dto';
 import { UpdateInvoiceDto, UpdateInvoiceItemsDto, ListInvoicesDto } from './dto/update-invoice.dto';
 import { XeroInvoiceService } from '../xero/xero-invoice.service';
 import { GraphMailService } from '../notifications/graph-mail.service';
+import { FMInstallService } from '../fm-install/fm-install.service';
 
 @Injectable()
 export class InvoicesService {
     constructor(
         private readonly prisma: PrismaService,
         private readonly mail: GraphMailService,
+        private readonly fmInstall: FMInstallService,
         private readonly xeroInvoice?: XeroInvoiceService,
     ) { }
 
@@ -84,12 +90,12 @@ export class InvoicesService {
         const invoice = await this.prisma.invoice.findFirst({
             where: { id, deletedAt: null },
             include: {
-                customer: { select: { id: true, name: true, customerNumber: true, isGeneric: true, requiresShippingDetails: true } },
-                salesOrder: { select: { id: true, orderNumber: true, orderType: true } },
+                customer: { select: { id: true, name: true, customerNumber: true, isGeneric: true, requiresShippingDetails: true, orderRequired: true } },
+                salesOrder: { select: { id: true, orderNumber: true, orderType: true, customerPO: true } },
                 dispatch: { select: { id: true, method: true, accountNo: true, accountName: true } },
                 items: {
                     where: { deletedAt: null },
-                    include: { product: { select: { onHand: true } } },
+                    include: { product: { select: { onHand: true, committed: true } } },
                 },
                 subscriptionReport: true,
                 fmSubscriptionItems: true
@@ -102,34 +108,26 @@ export class InvoicesService {
             ? await this.uninvoicedQtyByProduct(invoice.salesOrderId, invoice.id)
             : new Map<string, number>();
 
-        const soBackOrderByProduct = new Map<string, number[]>();
-        if (invoice.salesOrderId) {
-            const soLines = await this.prisma.salesOrderItem.findMany({
-                where: { salesOrderId: invoice.salesOrderId, deletedAt: null },
-                orderBy: { createdAt: 'asc' },
-                select: { productId: true, backOrderQty: true },
-            });
-            for (const line of soLines) {
-                const queue = soBackOrderByProduct.get(line.productId) ?? [];
-                queue.push(Number(line.backOrderQty ?? 0));
-                soBackOrderByProduct.set(line.productId, queue);
-            }
-        }
+        const { byProduct } = invoice.salesOrderId
+            ? await notInvoicedBySalesOrderLine(this.prisma, invoice.salesOrderId)
+            : { byProduct: new Map<string, number>() };
 
         return {
             ...invoice,
-            items: invoice.items.map(item => {
-                const queue = soBackOrderByProduct.get(item.productId);
-                const soBackOrderQty = queue?.length ? queue.shift() : null;
-                return {
-                    ...item,
-                    onHandQty: Number(item.product?.onHand ?? 0),
-                    uninvoicedQty: invoice.salesOrderId
-                        ? (uninvoicedByProduct.get(item.productId) ?? 0)
-                        : null,
-                    soBackOrderQty,
-                };
-            }),
+            items: invoice.items.map(item => ({
+                ...item,
+                onHandQty: Number(item.product?.onHand ?? 0),
+                uninvoicedQty: invoice.salesOrderId
+                    ? (uninvoicedByProduct.get(item.productId) ?? 0)
+                    : null,
+                notInvoicedQty: invoice.salesOrderId
+                    ? (byProduct.get(item.productId) ?? 0)
+                    : null,
+                // B/Ord = remaining qty still to send from the sales order
+                backorderQty: invoice.salesOrderId
+                    ? (byProduct.get(item.productId) ?? 0)
+                    : item.backorderQty,
+            })),
         };
     }
 
@@ -167,13 +165,81 @@ export class InvoicesService {
         }
 
         const remaining = new Map<string, number>();
-        for (const [productId, qty] of ordered) {
+        for (const [productId, qty] of Array.from(ordered)) {
             remaining.set(productId, Math.max(0, qty - (invoicedQtyMap.get(productId) ?? 0)));
         }
         return remaining;
     }
 
+    private async assertCustomerOrderNumber(customerId: string | null | undefined, reference: unknown) {
+        if (!customerId) return;
+        const customer = await this.prisma.customer.findFirst({
+            where: { id: customerId, deletedAt: null },
+            select: { orderRequired: true },
+        });
+        if (customer?.orderRequired && !String(reference ?? '').trim()) {
+            throw new BadRequestException('Order number is required.');
+        }
+    }
+
+    /** One field per line with padded labels so Notes stay readable in the invoice UI. */
+    private formatPreinstallNotes(d: any, opts?: { includeHeader?: boolean }): string {
+        const line = (label: string, value: unknown) =>
+            `${label.padEnd(14)}${String(value ?? '-').trim() || '-'}`;
+
+        const rows: string[] = [];
+        if (opts?.includeHeader) {
+            rows.push(
+                line('Install Type:', d?.installType),
+                line('Unit Type:', d?.fmUnitType),
+                line('Unit Code:', d?.fmUnitCode),
+                line('Service Code:', d?.serviceCode),
+                line('MIX Code:', d?.mixCode),
+                '',
+            );
+        }
+
+        const vehicle = [d?.vehicleMake, d?.vehicleModel, d?.yearVariant].filter(Boolean).join(' ');
+        rows.push(
+            line('Vehicle:', vehicle),
+            line('Rego:', d?.regoNumber),
+            line('VIN:', d?.vinNumber),
+            line('Asset No:', d?.assetNumber),
+            line('Fleet No:', d?.fleetNumber),
+            '',
+            line('Unit Serial:', d?.unitSerial),
+            line('Unit IMEI:', d?.unitIMEI),
+            line('Unit SIM:', d?.unitSim),
+        );
+
+        if (d?.visionType) {
+            rows.push(
+                '',
+                line('Vision:', d.visionType),
+                line('Vis 1 Serial:', d.vis1Serial),
+                line('Vis IMEI:', d.visIMEI),
+            );
+            if ((d?.cameraCount ?? 0) >= 2) rows.push(line('Vis 2 Serial:', d.vis2Serial));
+            if ((d?.cameraCount ?? 0) >= 3) rows.push(line('Vis 3 Serial:', d.vis3Serial));
+            if ((d?.cameraCount ?? 0) >= 4) rows.push(line('Vis 4 Serial:', d.vis4Serial));
+        }
+
+        rows.push(
+            '',
+            line('Location:', d?.installLocation),
+            line('Installer:', d?.installer),
+            line('Install Date:', d?.installDate ? new Date(d.installDate).toLocaleDateString('en-AU') : '-'),
+        );
+        if (opts?.includeHeader) {
+            rows.push(line('MIX Org ID:', d?.mixOrgId));
+        }
+
+        return rows.join('\n');
+    }
+
     async create(dto: CreateInvoiceDto) {
+        await assertAccountStatus(this.prisma, dto.customerId, 'invoice');
+        await this.assertCustomerOrderNumber(dto.customerId, dto.reference);
         if (dto.invoiceType === 'REVERSAL') {
             if (!dto.reversalOfInvoiceId) {
                 throw new BadRequestException('Choose the invoice to reverse before saving.');
@@ -241,8 +307,23 @@ export class InvoicesService {
         return this.findById(invoice.id);
     }
 
+    private assertInvoiceUnchanged(existing: { updatedAt: Date }, expectedUpdatedAt?: string) {
+        if (!expectedUpdatedAt) return;
+        const loaded = new Date(expectedUpdatedAt).getTime();
+        const current = new Date(existing.updatedAt).getTime();
+        if (!Number.isFinite(loaded) || loaded !== current) {
+            throw new ConflictException(
+                'This invoice changed after you opened it. Reload it before printing or saving.',
+            );
+        }
+    }
+
     async update(id: string, dto: UpdateInvoiceDto) {
         const existing = await this.findById(id);
+        this.assertInvoiceUnchanged(existing, dto.expectedUpdatedAt);
+        if (existing.status === 'DRAFT' || existing.isProforma) {
+            await assertAccountStatus(this.prisma, existing.customerId, 'invoice');
+        }
         let invoiceNumber = existing.invoiceNumber;
         let isProforma = existing.isProforma;
 
@@ -251,6 +332,8 @@ export class InvoicesService {
         }
 
         const wasLocked = existing.isLocked;
+        const nextReference = dto.reference !== undefined ? dto.reference : existing.reference;
+        await this.assertCustomerOrderNumber(existing.customerId, nextReference);
 
         // Once issued, the invoice becomes locked — only reference (PO), abnNumber,
         // and shipping address fields remain editable from here on.
@@ -381,7 +464,7 @@ export class InvoicesService {
                 productId: item.productId,
                 description: item.description,
                 quantity: -diffQty,
-                unitPrice: Number(item.unitPrice),
+                unitPrice: sellingUnitPrice(item),
                 discountPct: Number(item.discountPct ?? 0),
             },
         ]);
@@ -406,6 +489,8 @@ export class InvoicesService {
         });
 
         if (!so) throw new NotFoundException('Sales order not found');
+        await assertAccountStatus(this.prisma, so.customerId, 'invoice');
+        await this.assertCustomerOrderNumber(so.customerId, so.customerPO);
 
         const defaultDispatch = await this.prisma.customerDispatch.findFirst({
             where: { customerId: so.customerId, deletedAt: null, isDefault: true },
@@ -444,6 +529,7 @@ export class InvoicesService {
                 salesOrderId: so.id,
                 dispatchId: defaultDispatch?.id ?? null,
                 status: 'DRAFT',
+                reference: so.customerPO ?? null,
                 freight: so.freight ?? null,
                 sundries: so.sundries ?? null,
                 labour: so.labour ?? null,
@@ -475,7 +561,7 @@ export class InvoicesService {
                     productId: item.productId,
                     description: item.description,
                     quantity: item.remainingQty,
-                    unitPrice: Number(item.unitPrice),
+                    unitPrice: sellingUnitPrice(item),
                     discountPct: Number(item.discountPct ?? 0),
                 })),
             );
@@ -495,31 +581,30 @@ export class InvoicesService {
         const positiveItems = items.filter(i => Number(i.quantity) > 0);
         if (!positiveItems.length) return;
 
-        const productIds = [...new Set(positiveItems.map(i => i.productId))];
+        const productIds = Array.from(new Set(positiveItems.map(i => i.productId)));
         const products = await this.prisma.product.findMany({
             where: { id: { in: productIds } },
             select: { id: true, productCode: true, onHand: true },
         });
 
         const byId = new Map(products.map(p => [p.id, p]));
+        const exceeding: string[] = [];
 
         for (const item of positiveItems) {
             const product = byId.get(item.productId);
             const onHand = Number(product?.onHand ?? 0);
             const requestedQty = Number(item.quantity);
-            const code = product?.productCode ?? item.productId;
+            const code = product?.productCode || item.productId;
 
-            if (onHand <= 0) {
-                throw new BadRequestException(
-                    `"${code}" has 0 units in Current Stock — cannot invoice this item.`,
-                );
+            if (onHand <= 0 || requestedQty > onHand) {
+                exceeding.push(`${code} (qty ${requestedQty}, stock ${onHand})`);
             }
+        }
 
-            if (requestedQty > onHand) {
-                throw new BadRequestException(
-                    `"${code}": requested qty (${requestedQty}) exceeds Current Stock (${onHand}). Committed/Available stock does not block invoicing — only physical Current Stock does.`,
-                );
-            }
+        if (exceeding.length) {
+            throw new BadRequestException(
+                `Supply Exceeds Stock on Hand — ${exceeding.join('; ')}`,
+            );
         }
     }
 
@@ -532,10 +617,7 @@ export class InvoicesService {
             backorderQty: Number(i.backorderQty ?? 0),
             unitPrice: Number(i.unitPrice),
             discountPct: Number(i.discountPct ?? 0),
-            lineTotal:
-                Number(i.quantity) *
-                Number(i.unitPrice) *
-                (1 - Number(i.discountPct ?? 0) / 100),
+            lineTotal: Number(i.quantity) * Number(i.unitPrice),
         }));
 
         const keepIds = cleanItems.map(i => i.id).filter(Boolean) as string[];
@@ -581,7 +663,37 @@ export class InvoicesService {
             }
         });
 
-        return this.recalculateTotals(invoiceId);
+        await this.recalculateTotals(invoiceId);
+        const saved = await this.prisma.invoice.findUnique({
+            where: { id: invoiceId },
+            select: { salesOrderId: true },
+        });
+        if (saved?.salesOrderId) {
+            await this.syncSalesOrderBackOrder(saved.salesOrderId);
+        }
+        return this.findById(invoiceId);
+    }
+
+    /** Invoice B/Ord is the sales-order quantity still not on an invoice. */
+    private async syncSalesOrderBackOrder(salesOrderId: string) {
+        const { byProduct } = await notInvoicedBySalesOrderLine(this.prisma, salesOrderId);
+        const invoices = await this.prisma.invoice.findMany({
+            where: { salesOrderId, deletedAt: null, status: { not: 'CANCELLED' } },
+            select: {
+                items: {
+                    where: { deletedAt: null },
+                    select: { id: true, productId: true },
+                },
+            },
+        });
+        for (const invoice of invoices) {
+            for (const item of invoice.items) {
+                await this.prisma.invoiceItem.update({
+                    where: { id: item.id },
+                    data: { backorderQty: byProduct.get(item.productId) ?? 0 },
+                });
+            }
+        }
     }
 
     private async recalculateTotals(invoiceId: string) {
@@ -593,7 +705,8 @@ export class InvoicesService {
 
         const parts = items.reduce((s, i) => s + Number(i.lineTotal ?? 0), 0);
         const subtotal = parts + Number(invoice?.freight ?? 0) + Number(invoice?.sundries ?? 0) + Number(invoice?.labour ?? 0) + Number(invoice?.otherCharges ?? 0);
-        const gst = subtotal * 0.1;
+        const gstRate = await resolveGstRate(this.prisma, invoice?.customerId);
+        const gst = subtotal * gstRate;
         const total = subtotal + gst + Number(invoice?.rounding ?? 0);
 
         return this.prisma.invoice.update({
@@ -618,17 +731,24 @@ export class InvoicesService {
                         customerNumber: true,
                         isGeneric: true,
                         requiresShippingDetails: true,
+                        orderRequired: true,
                         abn: true,
                     },
                 },
                 items: {
                     where: { deletedAt: null },
-                    include: { product: { select: { onHand: true } } },
+                    include: { product: { select: { onHand: true, committed: true } } },
                 },
             },
         });
 
         if (!so) throw new NotFoundException('Sales order not found');
+
+        const { byProduct } = await notInvoicedBySalesOrderLine(this.prisma, salesOrderId);
+        const salesOrderBackOrder: Record<string, number> = {};
+        for (const [productId, qty] of Array.from(byProduct.entries())) {
+            salesOrderBackOrder[productId] = qty;
+        }
 
         // Already invoiced qty per product
         const existingInvoices = await this.prisma.invoice.findMany({
@@ -651,7 +771,7 @@ export class InvoicesService {
             ordered.set(item.productId, (ordered.get(item.productId) ?? 0) + Number(item.quantity));
         }
         const productRemaining = new Map<string, number>();
-        for (const [productId, qty] of ordered) {
+        for (const [productId, qty] of Array.from(ordered)) {
             productRemaining.set(productId, Math.max(0, qty - (invoicedQtyMap.get(productId) ?? 0)));
         }
 
@@ -666,9 +786,9 @@ export class InvoicesService {
                     description: item.description,
                     quantity: lineQty - used,
                     uninvoicedQty: productRemaining.get(item.productId) ?? 0,
-                    backOrderQty: Number(item.backOrderQty ?? 0),
+                    notInvoicedQty: lineQty - used,
                     onHandQty: Number(item.product?.onHand ?? 0),
-                    unitPrice: Number(item.unitPrice),
+                    unitPrice: sellingUnitPrice(item),
                     discountPct: Number(item.discountPct ?? 0),
                 };
             })
@@ -678,6 +798,7 @@ export class InvoicesService {
             so,
             uninvoicedItems,
             hasUninvoiced: uninvoicedItems.length > 0,
+            salesOrderBackOrder,
         };
     }
 
@@ -710,7 +831,12 @@ export class InvoicesService {
         if (invoiceType === 'SALESORDER' && parentId) {
             const so = await this.prisma.salesOrder.findFirst({
                 where: { id: parentId },
-                include: { items: { where: { deletedAt: null } } },
+                include: {
+                    items: {
+                        where: { deletedAt: null },
+                        include: { product: { select: { productCode: true } } },
+                    },
+                },
             });
             if (!so) return;
 
@@ -733,18 +859,23 @@ export class InvoicesService {
             }
 
             // Validate each item
+            const exceeding: string[] = [];
             for (const item of items) {
                 const soItem = so.items.find(i => i.productId === item.productId);
                 if (!soItem) continue;
 
                 const alreadyInvoiced = invoicedQtyMap.get(item.productId) ?? 0;
                 const available = soItem.quantity - alreadyInvoiced;
+                const label = soItem.product?.productCode || soItem.description || item.productId;
 
                 if (item.quantity > available) {
-                    throw new BadRequestException(
-                        `Item "${item.productId}": requested qty ${item.quantity} exceeds available uninvoiced qty ${available}`
-                    );
+                    exceeding.push(`${label} (qty ${item.quantity}, remaining ${available})`);
                 }
+            }
+            if (exceeding.length) {
+                throw new BadRequestException(
+                    `Supply Exceeds Order — ${exceeding.join('; ')}`,
+                );
             }
         }
     }
@@ -800,7 +931,7 @@ export class InvoicesService {
                 productId: item.productId,
                 description: item.description,
                 quantity: -Number(item.quantity),
-                unitPrice: Number(item.unitPrice),
+                unitPrice: sellingUnitPrice(item),
                 discountPct: Number(item.discountPct ?? 0),
             }));
 
@@ -856,14 +987,14 @@ export class InvoicesService {
                 originalByProduct.set(i.productId, {
                     description: i.description,
                     quantity: Number(i.quantity),
-                    unitPrice: Number(i.unitPrice),
+                    unitPrice: sellingUnitPrice(i),
                     discountPct: Number(i.discountPct ?? 0),
                 });
             }
         }
 
         const reversalItems: { productId: string; description: string; quantity: number; unitPrice: number; discountPct: number }[] = [];
-        for (const [productId, agg] of originalByProduct.entries()) {
+        for (const [productId, agg] of Array.from(originalByProduct.entries())) {
             const alreadyReversed = reversedQtyMap.get(productId) ?? 0;
             const remaining = agg.quantity - alreadyReversed;
             if (remaining > 0) {
@@ -913,6 +1044,8 @@ export class InvoicesService {
         });
 
         if (!preinstall) throw new NotFoundException('Preinstall not found');
+        await assertAccountStatus(this.prisma, preinstall.customerId, 'invoice');
+        await this.assertCustomerOrderNumber(preinstall.customerId, preinstall.orderNumber);
 
         // 2. Only INSTALLED status can be invoiced
         if (preinstall.status !== 'INSTALLED') {
@@ -927,34 +1060,37 @@ export class InvoicesService {
         }
 
         const d = preinstall.installDetail;
+        const empty = (value: unknown) => value == null || String(value).trim() === '';
+        const missing =
+            empty(d?.assetNumber)
+            || (empty(d?.fleetNumber) && empty(d?.regoNumber))
+            || empty(preinstall.depotId)
+            || empty(d?.vehicleMake)
+            || empty(d?.vehicleModel)
+            || empty(d?.installLocation)
+            || empty(d?.installer)
+            || (d?.mixSim1 && empty(d?.unitSim))
+            || empty(d?.unitSerial)
+            || empty(d?.unitIMEI)
+            || ((!empty(d?.visionType) || !empty(d?.cameraType)) && (empty(d?.visSim) || empty(d?.vis1Serial) || empty(d?.visIMEI)));
+        if (missing) throw new BadRequestException('Details Not Complete');
+
+        const serviceCode = String(d?.serviceCode ?? '').trim();
+        if (!serviceCode) throw new BadRequestException('Invalid Service Code');
+        const service = await this.prisma.product.findFirst({
+            where: { productCode: { equals: serviceCode, mode: 'insensitive' }, isActive: true },
+            select: { id: true },
+        });
+        if (!service) throw new BadRequestException('Invalid Service Code');
+
+        const cameraOn = !empty(d?.visionType) || !empty(d?.cameraType);
+        const unit = String(d?.fmUnitType ?? '').trim().toUpperCase();
+        if (cameraOn && !['SA', 'SA_M2', 'M2', 'FMS'].includes(unit)) {
+            throw new BadRequestException('Base Unit must be SA, SA_M2, M2 or FMS to support a Camera System');
+        }
 
         // 4. Build externalNotes from install detail (text entry field)
-        const notes = [
-            `Install Type: ${d?.installType ?? '-'}`,
-            `Unit Type: ${d?.fmUnitType ?? '-'} | Unit Code: ${d?.fmUnitCode ?? '-'}`,
-            `Service Code: ${d?.serviceCode ?? '-'} | MIX Code: ${d?.mixCode ?? '-'}`,
-            ``,
-            `Vehicle: ${d?.vehicleMake ?? '-'} ${d?.vehicleModel ?? '-'} ${d?.yearVariant ?? ''}`.trim(),
-            `Rego: ${d?.regoNumber ?? '-'} | VIN: ${d?.vinNumber ?? '-'}`,
-            `Asset No: ${d?.assetNumber ?? '-'} | Fleet No: ${d?.fleetNumber ?? '-'}`,
-            ``,
-            `Unit Serial: ${d?.unitSerial ?? '-'}`,
-            `Unit IMEI: ${d?.unitIMEI ?? '-'}`,
-            `Unit SIM: ${d?.unitSim ?? '-'}`,
-            ...(d?.visionType ? [
-                `Vision Type: ${d.visionType}`,
-                `Vis 1 Serial: ${d.vis1Serial ?? '-'}`,
-                `Vis IMEI: ${d.visIMEI ?? '-'}`,
-                ...((d?.cameraCount ?? 0) >= 2 ? [`Vis 2 Serial: ${d.vis2Serial ?? '-'}`] : []),
-                ...((d?.cameraCount ?? 0) >= 3 ? [`Vis 3 Serial: ${d.vis3Serial ?? '-'}`] : []),
-                ...((d?.cameraCount ?? 0) >= 4 ? [`Vis 4 Serial: ${d.vis4Serial ?? '-'}`] : []),
-            ] : []),
-            ``,
-            `Location: ${d?.installLocation ?? '-'}`,
-            `Installer: ${d?.installer ?? '-'}`,
-            `Install Date: ${d?.installDate ? new Date(d.installDate).toLocaleDateString('en-AU') : '-'}`,
-            `MIX Org ID: ${d?.mixOrgId ?? '-'}`,
-        ].join('\n');
+        const notes = this.formatPreinstallNotes(d, { includeHeader: true });
 
         // 5. Create invoice
         const invoiceNumber = await this.generateInvoiceNumber(true); // proforma first
@@ -968,6 +1104,7 @@ export class InvoicesService {
                 status: 'DRAFT',
                 externalNotes: notes,
                 internalNotes: `FMPreinstall: ${preinstall.preinstallNo}`,
+                reference: preinstall.orderNumber ?? null,
 
                 // Charges from preinstall
                 labour: preinstall.chargeLabour ?? null,
@@ -1010,6 +1147,14 @@ export class InvoicesService {
             },
         });
 
+        // 8. Auto-create FM Install (FM Log) from preinstall data
+        try {
+            await this.fmInstall.createFromPreinstall(preinstallId);
+        } catch (err: any) {
+            // Already exists / missing fields — invoice still succeeds
+            console.warn(`FM Install auto-create skipped for ${preinstallId}: ${err?.message}`);
+        }
+
         return this.findById(invoice.id);
     }
 
@@ -1036,35 +1181,24 @@ export class InvoicesService {
             throw new BadRequestException('Already invoiced');
         }
 
+        await this.assertCustomerOrderNumber(preinstall.customerId, preinstall.orderNumber);
+
         const d = preinstall.installDetail;
 
-        const notes = [
-            //`Install Type: ${d?.installType ?? '-'}`,
-            //`Unit Type: ${d?.fmUnitType ?? '-'} | Unit Code: ${d?.fmUnitCode ?? '-'}`,
-            //`Service Code: ${d?.serviceCode ?? '-'} | MIX Code: ${d?.mixCode ?? '-'}`,
-            //``,
-            `Vehicle: ${[d?.vehicleMake, d?.vehicleModel, d?.yearVariant].filter(Boolean).join(' ')}`,
-            `Rego: ${d?.regoNumber ?? '-'} | VIN: ${d?.vinNumber ?? '-'}`,
-            `Asset No: ${d?.assetNumber ?? '-'} | Fleet No: ${d?.fleetNumber ?? '-'}`,
-            ``,
-            `Unit Serial: ${d?.unitSerial ?? '-'}`,
-            `Unit IMEI: ${d?.unitIMEI ?? '-'}`,
-            `Unit SIM: ${d?.unitSim ?? '-'}`,
-            ...(d?.visionType ? [
-                ``,
-                `Vision: ${d.visionType}`,
-                `Vis 1 Serial: ${d.vis1Serial ?? '-'}`,
-                `Vis IMEI: ${d.visIMEI ?? '-'}`,
-                ...((d?.cameraCount ?? 0) >= 2 ? [`Vis 2 Serial: ${d.vis2Serial ?? '-'}`] : []),
-                ...((d?.cameraCount ?? 0) >= 3 ? [`Vis 3 Serial: ${d.vis3Serial ?? '-'}`] : []),
-                ...((d?.cameraCount ?? 0) >= 4 ? [`Vis 4 Serial: ${d.vis4Serial ?? '-'}`] : []),
-            ] : []),
-            ``,
-            `Location: ${d?.installLocation ?? '-'}`,
-            `Installer: ${d?.installer ?? '-'}`,
-            `Install Date: ${d?.installDate ? new Date(d.installDate).toLocaleDateString('en-AU') : '-'}`,
-            //`MIX Org ID: ${d?.mixOrgId ?? '-'}`,
-        ].join('\n');
+        const notes = this.formatPreinstallNotes(d);
+
+        const splitPacked = (val?: string | null) => {
+            if (!val) return { address2: '', city: '', state: '', postcode: '' };
+            const parts = val.includes('||') ? val.split('||') : val.includes('|') ? val.split('|') : [val];
+            return {
+                address2: parts[0] ?? '',
+                city: parts[1] ?? '',
+                state: parts[2] ?? '',
+                postcode: parts[3] ?? '',
+            };
+        };
+        const ship = splitPacked(preinstall.shippingAddress2);
+        const bill = splitPacked(preinstall.billingAddress2);
 
         // Return pre-populated invoice data only — no DB write
         return {
@@ -1072,19 +1206,28 @@ export class InvoicesService {
             preinstallNo: preinstall.preinstallNo,
             customerId: preinstall.customerId,
             customerName: preinstall.customer?.name,
+            customer: preinstall.customer ?? null,
+            abnNumber: preinstall.customer?.abn ?? preinstall.abnEntry ?? '',
+            reference: preinstall.orderNumber ?? '',
             invoiceType: 'FMPREINSTALL',
             externalNotes: notes,
             internalNotes: `FMPreinstall: ${preinstall.preinstallNo}`,
-            labour: preinstall.chargeLabour ?? null,
-            freight: preinstall.chargeFreight ?? null,
-            sundries: preinstall.chargeSundries ?? null,
-            rounding: preinstall.chargeRounding ?? null,
+            labour: Number(preinstall.chargeLabour ?? 0),
+            freight: Number(preinstall.chargeFreight ?? 0),
+            sundries: Number(preinstall.chargeSundries ?? 0),
+            rounding: Number(preinstall.chargeRounding ?? 0),
             billingName: preinstall.billingName ?? null,
             billingAddress1: preinstall.billingAddress1 ?? null,
-            billingAddress2: preinstall.billingAddress2 ?? null,
+            billingAddress2: bill.address2 || null,
+            billingCity: bill.city || null,
+            billingState: bill.state || null,
+            billingPostcode: preinstall.billingAddress3 || bill.postcode || null,
             shippingName: preinstall.shippingName ?? null,
             shippingAddress1: preinstall.shippingAddress1 ?? null,
-            shippingAddress2: preinstall.shippingAddress2 ?? null,
+            shippingAddress2: ship.address2 || null,
+            shippingCity: ship.city || null,
+            shippingState: ship.state || null,
+            shippingPostcode: preinstall.shippingAddress3 || ship.postcode || null,
             items: preinstall.items.map(item => ({
                 productId: item.productId,
                 description: item.description,
@@ -1165,8 +1308,11 @@ export class InvoicesService {
                 doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(20)
                     .text('AIRCO', margin, 28);
             }
+            const docTitle = invoice.isProforma || invoice.status === 'DRAFT'
+                ? 'PROFORMA INVOICE'
+                : 'INVOICE';
             doc.fillColor('#dbeafe').font('Helvetica').fontSize(9)
-                .text('INVOICE', pageW - 210, 22, { width: 170, align: 'right' });
+                .text(docTitle, pageW - 210, 22, { width: 170, align: 'right' });
             doc.fillColor('#ffffff').font('Helvetica-Bold').fontSize(18)
                 .text(invoice.invoiceNumber, pageW - 210, 38, { width: 170, align: 'right' });
             doc.fillColor('#dbeafe').font('Helvetica').fontSize(9)
@@ -1260,7 +1406,7 @@ export class InvoicesService {
                 ['Freight', money(Number(invoice.freight ?? 0)), false],
                 ['Sundries', money(Number(invoice.sundries ?? 0)), false],
                 ['Labour', money(Number(invoice.labour ?? 0)), false],
-                ['GST (10%)', money(Number(invoice.gst ?? 0)), false],
+                ['GST', money(Number(invoice.gst ?? 0)), false],
                 ['TOTAL', money(Number(invoice.total ?? 0)), true],
             ];
             const boxX = pageW - margin - 220;
@@ -1303,6 +1449,13 @@ export class InvoicesService {
                 status: 'INVOICED',
             },
         });
+
+        // Accepted into FM Log once invoiced — copy preinstall install data
+        try {
+            await this.fmInstall.createFromPreinstall(preinstallId);
+        } catch (err: any) {
+            console.warn(`FM Install auto-create skipped for ${preinstallId}: ${err?.message}`);
+        }
     }
 
 }

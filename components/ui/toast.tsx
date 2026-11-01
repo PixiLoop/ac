@@ -26,6 +26,8 @@ type ToastContextType = {
     type?: ToastType;
     title?: string;
     message?: ToastMessage;
+    /** When true, clears prior toasts so only this one is shown. */
+    replace?: boolean;
   }) => void;
 };
 /* ================= CONTEXT ================= */
@@ -62,14 +64,19 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
       type = 'info',
       title,
       message,
+      // Errors replace by default so only one shows at a time
+      replace = type === 'error',
     }: {
       type?: ToastType;
       title?: string;
       message?: ToastMessage;
+      replace?: boolean;
     }) => {
       const id = ++idRef.current;
 
-      setToasts((prev) => [...prev, { id, type, title, message }]);
+      setToasts((prev) =>
+        replace ? [{ id, type, title, message }] : [...prev, { id, type, title, message }],
+      );
 
       // auto close after 4s
       setTimeout(() => {

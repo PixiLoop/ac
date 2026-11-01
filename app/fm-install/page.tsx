@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { AdminShell } from '../../components/layout/AdminShell';
 import { Button } from '../../components/ui/button';
 import { api } from '../../lib/api-client';
@@ -16,11 +16,12 @@ const INSTALL_STATUSES = ['ALL', 'INSTALL', 'ACTIVE', 'ON_HOLD', 'DECOMMISSIONED
 
 export default function FMInstallListPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const { showToast } = useToast();
 
   const [filters, setFilters] = useState({
-    customer: '',
-    fmCusNum: '',
+    customer: searchParams.get('customer') ?? '',
+    fmCusNum: searchParams.get('fmCusNum') ?? '',
     colSearch: '',
     chargeOnly: false,
     visionFitted: false,

@@ -13,15 +13,19 @@ import { AccountDetailsSection } from '../../../../components/salesorders/sectio
 import { SalesOrderCharges } from '../../../../components/salesorders/SalesOrderCharges';
 import { InvoiceListSection } from '../../../../components/invoices/InvoiceListSection';
 import { api } from '../../../../lib/api-client';
+import { useToast } from '../../../../components/ui/toast';
+import { availableStock } from '../../../../lib/available-stock';
 
 export default function ViewSalesOrderPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const { showToast } = useToast();
 
   const [loading, setLoading] = useState(true);
   const [orderNo, setOrderNo] = useState('');
   const [fromQuotation, setFromQuotation] = useState<{ id: string; quoteNumber: string } | null>(null);
   const [creatingInvoice, setCreatingInvoice] = useState(false);
+  const [orderRequired, setOrderRequired] = useState(false);
   //HEADER
   const [form, setForm] = useState<any>({
     customerId: '',
@@ -72,6 +76,7 @@ export default function ViewSalesOrderPage() {
         const res = await api.get(`/salesorders/${id}`);
         const data = res.data?.data ?? res.data;
 
+        setOrderRequired(!!data.customer?.orderRequired);
         setForm({
           customerId: data.customerId,
           orderType: data.orderType,
@@ -144,8 +149,8 @@ export default function ViewSalesOrderPage() {
             qty: Number(i.quantity),
             unitPrice: Number(i.unitPrice),
             discountPct: Number(i.discountPct) || 0,
-            availableQty: Number(i.product?.onHand ?? null),
-            backOrderQty: Number(i.backOrderQty ?? 0),
+            availableQty: availableStock(i.product),
+            notInvoicedQty: i.notInvoicedQty != null ? Number(i.notInvoicedQty) : Number(i.quantity),
           })),
         );
 
@@ -196,6 +201,10 @@ export default function ViewSalesOrderPage() {
   }, [invoices, items]);
 
   const handleCreateInvoice = async () => {
+    if (orderRequired && !String(form.customerPO ?? '').trim()) {
+      showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+      return;
+    }
     setCreatingInvoice(true);
     try {
       router.push(`/invoices/new?salesOrderId=${id}`);
@@ -239,6 +248,13 @@ export default function ViewSalesOrderPage() {
             + Create Invoice
           </Button>
         )}
+        <Button
+          type="button"
+          variant="outline"
+          onClick={() => window.open(`/salesorders/${id}/print`, '_blank', 'noopener')}
+        >
+          Print
+        </Button>
         <Button onClick={() => router.push(`/salesorders/${id}`)}>
           Edit
         </Button>
@@ -287,6 +303,7 @@ export default function ViewSalesOrderPage() {
               items={items}
               freight={form.freight}
               disabled
+              useAvailableStock
               defaultOpen
             />
           </div>

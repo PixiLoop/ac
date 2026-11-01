@@ -495,7 +495,7 @@ export default function EditDispatchPage() {
   if (!canView) {
     return (
       <AdminShell title="Edit Dispatch">
-        <p className="text-sm text-slate-600">You do not have permission to view or edit this page.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

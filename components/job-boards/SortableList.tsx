@@ -11,7 +11,7 @@ import BoardColorPicker from './BoardColorPicker'
 import { Pencil, Trash2 } from 'lucide-react'
 
 
-export default function SortableList({ list, reload, activeId, setBoard }: any) {
+export default function SortableList({ list, reload, activeId, setBoard, hideAddCard }: any) {
   const {
     attributes,
     listeners,
@@ -101,7 +101,8 @@ export default function SortableList({ list, reload, activeId, setBoard }: any) 
           <div
             {...attributes}
             {...listeners}
-            className="font-semibold cursor-grab pr-12"
+            className="font-semibold cursor-grab pr-12 select-none"
+            style={{ touchAction: 'none', userSelect: 'none' }}
           >
             {list.name}
           </div>
@@ -153,7 +154,7 @@ export default function SortableList({ list, reload, activeId, setBoard }: any) 
         )}
       </div>
 
-      <div className="p-2 space-y-2 overflow-y-auto max-h-[60vh] p-2 space-y-2 overflow-y-auto">
+      <div className="px-3 py-2 space-y-2 overflow-y-auto max-h-[60vh] w-full">
         <SortableContext
           items={list.cards.map((c: any) => c.id)}
           strategy={verticalListSortingStrategy}
@@ -169,59 +170,62 @@ export default function SortableList({ list, reload, activeId, setBoard }: any) 
         </SortableContext>
       </div>
 
-      <div className="p-2">
-        {adding ? (
-          <div className="space-y-2">
-            <input
-              className="w-full border rounded p-2 text-sm"
-              placeholder="Enter a title..."
-              value={title}
-              onChange={(e) => setTitle(e.target.value)}
-            />
+      {/* Add Card only when Display cards from = Manual */}
+      {!hideAddCard && (
+        <div className="px-3 pb-3 w-full">
+          {adding ? (
+            <div className="space-y-2 w-full">
+              <input
+                className="!w-full border rounded p-2 text-sm text-left"
+                placeholder="Enter a title..."
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
 
-            <div className="flex gap-2">
-              <button
-                onClick={async () => {
-                  if (!title.trim()) return
+              <div className="flex gap-2 justify-start">
+                <button
+                  onClick={async () => {
+                    if (!title.trim()) return
 
-                  try {
-                    const res = await api.post(
-                      `/job-boards/lists/${list.id}/cards`,
-                      { title }
-                    )
-                    const newCard = res.data?.data ?? res.data
-                    list.cards = [...list.cards, newCard]
+                    try {
+                      const res = await api.post(
+                        `/job-boards/lists/${list.id}/cards`,
+                        { title }
+                      )
+                      const newCard = res.data?.data ?? res.data
+                      list.cards = [...list.cards, newCard]
 
-                    setTitle('')
-                    setAdding(false)
+                      setTitle('')
+                      setAdding(false)
 
-                    reload() //keep reload for safety
-                  } catch (err) {
-                    console.error('Failed to create card', err)
-                  }
-                }}
-                className="bg-blue-600 text-white px-3 py-1 rounded text-sm"
-              >
-                Add card
-              </button>
+                      reload()
+                    } catch (err) {
+                      console.error('Failed to create card', err)
+                    }
+                  }}
+                  className="bg-blue-600 text-white px-3 py-1 rounded text-sm"
+                >
+                  Add card
+                </button>
 
-              <button
-                onClick={() => setAdding(false)}
-                className="text-sm text-slate-500"
-              >
-                Cancel
-              </button>
+                <button
+                  onClick={() => setAdding(false)}
+                  className="text-sm text-slate-500"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
-          </div>
-        ) : (
-          <button
-            onClick={() => setAdding(true)}
-            className="w-full text-sm text-slate-500 hover:text-black"
-          >
-            + Add Card
-          </button>
-        )}
-      </div>
+          ) : (
+            <button
+              onClick={() => setAdding(true)}
+              className="w-full text-left text-sm text-slate-500 hover:text-black"
+            >
+              + Add Card
+            </button>
+          )}
+        </div>
+      )}
 
 
       <ConfirmModal

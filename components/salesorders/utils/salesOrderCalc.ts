@@ -6,8 +6,8 @@ export function toNumber(v: any, fallback = 0) {
 export function calcLineTotal(item: any) {
   const qty = toNumber(item.qty);
   const unit = toNumber(item.unitPrice);
+  if (item.listPrice != null || item.priceOverridden) return qty * unit;
   const disc = toNumber(item.discountPct);
-
   return qty * unit * (1 - disc / 100);
 }
 

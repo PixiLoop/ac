@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react';
 import { Input } from '../../ui/input';
+import { api } from '../../../lib/api-client';
+import { allowsTacho, isCathexis, isMix4000, mixSim1Enabled, optionEnabled } from '../../../lib/fm-rules';
 
 function TwoCol({ children }: { children: React.ReactNode }) {
   return <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">{children}</div>;
@@ -41,26 +43,49 @@ function F({ label, value, onChange, readOnly = false, highlight = false, type =
 }
 
 // Native checkbox styled consistently
-function Chk({ label, checked, onChange, yellow = false }: any) {
+function Chk({ label, checked, onChange, yellow = false, disabled = false }: any) {
   return (
-    <label className="flex items-center gap-1 text-[10px] cursor-pointer select-none">
+    <label className={`flex items-center gap-1 text-[10px] select-none ${disabled ? 'opacity-50' : 'cursor-pointer'}`}>
       <input type="checkbox" className="accent-blue-600 w-3.5 h-3.5"
         checked={checked ?? false}
+        disabled={disabled}
         onChange={e => onChange(e.target.checked)} />
       <span className={yellow ? 'bg-yellow-100 px-1 rounded' : ''}>{label}</span>
     </label>
   );
 }
 
-export function FMInstallDetailsPanel({ form, update }: any) {
+export function FMInstallDetailsPanel({ form, update, unitType, customerId, visionFitted = false }: any) {
   const [local, setLocal] = useState<any>(form ?? {});
+  const [accountOptions, setAccountOptions] = useState<any[]>([]);
 
   useEffect(() => { setLocal(form ?? {}); }, [form]);
+  useEffect(() => {
+    if (!customerId) { setAccountOptions([]); return; }
+    api.get('/fm-customers/options', { params: { customerId } })
+      .then(res => {
+        const data = res.data?.data ?? res.data;
+        setAccountOptions(Array.isArray(data) ? data : []);
+      })
+      .catch(() => setAccountOptions([]));
+  }, [customerId]);
 
   const set = (k: string, v: any) => {
     setLocal((p: any) => ({ ...p, [k]: v }));
     update?.(k, v);
   };
+
+  const unit = unitType || local.unitType || local.baseUnitCode || '';
+  const camera = local.cameraType || '';
+  const visionOn = visionFitted || !!camera || !!local.standard || !!local.highDef;
+  const sim1On = mixSim1Enabled(unit);
+  const aiOn = optionEnabled(accountOptions, ['AI']) && !!camera && !isCathexis(camera);
+  const tmaOn = optionEnabled(accountOptions, ['TMA']) && isMix4000(unit);
+  const rimOn = optionEnabled(accountOptions, ['RIM']) && isMix4000(unit);
+  const nrcOn = optionEnabled(accountOptions, ['NRC']) && !!camera;
+  const safeOn = optionEnabled(accountOptions, ['SAFE']);
+  const fuelOn = optionEnabled(accountOptions, ['FUEL']);
+  const tachoOn = optionEnabled(accountOptions, ['TACHO']) && allowsTacho(unit);
 
   return (
     <div className="border bg-white text-xs p-2">
@@ -79,6 +104,7 @@ export function FMInstallDetailsPanel({ form, update }: any) {
           onChange={v => set('modem4G', v)} />
         <Chk label="Tacho_Data (TD)" yellow
           checked={local.tachoData}
+          disabled={!tachoOn}
           onChange={v => set('tachoData', v)} />
       </div>
 
@@ -89,16 +115,16 @@ export function FMInstallDetailsPanel({ form, update }: any) {
       </ThreeCol>
 
       <ThreeCol>
-        <F highlight label="Unit SerialNum"         value={local.unitSerial}    onChange={v => set('unitSerial', v)} />
-        <F highlight label="Unit IMEI"              value={local.unitIMEI}      onChange={v => set('unitIMEI', v)} />
-        <F highlight label="Unit Sim Serial Number" value={local.unitSimSerial} onChange={v => set('unitSimSerial', v)} />
+        <F label="Unit SerialNum"         value={local.unitSerial}    onChange={v => set('unitSerial', v)} />
+        <F label="Unit IMEI"              value={local.unitIMEI}      onChange={v => set('unitIMEI', v)} />
+        <F label="Unit Sim Serial Number" value={local.unitSimSerial} onChange={v => set('unitSimSerial', v)} />
       </ThreeCol>
 
       {/* ── MIX UNIT SIM S1 ─────────────────────────────────────── */}
       <SectionTitle>MIX Unit Simm <Tag>S1</Tag></SectionTitle>
 
       <div className="flex gap-4 mb-1">
-        <Chk label="Enable SIM1"  checked={local.mixSim1}      onChange={v => set('mixSim1', v)} />
+        <Chk label="Enable SIM1" checked={local.mixSim1} disabled={!sim1On} onChange={v => set('mixSim1', v)} />
         <Chk label="International" checked={local.international} onChange={v => set('international', v)} />
       </div>
 
@@ -155,18 +181,18 @@ export function FMInstallDetailsPanel({ form, update }: any) {
       </TwoCol>
 
       <ThreeCol>
-        <F highlight label="Vis SerialNum"  value={local.visSerial} onChange={v => set('visSerial', v)} />
-        <F highlight label="Vis IMEI"       value={local.visIMEI}   onChange={v => set('visIMEI', v)} />
-        <F highlight label="S2 Serial"      value={local.s2Serial}  onChange={v => set('s2Serial', v)} />
-        <F highlight label="Cam3 SerialNum" value={local.cam3}      onChange={v => set('cam3', v)} />
-        <F highlight label="Cam4 SerialNum" value={local.cam4}      onChange={v => set('cam4', v)} />
-        <F highlight label="Cam5 SerialNum" value={local.cam5}      onChange={v => set('cam5', v)} />
+        <F label="Vis SerialNum" value={local.visSerial} onChange={v => set('visSerial', v)} readOnly={!visionOn} />
+        <F label="Vis IMEI" value={local.visIMEI} onChange={v => set('visIMEI', v)} readOnly={!visionOn} />
+        <F label="S2 Serial" value={local.s2Serial} onChange={v => set('s2Serial', v)} readOnly={!visionOn} />
+        <F label="Cam3 SerialNum" value={local.cam3}      onChange={v => set('cam3', v)} />
+        <F label="Cam4 SerialNum" value={local.cam4}      onChange={v => set('cam4', v)} />
+        <F label="Cam5 SerialNum" value={local.cam5}      onChange={v => set('cam5', v)} />
       </ThreeCol>
 
       {/* ── MIX VISION SIM S2 ───────────────────────────────────── */}
       <SectionTitle>MIX Vision Simm <Tag>S2</Tag></SectionTitle>
 
-      <Chk label="Enable SIM2" checked={local.mixSim2} onChange={v => set('mixSim2', v)} />
+      <Chk label="Enable SIM2" checked={local.mixSim2} disabled={!visionOn} onChange={v => set('mixSim2', v)} />
 
       <TwoCol>
         <F label="Sim Type" value={local.sim2Type} onChange={v => set('sim2Type', v)} />
@@ -176,9 +202,12 @@ export function FMInstallDetailsPanel({ form, update }: any) {
       {/* ── OPTIONS ─────────────────────────────────────────────── */}
       <SectionTitle>Options</SectionTitle>
       <div className="flex gap-4 flex-wrap">
-        <Chk yellow label="AI_Option (AI)" checked={local.ai}  onChange={v => set('ai', v)} />
-        <Chk yellow label="TMA_Option"     checked={local.tma} onChange={v => set('tma', v)} />
-        <Chk yellow label="RIM_Option"     checked={local.rim} onChange={v => set('rim', v)} />
+        <Chk yellow label="AI_Option (AI)" checked={local.ai} disabled={!aiOn} onChange={v => set('ai', v)} />
+        <Chk yellow label="TMA_Option" checked={local.tma} disabled={!tmaOn} onChange={v => set('tma', v)} />
+        <Chk yellow label="RIM_Option" checked={local.rim} disabled={!rimOn} onChange={v => set('rim', v)} />
+        <Chk yellow label="NRC_Option" checked={local.nrc} disabled={!nrcOn} onChange={v => set('nrc', v)} />
+        <Chk yellow label="SafeGuard_Option" checked={local.safeGuard} disabled={!safeOn} onChange={v => set('safeGuard', v)} />
+        <Chk yellow label="FUEL_Rebate" checked={local.fuelRebate} disabled={!fuelOn} onChange={v => set('fuelRebate', v)} />
       </div>
 
       {/* ── RESULT CODES ────────────────────────────────────────── */}

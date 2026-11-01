@@ -305,6 +305,16 @@ export function QuotationForm({ mode = 'create', initialData }: any) {
           </Button>
         )}
 
+        {(mode === 'edit' || mode === 'view') && form.id && (
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => window.open(`/quotations/${form.id}/print`, '_blank', 'noopener')}
+          >
+            Print
+          </Button>
+        )}
+
         <Button
           variant="outline"
           onClick={() => window.history.back()}

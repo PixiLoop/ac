@@ -5,9 +5,10 @@ import { Button } from '../../../components/ui/button'
 import { Input } from '../../../components/ui/input'
 import { Select } from '../../../components/ui/select'
 import { Checkbox } from '../../../components/ui/checkbox'
+import DataTable from '../../../components/common/DataTable'
 import { api } from '../../../lib/api-client'
 import { useToast } from '../../../components/ui/toast'
-import DataTable from '../../common/DataTable'
+import { ORDER_NUMBER_REQUIRED } from '../../../lib/fm-rules'
 
 type Report = {
   id: string
@@ -87,7 +88,8 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
     priceIncludesGst: false,
   }
 
-  const [newReport, setNewReport] = useState(initialReportState)
+  const [newReport, setNewReport] = useState({ ...initialReportState, filterServiceCode: '', filterDepot: '', orderNumber: '' })
+  const [profile, setProfile] = useState<any>(null)
 
   const load = () => {
     if (!fmCustomerId) return
@@ -99,8 +101,19 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
 
   useEffect(() => { load() }, [fmCustomerId])
 
+  useEffect(() => {
+    if (!fmCustomerId) return
+    api.get(`/fm-customers/${fmCustomerId}`)
+      .then(res => setProfile(res.data?.data ?? res.data))
+      .catch(() => setProfile(null))
+  }, [fmCustomerId])
+
   const handleAdd = async () => {
     if (!fmCustomerId) return
+    if (profile?.customer?.orderRequired && !String(newReport.orderNumber ?? '').trim()) {
+      showToast({ type: 'error', title: ORDER_NUMBER_REQUIRED, message: ORDER_NUMBER_REQUIRED })
+      return
+    }
     setSaving(true)
     try {
       await api.post('/fm-subscription-reports', {
@@ -110,6 +123,9 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
         reportType: newReport.reportType,
         reportTarget: newReport.reportTarget,
         invoiceBy: newReport.invoiceBy || undefined,
+        filterServiceCode: newReport.invoiceBy === 'FM_Service' ? (newReport.filterServiceCode || undefined) : undefined,
+        filterDepot: newReport.invoiceBy === 'Depot' ? (newReport.filterDepot || undefined) : undefined,
+        orderNumber: newReport.orderNumber || undefined,
         sortBy: newReport.sortBy,
         listBy: newReport.listBy,
         volumeOffsetMonths: Number(newReport.volumeOffsetMonths) || 0,
@@ -121,7 +137,7 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
       })
       showToast({ type: 'success', title: 'Report added' })
       setShowAdd(false)
-      setNewReport(initialReportState)
+      setNewReport({ ...initialReportState, filterServiceCode: '', filterDepot: '', orderNumber: '' })
       load()
     } catch (err: any) {
       const raw = err?.response?.data?.message
@@ -186,7 +202,18 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
       <div className="flex justify-between items-center mb-3">
         <h3 className="text-sm font-semibold">Subscription Reports</h3>
         {!readOnly && (
-          <Button size="sm" onClick={() => setShowAdd(v => !v)}>
+          <Button size="sm" onClick={() => {
+            setShowAdd(v => {
+              if (!v) {
+                const saved = profile?.invoiceBy === 'ALL_UNITS' ? 'All_Units'
+                  : profile?.invoiceBy === 'FM_SERVICE' ? 'FM_Service'
+                  : profile?.invoiceBy
+                const invoiceBy = INVOICE_BY.some(option => option.value === saved) ? saved : 'All_Units'
+                setNewReport({ ...initialReportState, filterServiceCode: '', filterDepot: '', orderNumber: '', invoiceBy })
+              }
+              return !v
+            })
+          }}>
             {showAdd ? 'Cancel' : 'Add Report'}
           </Button>
         )}
@@ -199,8 +226,35 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
             <Input label="Name (optional)" value={newReport.name}
               onChange={(e: any) => setNewReport(p => ({ ...p, name: e.target.value }))} />
             <Select label="Invoice By" value={newReport.invoiceBy}
-              onChange={(v: string) => setNewReport(p => ({ ...p, invoiceBy: v }))}
+              onChange={(v: string) => setNewReport(p => ({
+                ...p,
+                invoiceBy: v,
+                filterServiceCode: v === 'FM_Service' ? p.filterServiceCode : '',
+                filterDepot: v === 'Depot' ? p.filterDepot : '',
+              }))}
               options={INVOICE_BY} />
+            <Select label="FMW Service" value={newReport.filterServiceCode}
+              disabled={newReport.invoiceBy !== 'FM_Service'}
+              onChange={(v: string) => setNewReport(p => ({ ...p, filterServiceCode: v }))}
+              options={[
+                { label: 'Select', value: '' },
+                ...((profile?.services ?? []).map((row: any) => ({
+                  label: row.product?.productCode ?? row.productId,
+                  value: row.product?.productCode ?? '',
+                })).filter((row: any) => row.value)),
+              ]} />
+            <Select label="FMW Depot" value={newReport.filterDepot}
+              disabled={newReport.invoiceBy !== 'Depot'}
+              onChange={(v: string) => setNewReport(p => ({ ...p, filterDepot: v }))}
+              options={[
+                { label: 'Select', value: '' },
+                ...((profile?.customer?.Depots ?? []).map((depot: any) => ({
+                  label: depot.name || depot.code,
+                  value: depot.id,
+                }))),
+              ]} />
+            <Input label="Order Number" value={newReport.orderNumber}
+              onChange={(e: any) => setNewReport(p => ({ ...p, orderNumber: e.target.value }))} />
             <Input label="Advance Offset (months)" type="number" min="0" value={newReport.volumeOffsetMonths}
               onChange={(e: any) => setNewReport(p => ({ ...p, volumeOffsetMonths: e.target.value }))} />
             <Input label="Invoice Period (months)" type="number" min="1" value={newReport.invoicePeriodMonths}
@@ -273,12 +327,15 @@ export function FMSubscriptionReportsSection({ fmCustomerId, readOnly }: Props) 
         <>
           <DataTable
             loading={loading}
-            data={reports}
+            data={reports.slice((page - 1) * pageSize, page * pageSize)}
             total={reports.length}
             page={page}
             pageSize={pageSize}
             onPageChange={setPage}
-            onPageSizeChange={setPageSize}
+            onPageSizeChange={(size) => {
+              setPageSize(size)
+              setPage(1)
+            }}
             columns={[
               {
                 key: 'subscriptionNumber',

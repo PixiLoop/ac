@@ -421,7 +421,7 @@ export default function DispatchMethodsPage() {
   if (!canView) {
     return (
       <AdminShell title="Dispatch Methods">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

@@ -90,7 +90,7 @@ export default function ViewDispatchPage() {
   if (!canView) {
     return (
       <AdminShell title="Dispatch Details">
-        <p className="text-sm text-slate-600">You do not have permission to view this page.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

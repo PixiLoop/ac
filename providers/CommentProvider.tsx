@@ -2,7 +2,9 @@
 
 import {
   createContext,
+  useCallback,
   useContext,
+  useMemo,
   useState,
   ReactNode,
 } from 'react'
@@ -39,24 +41,38 @@ function RouteCommentListener() {
 
 export function CommentProvider({ children }: { children: ReactNode }) {
   const [isOpen, setIsOpen] = useState(false)
-  const [context, setContext] = useState<any>(null)
+  const [context, setContextState] = useState<any>(null)
   const [unreadCount, setUnreadCount] = useState(0)
 
+  const open = useCallback(() => {
+    setIsOpen(true)
+    setUnreadCount(0)
+  }, [])
+
+  const close = useCallback(() => setIsOpen(false), [])
+
+  const setContext = useCallback((ctx: any) => {
+    setContextState(ctx)
+    if (!ctx?.entityId) setIsOpen(false)
+  }, [])
+
+  const incrementUnread = useCallback(() => setUnreadCount(c => c + 1), [])
+
+  const value = useMemo(
+    () => ({
+      isOpen,
+      open,
+      close,
+      setContext,
+      context,
+      unreadCount,
+      incrementUnread,
+    }),
+    [isOpen, open, close, setContext, context, unreadCount, incrementUnread],
+  )
+
   return (
-    <CommentContext.Provider
-      value={{
-        isOpen,
-        open: () => {
-          setIsOpen(true)
-          setUnreadCount(0)
-        },
-        close: () => setIsOpen(false),
-        setContext,
-        context,
-        unreadCount,
-        incrementUnread: () => setUnreadCount(c => c + 1),
-      }}
-    >
+    <CommentContext.Provider value={value}>
       <RouteCommentListener />
         {children}
       <GlobalCommentSidebar />

@@ -195,14 +195,14 @@ async list(params: {
 
     const displayName = `${dto.firstName || ''} ${dto.lastName || ''}`.trim();
 
-    const user = await this.prismaAny.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email: dto.email.trim().toLowerCase(),
         firstName: dto.firstName,
         lastName: dto.lastName,
         displayName: displayName || undefined,
         phone: dto.phone,
-        passwordHash,
+        passwordHash: passwordHash as unknown as string,
         isActive: false, //dto.isActive ?? false,
         mustChangePassword: false,
         status: "Available"
@@ -226,6 +226,35 @@ async list(params: {
       email: user.email,
       roleIds: dto.roleIds ?? [],
     });
+
+
+    const userData = await this.prisma.user.findUnique({
+      where: {
+        id: user.id
+      },
+      include: {
+        userRoles: {
+          include: {
+            role: true
+          }
+        }
+      }
+    })
+
+    if (userData) {
+      const roles = userData.userRoles.flatMap(uRole => uRole.role)
+
+      if (roles.find(role => role.isTechnician) || roles.find(role => role.isContractor) || roles.find(role => role.isSubContractor)) {
+        await this.prisma.user.update({
+          where: {
+            id: user.id
+          },
+          data: {
+            defaultLandingPage: "technicians"
+          }
+        })
+      }
+    }
 
     await this.sendActivationEmail(user, tempPassword);
 

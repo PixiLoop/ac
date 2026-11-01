@@ -306,6 +306,22 @@ export function InventoryItemForm({ itemId }: Props) {
   const [isMonitor, setIsMonitor] = useState(false);
   const [isVision, setIsVision] = useState(false);
   const [fmRuleCode, setFmRuleCode] = useState('');
+  const [aiOption, setAiOption] = useState(false);
+  const [tmaOption, setTmaOption] = useState(false);
+  const [rimOption, setRimOption] = useState(false);
+  const [nrcOption, setNrcOption] = useState(false);
+  const [internSim, setInternSim] = useState(false);
+  const [mixVisSim, setMixVisSim] = useState(false);
+  const [vision4GModem, setVision4GModem] = useState(false);
+  const [cameraCount, setCameraCount] = useState('');
+  const [fmVisionType, setFmVisionType] = useState('');
+  const [fmCameraType, setFmCameraType] = useState('');
+  const [fmSim1Type, setFmSim1Type] = useState('');
+  const [fmSim2Type, setFmSim2Type] = useState('');
+  const [sim1Options, setSim1Options] = useState<any[]>([]);
+  const [sim2Options, setSim2Options] = useState<any[]>([]);
+  const [visionOptions, setVisionOptions] = useState<any[]>([]);
+  const [cameraOptions, setCameraOptions] = useState<any[]>([]);
 
   // ── Bill of Goods ─────────────────────────────────────────────────────────────
   const [bogComponents, setBogComponents] = useState<BogComponent[]>([]);
@@ -448,6 +464,18 @@ export function InventoryItemForm({ itemId }: Props) {
         setIsMonitor(d.isMonitor ?? false);
         setIsVision(d.isVision ?? false);
         setFmRuleCode(d.fmRuleCode ?? '');
+        setAiOption(d.aiOption ?? false);
+        setTmaOption(d.tmaOption ?? false);
+        setRimOption(d.rimOption ?? false);
+        setNrcOption(d.nrcOption ?? false);
+        setInternSim(d.internSim ?? false);
+        setMixVisSim(d.mixVisSim ?? false);
+        setVision4GModem(d.vision4GModem ?? false);
+        setCameraCount(d.cameraCount != null ? String(d.cameraCount) : '');
+        setFmVisionType(d.fmVisionType ?? '');
+        setFmCameraType(d.fmCameraType ?? '');
+        setFmSim1Type(d.fmSim1Type ?? '');
+        setFmSim2Type(d.fmSim2Type ?? '');
         setAliasAction(d.aliasAction ?? 'no_action');
         setBogComponents(
           (d.bogLines ?? []).map((l: any) => ({
@@ -569,6 +597,12 @@ export function InventoryItemForm({ itemId }: Props) {
       fmMixCode: fmMixCode || null, 
       fmUnitCode: fmUnitCode || null,
       fourGUnitModem, mixUnitSim, isMonitor, isVision,
+      aiOption, tmaOption, rimOption, nrcOption, internSim, mixVisSim, vision4GModem,
+      cameraCount: cameraCount ? Number(cameraCount) : null,
+      fmVisionType: fmVisionType || null,
+      fmCameraType: fmCameraType || null,
+      fmSim1Type: fmSim1Type || null,
+      fmSim2Type: fmSim2Type || null,
       fmRuleCode: fmRuleCode || null,
       bogLines: bogComponents.map((c, i) => ({
         componentId: c.productId, quantity: c.quantity, uom: c.uom, sortOrder: i,
@@ -594,7 +628,29 @@ export function InventoryItemForm({ itemId }: Props) {
     }
   }
 
+  useEffect(() => {
+    if (status !== 'FM Service' && !isFmHardware) return;
+    const list = (res: any) => {
+      const data = res.data?.data ?? res.data ?? [];
+      return Array.isArray(data) ? data : [];
+    };
+    Promise.all([
+      api.get('/fm-segments', { params: { type: 'SIM1' } }),
+      api.get('/fm-segments', { params: { type: 'SIM2' } }),
+      api.get('/fm-segments', { params: { type: 'VISION' } }),
+      api.get('/fm-segments', { params: { type: 'CAMERA' } }),
+    ]).then(([sim1, sim2, vision, camera]) => {
+      setSim1Options(list(sim1));
+      setSim2Options(list(sim2));
+      setVisionOptions(list(vision));
+      setCameraOptions(list(camera));
+    }).catch(() => { });
+  }, [status, isFmHardware]);
+
   const showFmFields = status === 'FM Service' || isFmHardware;
+  const camerasForVision = fmVisionType
+    ? cameraOptions.filter((c: any) => !c.dependsOn || c.dependsOn === fmVisionType)
+    : cameraOptions;
 
   return (
     <Card>
@@ -652,6 +708,7 @@ export function InventoryItemForm({ itemId }: Props) {
               { label: 'FM Service', value: 'FM Service' },
               { label: 'Replaced', value: 'Replaced' },
               { label: 'N.L.A', value: 'N.L.A' },
+              { label: 'Do Not Order', value: 'Do Not Order' },
             ]} onChange={setStatus} />
           </div>
           <div className="space-y-2">
@@ -1071,7 +1128,7 @@ export function InventoryItemForm({ itemId }: Props) {
             <div className="mb-4 flex items-center justify-between">
               <div>
                 <h3 className="font-medium text-sky-800">FM Service Hardware</h3>
-                <p className="text-sm text-muted-foreground">Additional fields appear when MIX Service Hardware applies.</p>
+                <p className="text-sm text-muted-foreground">Same options as the Preinstall. Adding this item to an FMP copies them onto the install details.</p>
               </div>
             </div>
             <div className="grid gap-4 md:grid-cols-4">
@@ -1083,6 +1140,60 @@ export function InventoryItemForm({ itemId }: Props) {
               <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={mixUnitSim} onCheckedChange={() => setMixUnitSim((v) => !v)} /> Mix Unit SIM</label>
               <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={isMonitor} onCheckedChange={() => setIsMonitor((v) => !v)} /> Is Monitor Item</label>
               <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={isVision} onCheckedChange={() => setIsVision((v) => !v)} /> Is Vision Item</label>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-2">
+              <div className="space-y-2">
+                <Label>Sim Card Size</Label>
+                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmSim1Type} onChange={(e) => { setFmSim1Type(e.target.value); if (e.target.value) setMixUnitSim(true); }}>
+                  <option value="">Select</option>
+                  {sim1Options.map((s: any) => <option key={s.id} value={s.code}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Mix Sim Card for the Vision</Label>
+                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmSim2Type} onChange={(e) => { setFmSim2Type(e.target.value); if (e.target.value) setMixVisSim(true); }}>
+                  <option value="">Select</option>
+                  {sim2Options.map((s: any) => <option key={s.id} value={s.code}>{s.label}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Camera Type</Label>
+                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmCameraType} onChange={(e) => setFmCameraType(e.target.value)}>
+                  <option value="">Select</option>
+                  {camerasForVision.map((c: any) => <option key={c.id} value={c.code}>{c.label}{c.dependsOn ? ` (${c.dependsOn})` : ''}</option>)}
+                </select>
+              </div>
+              <div className="space-y-2">
+                <Label>Vision</Label>
+                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmVisionType} onChange={(e) => { setFmVisionType(e.target.value); if (e.target.value) setIsVision(true); }}>
+                  <option value="">No Vision</option>
+                  {visionOptions.map((v: any) => <option key={v.id} value={v.code}>{v.label}{v.dependsOn ? ` (${v.dependsOn})` : ''}</option>)}
+                </select>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-4 md:grid-cols-4">
+              <div className="space-y-2">
+                <Label>Cameras</Label>
+                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={cameraCount} onChange={(e) => setCameraCount(e.target.value)}>
+                  <option value="">Select</option>
+                  {[2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={mixVisSim} onCheckedChange={() => setMixVisSim((v) => !v)} /> Mix Sim for Vision</label>
+              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={vision4GModem} onCheckedChange={() => setVision4GModem((v) => !v)} /> 4G Vision</label>
+            </div>
+
+            <div className="mt-4">
+              <Label>Options</Label>
+              <div className="mt-2 grid gap-3 md:grid-cols-4">
+                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={aiOption} onCheckedChange={() => setAiOption((v) => !v)} /> AI Option</label>
+                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={tmaOption} onCheckedChange={() => setTmaOption((v) => !v)} /> TMA Option</label>
+                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={rimOption} onCheckedChange={() => setRimOption((v) => !v)} /> RIM Option</label>
+                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={nrcOption} onCheckedChange={() => setNrcOption((v) => !v)} /> NRC</label>
+                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={internSim} onCheckedChange={() => setInternSim((v) => !v)} /> Int SIM</label>
+              </div>
             </div>
             <div className="mt-4 space-y-2"><Label>FM Rule Code</Label><Input value={fmRuleCode} onChange={(e) => setFmRuleCode(e.target.value)} /></div>
           </div>

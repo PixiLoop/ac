@@ -3,9 +3,12 @@
 import { TechnicianList } from '../../../components/job-boards/operations/TechnicianList';
 import { AdminShell } from '../../../components/layout/AdminShell';
 
-export default function TechniciansPage() {
+
+export default function InvoicesPage() {
+    
+
     return (
-        <AdminShell title="Technicians & Installers | Job Book" showTableDensity>
+        <AdminShell title="Invoices" showTableDensity>
             <TechnicianList />
         </AdminShell>
     );

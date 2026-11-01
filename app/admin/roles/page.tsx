@@ -312,7 +312,7 @@ export default function RolesPage() {
     return (
       <AdminShell title="Roles">
         <div className="p-6 text-sm text-slate-600">
-          You do not have permission to view this page.
+          You Do Not Have Access to This Process. Contact for Authorisation.
         </div>
       </AdminShell>
     );

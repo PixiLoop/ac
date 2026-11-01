@@ -9,6 +9,7 @@ import { FMPreinstallItemsSection } from '../../../components/fm-preinstall/sect
 import { FMInstallDetailsPanel } from '../../../components/fm-preinstall/sections/FMInstallDetailsPanel';
 import { ShippingDetailsSection } from '../../../components/salesorders/sections/ShippingDetailsSection';
 import { AccountDetailsSection } from '../../../components/salesorders/sections/AccountDetailsSection';
+import { fmHardwarePrefill } from '../../../lib/fm-hardware-prefill';
 
 export function FMPreinstallForm({
   form,
@@ -25,6 +26,7 @@ export function FMPreinstallForm({
   isLocked,
   installDetail,
   setInstallDetail,
+  invalidFields = [],
 }: any) {
 
   const { user } = useAuth();
@@ -111,6 +113,10 @@ export function FMPreinstallForm({
     setIsInitialized(true);
   }, []);
 
+  useEffect(() => {
+    if (invalidFields?.length) setShowInstallPanel(true);
+  }, [invalidFields]);
+
   // Derived charges from items
   const parts = items.reduce((acc: number, i: any) => {
     const qty = Number(i.quantity ?? 1);
@@ -149,8 +155,9 @@ export function FMPreinstallForm({
                 setItems={setItems}
                 setShipping={setShipping}
                 setAccount={setAccount}
-                setInstallDetail={setInstallDetail}  // NEW prop
+                setInstallDetail={setInstallDetail}
                 disabled={isLocked}
+                invalidFields={invalidFields}
               />
             </div>
 
@@ -187,12 +194,14 @@ export function FMPreinstallForm({
           <FMPreinstallItemsSection
             items={items}
             setItems={setItems}
-            installDetail={installDetail}
-            setInstallDetail={setInstallDetail}
             onSelectItem={(item: any) => {
               if (!item) return;
               setActiveItem(item);
               setShowInstallPanel(false);
+              const prefill = fmHardwarePrefill(item.product);
+              if (Object.keys(prefill).length) {
+                setInstallDetail((prev: any) => ({ ...prev, ...prefill }));
+              }
             }}
             activeItemIndex={activeItem?.index}
           />
@@ -290,6 +299,9 @@ export function FMPreinstallForm({
             updateInstall={updateInstall}
             fleetName={form.fmFleetName ?? ''}
             fmCustomerId={form.customerId ?? ''}
+            fmRecordId={form.fmCustomerId ?? ''}
+            fmMixOrgId={form.fmMixOrgId ?? ''}
+            invalidFields={invalidFields}
           />
         </div>
       )}

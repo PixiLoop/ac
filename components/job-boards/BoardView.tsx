@@ -27,7 +27,8 @@ export default function BoardView({ board, setBoard, reload }: any) {
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
-      activationConstraint: { distance: 6 },
+      // Small drag distance before activate — avoids text-select / click conflict
+      activationConstraint: { distance: 8 },
     }),
     useSensor(KeyboardSensor)
   )
@@ -223,6 +224,7 @@ export default function BoardView({ board, setBoard, reload }: any) {
               list={list}
               reload={removeCardFromState}
               setBoard={setBoard}
+              hideAddCard={(board.sourceType || 'MANUAL') !== 'MANUAL'}
             />
           ))}
 

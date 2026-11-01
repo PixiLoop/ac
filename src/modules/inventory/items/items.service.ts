@@ -10,7 +10,6 @@ export interface ItemListQuery {
   productCategory?: string;
   productCode?: string;
   vendorNumber?: string;
-  isFmHardware?: boolean | string;
   skip?: number;
   take?: number;
   sortKey?: string;
@@ -24,14 +23,7 @@ export class ItemsService {
   constructor(private readonly prisma: PrismaService) { }
 
   async list(query: ItemListQuery = {}) {
-    const { search, status, productCategory, productCode, vendorNumber, isFmHardware, skip = 0, take = 20, sortKey = 'createdAt', sortDir = 'desc' } = query;
-
-    const isFmBool =
-      isFmHardware === true || isFmHardware === 'true'
-        ? true
-        : isFmHardware === false || isFmHardware === 'false'
-        ? false
-        : undefined;
+    const { search, status, productCategory, productCode, vendorNumber, skip = 0, take = 20, sortKey = 'createdAt', sortDir = 'desc' } = query;
 
     const where: Record<string, any> = {
       deletedAt: null,
@@ -39,7 +31,6 @@ export class ItemsService {
       ...(productCategory && { productCategory }),
       ...(productCode && { productCode: { contains: productCode, mode: 'insensitive' } }),
       ...(vendorNumber && { vendorNumber }),
-      ...(isFmBool !== undefined && { isFmHardware: isFmBool }),
       ...(search && {
         OR: [
           { productCode: { contains: search, mode: 'insensitive' } },
@@ -76,15 +67,6 @@ export class ItemsService {
           minStock: true,
           maxStock: true,
           committed: true,
-          isFmHardware: true,
-          fmUnitCode: true,
-          fmMixCode: true,
-          isVision: true,
-          isMonitor: true,
-          fourGUnitModem: true,
-          mixUnitSim: true,
-          description: true,
-          extendedDescription: true,
         },
       }),
       db(this.prisma).count({ where }),
@@ -111,7 +93,59 @@ export class ItemsService {
 
     if (!item) throw new NotFoundException('Item not found');
 
-    return item;
+    const stock = await this.stockPosition(id, Number(item.onHand ?? 0));
+    return { ...item, stock };
+  }
+
+  /** On hand, committed demand, purchase-order remainder, and what is left to sell. */
+  private async stockPosition(productId: string, onHand: number) {
+    const [sales, preinstalls, purchaseLines] = await Promise.all([
+      this.prisma.salesOrderItem.aggregate({
+        where: {
+          productId,
+          deletedAt: null,
+          salesOrder: { deletedAt: null, status: { in: ['PENDING', 'IN_PROGRESS'] } },
+        },
+        _sum: { allocatedQty: true },
+      }),
+      this.prisma.fMPreinstallItem.aggregate({
+        where: {
+          productId,
+          deletedAt: null,
+          preinstall: { deletedAt: null, status: { notIn: ['INVOICED', 'COMPLETED'] } },
+        },
+        _sum: { quantity: true },
+      }),
+      this.prisma.purchaseOrderLine.findMany({
+        where: {
+          productId,
+          purchaseOrder: {
+            deletedAt: null,
+            status: { in: ['SUBMITTED', 'PARTIALLY_RECEIVED'] },
+          },
+        },
+        select: { orderedQty: true, receivedQty: true },
+      }),
+    ]);
+
+    const salesOrders = Number(sales._sum.allocatedQty ?? 0);
+    const fmPreinstalls = Number(preinstalls._sum.quantity ?? 0);
+    const jobs = 0;
+    const committed = salesOrders + fmPreinstalls + jobs;
+    const onOrder = purchaseLines.reduce(
+      (sum, line) => sum + Math.max(0, Number(line.orderedQty) - Number(line.receivedQty)),
+      0,
+    );
+
+    return {
+      onHand,
+      committed,
+      onOrder,
+      available: onHand - committed,
+      salesOrders,
+      fmPreinstalls,
+      jobs,
+    };
   }
 
   async create(dto: CreateItemDto) {
@@ -175,6 +209,18 @@ export class ItemsService {
         mixUnitSim: fields.mixUnitSim ?? false,
         isMonitor: fields.isMonitor ?? false,
         isVision: fields.isVision ?? false,
+        aiOption: fields.aiOption ?? false,
+        tmaOption: fields.tmaOption ?? false,
+        rimOption: fields.rimOption ?? false,
+        nrcOption: fields.nrcOption ?? false,
+        internSim: fields.internSim ?? false,
+        mixVisSim: fields.mixVisSim ?? false,
+        vision4GModem: fields.vision4GModem ?? false,
+        cameraCount: fields.cameraCount ?? null,
+        fmVisionType: fields.fmVisionType ?? null,
+        fmCameraType: fields.fmCameraType ?? null,
+        fmSim1Type: fields.fmSim1Type ?? null,
+        fmSim2Type: fields.fmSim2Type ?? null,
         fmRuleCode: fields.fmRuleCode,
         primarySupplierId: fields.primarySupplierId,
         notes: fields.notes,
@@ -229,22 +275,23 @@ export class ItemsService {
 
     await db(this.prisma).update({ where: { id }, data });
 
-    const currentItem = await db(this.prisma).findUnique({ where: { id } });
-
-    if (data.isFmHardware === true || (currentItem?.isFmHardware && data.isFmHardware !== false)) {
-      await this.syncFmServiceSegment(id, {
-        productCode: currentItem.productCode,
-        name: currentItem.name,
-        fmUnitCode: currentItem.fmUnitCode,
-        fmMixCode: currentItem.fmMixCode,
-        isVision: currentItem.isVision,
-        isActive: true,
-      });
-    } else if (data.isFmHardware === false) {
-      await (this.prisma as any).fMServiceSegment.updateMany({
-        where: { productId: id },
-        data: { isActive: false },
-      });
+    if (data.isFmHardware !== undefined) {
+      if (data.isFmHardware) {
+        const currentItem = await db(this.prisma).findUnique({ where: { id } });
+        await this.syncFmServiceSegment(id, {
+          productCode: currentItem.productCode,
+          name: currentItem.name,
+          fmUnitCode: currentItem.fmUnitCode,
+          fmMixCode: currentItem.fmMixCode,
+          isVision: currentItem.isVision,
+          isActive: true,
+        });
+      } else {
+        await (this.prisma as any).fMServiceSegment.updateMany({
+          where: { productId: id },
+          data: { isActive: false },
+        });
+      }
     }
 
     if (bogLines !== undefined) {
@@ -273,25 +320,18 @@ export class ItemsService {
 
     try {
       const existing = await (this.prisma as any).fMServiceSegment.findFirst({
-        where: {
-          OR: [
-            { productId },
-            { code },
-          ],
-        },
+        where: { productId },
       });
 
       if (existing) {
         await (this.prisma as any).fMServiceSegment.update({
           where: { id: existing.id },
           data: {
-            productId,
             code,
             label,
             type,
             segment,
             mixCode: itemData.fmMixCode || null,
-            dependsOn: null,
             isActive: true,
           },
         });
@@ -303,7 +343,6 @@ export class ItemsService {
             code,
             label,
             mixCode: itemData.fmMixCode || null,
-            dependsOn: null,
             productId,
             isActive: true,
             sortOrder: 100,

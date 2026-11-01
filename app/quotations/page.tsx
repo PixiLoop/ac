@@ -125,7 +125,7 @@ export default function QuotationsPage() {
     return (
       <AdminShell title="Quotations">
         <p className="text-sm text-slate-600">
-          You do not have permission.
+          You Do Not Have Access to This Process. Contact for Authorisation.
         </p>
       </AdminShell>
     );

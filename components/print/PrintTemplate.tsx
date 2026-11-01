@@ -13,6 +13,8 @@ interface PrintTemplateProps {
   reference?: string;
   issuedAt?: string;
   dueDate?: string;
+  issuedLabel?: string;
+  dueLabel?: string;
   badges?: { label: string; value: string }[];
   billTo?: { name?: string; address1?: string; city?: string; state?: string; postcode?: string };
   shipTo?: { name?: string; address1?: string; city?: string; state?: string; postcode?: string };
@@ -43,6 +45,7 @@ const PAGE_STYLE_PRINT: string = `
 // ── Template 1: Classic Blue ──
 function Template1({ props }: { props: PrintTemplateProps }) {
   const { docType, docNumber, status, statusColor, reference, issuedAt, dueDate,
+    issuedLabel = 'Issue Date', dueLabel = 'Due Date',
     badges, billTo, shipTo, columns, rows, totals, notes, footerNote } = props;
 
   const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('en-AU') : '—';
@@ -98,13 +101,13 @@ function Template1({ props }: { props: PrintTemplateProps }) {
           <div style={{ fontSize: 13 }}>
             {issuedAt && (
               <div style={{ marginBottom: 10 }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>Issue Date</p>
+                <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>{issuedLabel}</p>
                 <p style={{ fontWeight: 600 }}>{fmtDate(issuedAt)}</p>
               </div>
             )}
             {dueDate && (
               <div style={{ marginBottom: 10 }}>
-                <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>Due Date</p>
+                <p style={{ fontSize: 10, fontWeight: 700, color: '#94a3b8', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>{dueLabel}</p>
                 <p style={{ fontWeight: 700, color: '#dc2626' }}>{fmtDate(dueDate)}</p>
               </div>
             )}
@@ -207,6 +210,7 @@ function Template1({ props }: { props: PrintTemplateProps }) {
 // ── Template 2: Dark Header ──
 function Template2({ props }: { props: PrintTemplateProps }) {
   const { docType, docNumber, status, statusColor, reference, issuedAt, dueDate,
+    issuedLabel = 'Issue Date', dueLabel = 'Due Date',
     badges, billTo, shipTo, columns, rows, totals, notes, footerNote } = props;
 
   const fmtDate = (d?: string) => d ? new Date(d).toLocaleDateString('en-AU') : '—';
@@ -255,8 +259,8 @@ function Template2({ props }: { props: PrintTemplateProps }) {
           </div>
           <div style={{ fontSize: 13 }}>
             <p style={{ fontSize: 10, fontWeight: 700, color: '#0f172a', textTransform: 'uppercase', letterSpacing: 1, marginBottom: 6, borderBottom: '2px solid #0f172a', paddingBottom: 4 }}>Details</p>
-            {issuedAt && <p style={{ marginTop: 6 }}><span style={{ color: '#94a3b8' }}>Issue Date: </span><strong>{fmtDate(issuedAt)}</strong></p>}
-            {dueDate && <p><span style={{ color: '#94a3b8' }}>Due Date: </span><strong style={{ color: '#dc2626' }}>{fmtDate(dueDate)}</strong></p>}
+            {issuedAt && <p style={{ marginTop: 6 }}><span style={{ color: '#94a3b8' }}>{issuedLabel}: </span><strong>{fmtDate(issuedAt)}</strong></p>}
+            {dueDate && <p><span style={{ color: '#94a3b8' }}>{dueLabel}: </span><strong style={{ color: '#dc2626' }}>{fmtDate(dueDate)}</strong></p>}
             {reference && <p><span style={{ color: '#94a3b8' }}>Reference: </span><strong>{reference}</strong></p>}
           </div>
         </div>

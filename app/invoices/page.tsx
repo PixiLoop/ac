@@ -138,7 +138,7 @@ export default function InvoicesPage() {
     if (!canView && !canCreate) {
         return (
             <AdminShell title="Invoices">
-                <p className="text-sm text-slate-600">You do not have permission.</p>
+                <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
             </AdminShell>
         );
     }

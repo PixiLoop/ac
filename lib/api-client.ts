@@ -5,7 +5,7 @@ import { useToast } from '../components/ui/toast';
 
 console.log("process.env.NEXT_PUBLIC_API_BASE_URL==", process.env.NEXT_PUBLIC_API_BASE_URL)
 export const baseURL =
-  process.env.NEXT_PUBLIC_API_BASE_URL || '/api';
+  process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:5000/api';
 
 if (!process.env.NEXT_PUBLIC_API_BASE_URL && typeof window !== 'undefined') {
   console.warn(
@@ -69,7 +69,7 @@ api.interceptors.response.use(
       // showToast({
       //   type: 'error',
       //   title: 'Access denied',
-      //   message: 'You do not have permission to view this page.',
+      //   message: 'You Do Not Have Access to This Process. Contact for Authorisation.',
       // });
       // return;
 

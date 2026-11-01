@@ -62,6 +62,12 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
 
   // Delete Template Confirmation state
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<boolean>(false);
+  const [itemToDelete, setItemToDelete] = useState<{
+    sectionId: string;
+    itemId: string;
+    title: string;
+  } | null>(null);
+  const [savingStatus, setSavingStatus] = useState(false);
 
   const totalItems = template.sections.reduce(
     (acc, sec) => acc + sec.items.length,
@@ -104,6 +110,16 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
 
   const handleDeleteItem = async (sectionId: string, itemId: string) => {
     await deleteTemplateItem(template.id, sectionId, itemId);
+    setItemToDelete(null);
+  };
+
+  const handlePublishOrDraft = async (next: 'ACTIVE' | 'DRAFT') => {
+    setSavingStatus(true);
+    try {
+      await updateChecklistTemplate(template.id, { status: next });
+    } finally {
+      setSavingStatus(false);
+    }
   };
 
   const handleToggleRequired = async (sectionId: string, itemId: string, currentReq: boolean) => {
@@ -157,7 +173,7 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
   };
 
   return (
-    <div className="space-y-6 mx-auto pb-12 animate-in fade-in duration-200">
+    <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
       {/* Top Navigation Bar */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <button
@@ -168,11 +184,11 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
           Back to Checklist Templates
         </button>
 
-        <div className="flex items-center gap-2 self-end sm:self-auto">
+        <div className="flex items-center gap-2 self-end sm:self-auto flex-wrap justify-end">
           <button
             onClick={handleDuplicate}
             className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-200 shadow-xs transition-colors"
-            title="Duplicate as new template"
+            title="Duplicate as a new independent template"
           >
             <Copy className="w-3.5 h-3.5" />
             Duplicate
@@ -203,6 +219,27 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
             <Edit2 className="w-3.5 h-3.5" />
             Edit Info
           </button>
+
+          {template.status !== 'DRAFT' ? (
+            <button
+              type="button"
+              disabled={savingStatus}
+              onClick={() => void handlePublishOrDraft('DRAFT')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-amber-800 bg-amber-50 hover:bg-amber-100 border border-amber-200 transition-colors disabled:opacity-50"
+            >
+              Save as Draft
+            </button>
+          ) : (
+            <button
+              type="button"
+              disabled={savingStatus}
+              onClick={() => void handlePublishOrDraft('ACTIVE')}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 shadow-xs transition-colors disabled:opacity-50"
+            >
+              <Check className="w-3.5 h-3.5" />
+              Save & Publish
+            </button>
+          )}
 
           <button
             onClick={() => setShowAddSection(true)}
@@ -403,17 +440,24 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
                         </div>
                       </div>
 
-                      <div className="flex items-center gap-3 shrink-0">
+                      <div className="flex items-center gap-2 shrink-0">
                         <span className="text-[11px] font-mono text-slate-400">
                           Step #{item.displayOrder}
                         </span>
                         <button
                           type="button"
-                          onClick={() => handleDeleteItem(section.id, item.id)}
-                          className="p-1 text-slate-300 hover:text-rose-600 rounded transition-colors opacity-0 group-hover:opacity-100"
+                          onClick={() =>
+                            setItemToDelete({
+                              sectionId: section.id,
+                              itemId: item.id,
+                              title: item.title,
+                            })
+                          }
+                          className="inline-flex items-center gap-1 px-2 py-1 text-[11px] font-semibold text-rose-600 hover:bg-rose-50 rounded-lg border border-rose-100 transition-colors"
                           title="Delete Item"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
+                          Delete
                         </button>
                       </div>
                     </div>
@@ -585,12 +629,12 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
                   <label className="block text-xs font-bold text-slate-700 mb-1">Status</label>
                   <select
                     value={editStatus}
-                    onChange={(e) => setEditStatus(e.target.value as any)}
+                    onChange={(e) => setEditStatus(e.target.value as 'ACTIVE' | 'DRAFT' | 'ARCHIVED')}
                     className="w-full text-xs px-2.5 py-2 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500"
                   >
-                    <option value="Active">Active</option>
-                    <option value="Draft">Draft</option>
-                    <option value="Archived">Archived</option>
+                    <option value="ACTIVE">Active</option>
+                    <option value="DRAFT">Draft</option>
+                    <option value="ARCHIVED">Archived</option>
                   </select>
                 </div>
               </div>
@@ -657,6 +701,45 @@ export const ChecklistTemplateDetail: React.FC<ChecklistTemplateDetailProps> = (
                 className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs"
               >
                 Delete Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Item Confirmation */}
+      {itemToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 border border-slate-200 shadow-2xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete Checklist Item</h3>
+                <p className="text-xs text-slate-500">Only this template is affected.</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600">
+              Remove <span className="font-bold text-slate-900">{itemToDelete.title}</span> from this
+              template?
+            </p>
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setItemToDelete(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() =>
+                  void handleDeleteItem(itemToDelete.sectionId, itemToDelete.itemId)
+                }
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs"
+              >
+                Delete Item
               </button>
             </div>
           </div>

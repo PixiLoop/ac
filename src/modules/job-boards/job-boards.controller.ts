@@ -1,10 +1,11 @@
-import { Controller, Get, Post, Body, Param, Delete, UseInterceptors, UploadedFile } from '@nestjs/common'
+import { Controller, Get, Post, Body, Param, Delete, UseInterceptors, UploadedFile, Res, Query } from '@nestjs/common'
 import { JobBoardsService } from './job-boards.service'
 import { Patch, Req, UseGuards } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PermissionsGuard } from '../../common/rbac/permissions.guard'
 import { Permissions } from '../../common/rbac/permissions.decorator'
+import type { Response } from 'express'
 
 @UseGuards(JwtAuthGuard, PermissionsGuard)
 @Controller('job-boards')
@@ -21,6 +22,73 @@ export class JobBoardsController {
   @Permissions('jobboards.create')
   create(@Body() body: any, @Req() req: any) {
     return this.service.create(body, req.user.id)
+  }
+
+  // Static path routes BEFORE :id so Nest does not treat "cards"/"attachments" as ids
+  @Get('checklists/search')
+  @Permissions('jobboards.view')
+  searchChecklists(
+    @Query('q') q?: string,
+    @Query('boardId') boardId?: string,
+  ) {
+    return this.service.searchChecklistSources(q, boardId)
+  }
+
+  @Get('cards/:cardId/cover/file')
+  @Permissions('jobboards.view')
+  async getCardCoverFile(
+    @Param('cardId') cardId: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, contentType } = await this.service.getCardCoverFile(cardId)
+    res.setHeader('Content-Type', contentType || 'image/jpeg')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    res.setHeader('Content-Length', String(buffer.length))
+    res.end(buffer)
+  }
+
+  @Get('attachments/:attachmentId/file')
+  @Permissions('jobboards.view')
+  async getAttachmentFile(
+    @Param('attachmentId') attachmentId: string,
+    @Res() res: Response,
+  ) {
+    const { buffer, contentType } = await this.service.getAttachmentFile(attachmentId)
+    res.setHeader('Content-Type', contentType || 'application/octet-stream')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    res.setHeader('Content-Length', String(buffer.length))
+    res.end(buffer)
+  }
+
+  @Delete('attachments/:attachmentId')
+  @Permissions('jobboards.manage')
+  deleteAttachment(@Param('attachmentId') attachmentId: string) {
+    return this.service.deleteAttachment(attachmentId)
+  }
+
+  @Get(':id/background/file')
+  @Permissions('jobboards.view')
+  async getBackgroundFile(
+    @Param('id') id: string,
+    @Req() req: any,
+    @Res() res: Response,
+  ) {
+    const { buffer, contentType } = await this.service.getBackgroundFile(id, req.user.id)
+    res.setHeader('Content-Type', contentType || 'image/jpeg')
+    res.setHeader('Cache-Control', 'private, max-age=300')
+    res.setHeader('Content-Length', String(buffer.length))
+    res.end(buffer)
+  }
+
+  @Post(':id/background')
+  @Permissions('jobboards.edit')
+  @UseInterceptors(FileInterceptor('file'))
+  uploadBackground(
+    @Param('id') id: string,
+    @UploadedFile() file: Express.Multer.File,
+    @Req() req: any,
+  ) {
+    return this.service.uploadBackground(id, file, req.user.id)
   }
 
   @Get(':id')
@@ -134,10 +202,18 @@ export class JobBoardsController {
   @Permissions('jobboards.manage')
   addChecklist(
     @Param('cardId') cardId: string,
-    @Body() body: { title: string },
+    @Body()
+    body: {
+      title: string
+      copyFromChecklistId?: string
+      copyFromTemplateId?: string
+    },
     @Req() req: any,
   ) {
-    return this.service.addChecklist(cardId, body.title, req.user.id)
+    return this.service.addChecklist(cardId, body.title, req.user.id, {
+      copyFromChecklistId: body.copyFromChecklistId,
+      copyFromTemplateId: body.copyFromTemplateId,
+    })
   }
 
   @Post('checklists/:checklistId/items')
@@ -156,6 +232,18 @@ export class JobBoardsController {
     @Body() body: { isCompleted: boolean },
   ) {
     return this.service.toggleChecklistItem(itemId, body.isCompleted)
+  }
+
+  @Delete('checklists/:checklistId')
+  @Permissions('jobboards.manage')
+  deleteChecklist(@Param('checklistId') checklistId: string) {
+    return this.service.deleteChecklist(checklistId)
+  }
+
+  @Delete('checklist-items/:itemId')
+  @Permissions('jobboards.manage')
+  deleteChecklistItem(@Param('itemId') itemId: string) {
+    return this.service.deleteChecklistItem(itemId)
   }
 
   @Post('cards/:cardId/labels')
@@ -177,6 +265,16 @@ export class JobBoardsController {
     return this.service.addAttachment(cardId, file)
   }
 
+  @Post('cards/:cardId/cover')
+  @Permissions('jobboards.manage')
+  @UseInterceptors(FileInterceptor('file'))
+  setCover(
+    @Param('cardId') cardId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.service.setCoverImage(cardId, file)
+  }
+
   @Delete('cards/:cardId/labels/:labelId')
   @Permissions('jobboards.manage')
   removeLabel(
@@ -189,10 +287,10 @@ export class JobBoardsController {
   @Permissions('jobboards.manage')
   addComment(
     @Param('cardId') cardId: string,
-    @Body() body: { message: string },
+    @Body() body: { message: string; parentId?: string },
     @Req() req: any,
   ) {
-    return this.service.addComment(cardId, body.message, req.user.id)
+    return this.service.addComment(cardId, body.message, req.user.id, body.parentId)
   }
 
   @Patch('comments/:id')

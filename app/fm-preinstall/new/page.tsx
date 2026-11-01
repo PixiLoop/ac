@@ -8,6 +8,7 @@ import { Button } from '../../../components/ui/button';
 import { useToast } from '../../../components/ui/toast';
 import { api } from '../../../lib/api-client';
 import { FMPreinstallForm } from '../../../components/fm-preinstall/forms/FMPreinstallForm';
+import { CAMERA_BASE_REQUIRED, INSTALL_TYPE_REQUIRED, INVALID_SERVICE_CODE, NO_ITEMS, NOT_AN_FM_CUSTOMER, supportsCamera } from '../../../lib/fm-rules';
 
 export default function Page() {
   const router = useRouter();
@@ -18,8 +19,9 @@ export default function Page() {
   const [form, setForm] = useState<any>({
     customerId: '',
     fmCustomerId: '',
-    type: 'NEW_INSTALL',
+    type: '',
     status: 'NOT_ACTIONED',
+    orderNumber: '',
   });
 
   const isLocked = form.status === 'COMPLETED' || form.status === 'INVOICED';
@@ -50,19 +52,43 @@ export default function Page() {
   };
 
   const save = async () => {
-    if (!form.customerId) {
-      showToast({ type: 'error', title: 'Customer required' });
+    if (!form.customerId || !form.fmCustomerId) {
+      showToast({ type: 'error', title: NOT_AN_FM_CUSTOMER, message: NOT_AN_FM_CUSTOMER });
+      return;
+    }
+    if (!form.type) {
+      showToast({ type: 'error', title: INSTALL_TYPE_REQUIRED, message: INSTALL_TYPE_REQUIRED });
       return;
     }
 
-    // Filter empty rows for validation check
     const validItems = items.filter(i => i.productId && i.productId !== '');
     if (!validItems.length) {
-      showToast({ type: 'error', title: 'Add at least 1 item' });
+      showToast({ type: 'error', title: NO_ITEMS, message: NO_ITEMS });
       return;
     }
+    const serviceCode = String(installDetail.serviceCode ?? '').trim();
+    // if (!serviceCode) {
+    //   showToast({ type: 'error', title: INVALID_SERVICE_CODE, message: INVALID_SERVICE_CODE });
+    //   return;
+    // }
+
+    const cameraOn = installDetail.visionType || installDetail.cameraType;
+    // if (cameraOn && !supportsCamera(installDetail.fmUnitType)) {
+    //   showToast({ type: 'error', title: CAMERA_BASE_REQUIRED, message: CAMERA_BASE_REQUIRED });
+    //   return;
+    // }
 
     try {
+      const lookup = await api.get('/products/by-code', { params: { code: serviceCode } });
+      const product = lookup.data?.data ?? lookup.data;
+
+      console.log(lookup);
+      
+      // if (!product?.id) {
+      //   showToast({ type: 'error', title: INVALID_SERVICE_CODE, message: INVALID_SERVICE_CODE });
+      //   return;
+      // }
+
       setSaving(true);
 
       const payload = {
@@ -72,12 +98,14 @@ export default function Page() {
         // SHIPPING
         shippingName: shipping?.name || '',
         shippingAddress1: shipping?.address1 || '',
-        shippingAddress2: `${shipping?.address2 || ''}||${shipping?.city || ''}||${shipping?.state || ''}`,
+        shippingAddress2: `${shipping?.address2 || ''}||${shipping?.city || ''}||${shipping?.state || ''}||${shipping?.postcode || ''}`,
+        shippingAddress3: shipping?.postcode || '',
 
         // BILLING
         billingName: account?.name || '',
         billingAddress1: account?.address1 || '',
-        billingAddress2: `${account?.address2 || ''}||${account?.city || ''}||${account?.state || ''}`,
+        billingAddress2: `${account?.address2 || ''}||${account?.city || ''}||${account?.state || ''}||${account?.postcode || ''}`,
+        billingAddress3: account?.postcode || '',
 
         installDetail: {
           ...installDetail,
@@ -99,7 +127,7 @@ export default function Page() {
           productId: i.productId,
           partNumber: i.partNumber || '',
           description: i.description || '',
-          quantity: i.quantity || 1,
+          quantity: i.quantity == null || i.quantity === '' ? 1 : Number(i.quantity),
           unitPrice: Number(i.unitPrice || 0),
           discountPct: i.discountPct ?? null,
           lineTotal: i.lineTotal ?? null,
@@ -117,8 +145,6 @@ export default function Page() {
         const newJob = {
           id: `INSTALL-${preinstallNo.replace(/[^0-9]/g, '') || Date.now().toString().slice(-4)}`,
           jobNumber: `JOB-${preinstallNo}`,
-          preinstallId: id,
-          preinstallNo,
           customerId: form.customerId,
           customerName: account?.name || form.shippingName || 'FM Customer',
           customerContact: form.shippingName || 'Fleet Manager',
@@ -183,12 +209,6 @@ export default function Page() {
           createdAt: new Date().toISOString(),
           canInvoice: false,
         };
-
-        try {
-          await api.post('/installations', newJob);
-        } catch (apiErr) {
-          console.warn('Installations API post note:', apiErr);
-        }
 
         if (typeof window !== 'undefined') {
           const raw = localStorage.getItem('operations_installation_jobs');

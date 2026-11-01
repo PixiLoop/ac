@@ -6,14 +6,16 @@ import { Input } from '../../../components/ui/input';
 import { Button } from '../../../components/ui/button';
 import { SearchSelect } from '../../../components/ui/SearchSelect';
 import { api } from '../../../lib/api-client';
+import { availableStock } from '../../../lib/available-stock';
+
+const GRID =
+  'grid gap-3 items-center grid-cols-[minmax(12rem,2fr)_4.5rem_4.5rem_minmax(10rem,3fr)_5.5rem_6rem_4.5rem_4.5rem_2.5rem]';
 
 export function FMPreinstallItemsTable({
   items,
   setItems,
   onSelectItem,
   activeItemIndex,
-  installDetail,
-  setInstallDetail,
 }: any) {
   const [productOptions, setProductOptions] = useState<
     { label: string; value: string }[]
@@ -21,98 +23,19 @@ export function FMPreinstallItemsTable({
   const [rawProducts, setRawProducts] = useState<any[]>([]);
 
   useEffect(() => {
-    const loadHardware = async () => {
-      try {
-        const [prodRes, itemsRes, allItemsRes, segRes] = await Promise.allSettled([
-          api.get('/products?isFmHardware=true'),
-          api.get('/inventory/items', { params: { isFmHardware: 'true', take: 500 } }),
-          api.get('/inventory/items', { params: { take: 500 } }),
-          api.get('/fm-segments'),
-        ]);
-
-        const prodList = prodRes.status === 'fulfilled' ? (prodRes.value.data?.data ?? prodRes.value.data ?? []) : [];
-        const itemsList = itemsRes.status === 'fulfilled' ? (itemsRes.value.data?.data?.items ?? itemsRes.value.data?.items ?? itemsRes.value.data ?? []) : [];
-        const allItemsList = allItemsRes.status === 'fulfilled' ? (allItemsRes.value.data?.data?.items ?? allItemsRes.value.data?.items ?? allItemsRes.value.data ?? []) : [];
-        const segList = segRes.status === 'fulfilled' ? (segRes.value.data?.data ?? segRes.value.data ?? []) : [];
-
-        // Combine products uniquely by id
-        const map = new Map<string, any>();
-
-        // 1. Add segments from fmsegments table
-        for (const s of (Array.isArray(segList) ? segList : [])) {
-          if (s.Product) {
-            map.set(s.Product.id, {
-              ...s.Product,
-              isFmHardware: true,
-              fmUnitCode: s.code || s.Product.fmUnitCode || s.Product.productCode,
-              fmMixCode: s.mixCode || s.Product.fmMixCode,
-              source: 'fm-segments',
-            });
-          } else if (s.code && s.type !== 'BASE_UNIT') {
-            map.set(s.id || s.code, {
-              id: s.productId || s.id,
-              productCode: s.code,
-              name: s.label || s.code,
-              retailPrice: 0,
-              onHand: 10,
-              committed: 0,
-              isFmHardware: true,
-              fmUnitCode: s.code,
-              fmMixCode: s.mixCode,
-              source: 'fm-segments',
-            });
-          }
-        }
-
-        // 2. Add inventory items marked as FM Hardware
-        const combinedItems = [
-          ...(Array.isArray(itemsList) ? itemsList : []),
-          ...(Array.isArray(allItemsList) ? allItemsList : []),
-        ];
-        for (const item of combinedItems) {
-          if (item && (item.isFmHardware || item.status === 'FM Service')) {
-            const existing = map.get(item.id) || {};
-            map.set(item.id, {
-              ...existing,
-              ...item,
-              isFmHardware: true,
-              fmUnitCode: item.fmUnitCode || existing.fmUnitCode || item.productCode,
-              fmMixCode: item.fmMixCode || existing.fmMixCode,
-            });
-          }
-        }
-
-        // 3. Add products from /products?isFmHardware=true
-        for (const p of (Array.isArray(prodList) ? prodList : [])) {
-          if (p && (p.isFmHardware || p.status === 'FM Service')) {
-            const existing = map.get(p.id) || {};
-            map.set(p.id, {
-              ...existing,
-              ...p,
-              isFmHardware: true,
-              fmUnitCode: p.fmUnitCode || existing.fmUnitCode || p.productCode,
-              fmMixCode: p.fmMixCode || existing.fmMixCode,
-            });
-          }
-        }
-
-        const combined = Array.from(map.values());
-        setRawProducts(combined);
-
-        const options = [
-          { label: 'Select hardware item…', value: '' },
-          ...combined.map((p: any) => ({
-            label: p.name ? `${p.productCode} — ${p.name}` : `${p.productCode} (FM Hardware)`,
-            value: p.id,
-          })),
-        ];
-        setProductOptions(options);
-      } catch (err) {
-        console.warn('Failed loading FM hardware items:', err);
-      }
-    };
-
-    loadHardware();
+    // Only load items where FM Hardware is checked (FM Preinstall is for hardware)
+    api.get('/products?isFmHardware=true').then(res => {
+      const list = res.data?.data ?? res.data ?? [];
+      setRawProducts(list);
+      const options = [
+        { label: 'Select hardware item', value: '' },
+        ...list.map((p: any) => ({
+          label: p.name ? `${p.productCode} — ${p.name}` : `${p.productCode} (FM Hardware)`,
+          value: p.id,
+        })),
+      ];
+      setProductOptions(options);
+    });
   }, []);
 
   const updateRow = (i: number, patch: any) => {
@@ -141,25 +64,42 @@ export function FMPreinstallItemsTable({
   };
 
   return (
-    <div className="space-y-4 overflow-visible">
+    <div className="space-y-2 overflow-visible">
       {items.length === 0 && (
         <div className="text-slate-400 text-center py-3 text-sm">No items</div>
       )}
+
+      {items.length > 0 && (
+        <div className={`${GRID} px-0`}>
+          <div className="text-sm font-medium text-slate-700">Select item</div>
+          <div className="text-sm font-medium text-slate-700 text-right">Qty</div>
+          <div className="text-sm font-medium text-slate-700 text-right">Available</div>
+          <div className="text-sm font-medium text-slate-700">Description</div>
+          <div className="text-sm font-medium text-slate-700 text-right">Price</div>
+          <div className="text-sm font-medium text-slate-700 text-right">Total</div>
+          <div className="text-sm font-medium text-slate-700 text-right">Dis%</div>
+          <div className="text-sm font-medium text-slate-700 text-right">MargF</div>
+          <div />
+        </div>
+      )}
+
       {items.map((row: any, i: number) => {
-        const isActive = activeItemIndex === i;
         const currentMargin = Number(marginPct(row));
+        const listed = rawProducts.find(p => p.id === row.productId);
+        const shownAvail = row.availQty != null && row.availQty !== ''
+          ? Number(row.availQty)
+          : availableStock(listed ?? row.product);
 
         return (
           <div
             key={i}
-            className={`flex flex-col gap-1 rounded border transition-colors border-transparent`}
+            className="rounded border border-transparent transition-colors"
             onClick={() => onSelectItem({ ...row, index: i })}
           >
-            <div className="grid gap-3 items-end grid-cols-[2fr_1fr_1fr_3fr_1fr_1fr_1fr_1fr_auto]">
+            <div className={GRID}>
               {/* Part Number */}
               <div onClick={e => e.stopPropagation()}>
                 <SearchSelect
-                  placeholder={i === 0 ? 'Select hardware item' : ''}
                   value={row.productId || ''}
                   options={productOptions}
                   onChange={id => {
@@ -179,9 +119,7 @@ export function FMPreinstallItemsTable({
                     const product = rawProducts.find(p => p.id === id);
                     if (!product) return;
 
-                    const onHand = Number(product.onHand ?? 0);
-                    const committed = Number(product.committed ?? 0);
-                    const availQty = Math.max(0, onHand - committed);
+                    const availQty = availableStock(product);
 
                     updateRow(i, {
                       productId: product.id,
@@ -192,20 +130,7 @@ export function FMPreinstallItemsTable({
                       cost: Number(product.netSupplierBuyPrice || 0),
                       availQty,
                     });
-
-                    // Sync hardware attributes with installDetail
-                    if (setInstallDetail) {
-                      setInstallDetail((prev: any) => ({
-                        ...prev,
-                        fmUnitCode: prev?.fmUnitCode || product.fmUnitCode || product.productCode,
-                        mixCode: prev?.mixCode || product.fmMixCode || null,
-                        modem4G: prev?.modem4G ?? product.fourGUnitModem ?? false,
-                        mixSim1: prev?.mixSim1 ?? product.mixUnitSim ?? false,
-                        visionType: prev?.visionType || (product.isVision ? 'STD' : null),
-                      }));
-                    }
-
-                    onSelectItem({ ...row, productId: product.id, index: i });
+                    onSelectItem({ ...row, productId: product.id, product, index: i });
 
                     // Auto-add next row only if this was the last row
                     if (i === items.length - 1) {
@@ -234,88 +159,76 @@ export function FMPreinstallItemsTable({
               {/* Qty */}
               <div onClick={e => e.stopPropagation()}>
                 <Input
-                  label={i === 0 ? 'Qty' : undefined}
                   type="number"
                   min={1}
+                  className="text-right"
                   value={row.quantity ?? 1}
                   onChange={e => updateRow(i, { quantity: Number(e.target.value) })}
                 />
               </div>
 
-              {/* Avail */}
-              <div>
-                {i === 0 && <label className="text-sm font-medium">Avail</label>}
-                <div
-                  className={`h-10 px-3 flex items-center border rounded text-sm font-medium ${
-                    row.availQty === undefined || row.availQty === null || row.availQty === ''
-                      ? 'bg-slate-50 text-slate-400'
-                      : Number(row.availQty) <= 0
-                      ? 'bg-red-50 text-red-600 border-red-200'
-                      : 'bg-emerald-50 text-emerald-600 border-emerald-200'
-                  }`}
-                >
-                  {row.availQty ?? '—'}
-                </div>
+              {/* Available */}
+              <div
+                className={`h-9 px-3 flex items-center justify-end border rounded-md text-sm font-medium ${
+                  shownAvail == null || Number.isNaN(shownAvail)
+                    ? 'bg-slate-50 text-slate-400'
+                    : shownAvail <= 0
+                    ? 'bg-red-50 text-red-600 border-red-200'
+                    : 'bg-emerald-50 text-emerald-600 border-emerald-200'
+                }`}
+              >
+                {shownAvail == null || Number.isNaN(shownAvail) ? '—' : shownAvail}
               </div>
 
               {/* Description */}
-              <div>
-                {i === 0 && <label className="text-sm font-medium">Description</label>}
-                <div className="h-10 px-3 flex items-center border rounded bg-slate-50 text-sm text-slate-700 truncate">
-                  {row.description || '—'}
-                </div>
+              <div className="h-9 px-3 flex items-center border rounded-md bg-slate-50 text-sm text-slate-700 truncate">
+                {row.description || '—'}
               </div>
 
               {/* Price */}
               <div onClick={e => e.stopPropagation()}>
                 <Input
-                  label={i === 0 ? 'Price' : undefined}
                   type="number"
                   step="0.01"
+                  className="text-right"
                   value={row.unitPrice ?? 0}
                   onChange={e => updateRow(i, { unitPrice: Number(e.target.value) })}
                 />
               </div>
 
               {/* Total */}
-              <div>
-                {i === 0 && <label className="text-sm font-medium">Total</label>}
-                <div className="h-10 px-3 flex items-center justify-end border rounded bg-slate-50 text-sm font-medium text-slate-700">
-                  ${Number(row.lineTotal ?? 0).toFixed(2)}
-                </div>
+              <div className="h-9 px-3 flex items-center justify-end border rounded-md bg-slate-50 text-sm font-medium text-slate-700 tabular-nums">
+                ${Number(row.lineTotal ?? 0).toFixed(2)}
               </div>
 
               {/* Dis% */}
               <div onClick={e => e.stopPropagation()}>
                 <Input
-                  label={i === 0 ? 'Dis%' : undefined}
                   type="number"
                   step="0.1"
+                  className="text-right"
                   value={row.discountPct ?? 0}
                   onChange={e => updateRow(i, { discountPct: Number(e.target.value) })}
                 />
               </div>
 
               {/* MargF */}
-              <div>
-                {i === 0 && <label className="text-sm font-medium">MargF</label>}
-                <div
-                  className={`h-10 px-3 flex items-center justify-end border rounded text-sm font-medium ${
-                    currentMargin < 0
-                      ? 'bg-red-500 text-white border-red-600'
-                      : 'bg-slate-50 text-slate-700'
-                  }`}
-                >
-                  {marginPct(row) ? `${marginPct(row)}%` : '—'}
-                </div>
+              <div
+                className={`h-9 px-3 flex items-center justify-end border rounded-md text-sm font-medium tabular-nums ${
+                  currentMargin < 0
+                    ? 'bg-red-500 text-white border-red-600'
+                    : 'bg-slate-50 text-slate-700'
+                }`}
+              >
+                {marginPct(row) ? `${marginPct(row)}%` : '—'}
               </div>
 
               {/* Delete */}
-              <div className="flex items-center">
+              <div className="flex items-center justify-center">
                 <Button
                   type="button"
                   variant="ghost"
-                  className="h-10 w-10 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50"
+                  className="h-9 w-9 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50"
                   onClick={e => {
                     e.stopPropagation();
                     removeRow(i);

@@ -30,7 +30,7 @@ export default function InventoryGroupsPage() {
   if (!has('inventory.view') && !has('inventory.edit') && !has('products.managePricing')) {
     return (
       <AdminShell title="Inventory Groups">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

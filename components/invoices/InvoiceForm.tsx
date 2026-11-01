@@ -15,6 +15,10 @@ import { api } from '../../lib/api-client';
 import { fetchDispatchMethodOptions } from '../customers/forms/CustomerDispatchForm';
 import DataTable from '../common/DataTable';
 import ConfirmModal from '../ui/ConfirmModal';
+import { useAccountStatusGate } from '../../hooks/useAccountStatusGate';
+import { INVALID_CUSTOMER_NUMBER } from '../common/CustomerSearchSelect';
+import { accountPricingFields, savedLinePrice } from '../../lib/line-pricing';
+import { availableStock } from '../../lib/available-stock';
 
 
 const INVOICE_TYPES = [
@@ -54,7 +58,13 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
   const { showToast } = useToast();
   const router = useRouter();
   const isView = mode === 'view';
+  const { check: accountCheck, modal: accountModal } = useAccountStatusGate();
+  const customerStatusRef = useRef<string | null>(null);
+  const customerNumberRef = useRef<HTMLInputElement>(null);
+  const [customerNumberNotice, setCustomerNumberNotice] = useState<string | null>(null);
+  const raisingInvoice = mode === 'create' || initialData?.status === 'DRAFT' || initialData?.isProforma;
   const isLocked = !!initialData?.isLocked;
+  const seenUpdatedAt = useRef<string | null>(initialData?.updatedAt ?? null);
   const isFromPreinstall = !!initialData?._fromPreinstallId || initialData?.invoiceType === 'FMPREINSTALL';
   const formInitialized = useRef(false);
   const [orderRequired, setOrderRequired] = useState(false);
@@ -190,11 +200,27 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
   useEffect(() => {
     if (!form.customerId) {
       setDispatches([]);
+      setOrderRequired(false);
       return;
     }
     api.get(`/customers/${form.customerId}`)
-      .then(res => {
+      .then(async res => {
         const customer = res.data?.data ?? res.data;
+        customerStatusRef.current = customer?.status ?? null;
+        setOrderRequired(!!customer?.orderRequired);
+
+        if (raisingInvoice && !isView) {
+          const allowed = await accountCheck(form.customerId, customer?.status, 'invoice');
+          if (!allowed) {
+            if (mode === 'create') {
+              update('customerId', '');
+              setSelectedCustomerLabel('');
+              setDispatches([]);
+            }
+            return;
+          }
+        }
+
         const list = customer?.dispatches ?? [];
         setDispatches(list);
 
@@ -207,28 +233,48 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
           update('abnNumber', customer.abn);
         }
 
+        const pricing = accountPricingFields(customer);
+        update('gstExempt', pricing.gstExempt);
+        update('fmPriceLevel', pricing.fmPriceLevel);
+        update('fmPriceFactor', pricing.fmPriceFactor);
+        if (pricing.priceLevel) update('priceLevel', pricing.priceLevel);
+        if (pricing.salesFactor !== '') update('salesFactor', pricing.salesFactor);
 
-        const shipping = customer?.addresses?.find(add => add.type === "SHIPPING")
-        const charge = customer?.addresses?.find(add => add.type === "CHARGE")
+
+        // Preinstall/SO seed already has addresses — do not wipe them with customer defaults
+        if (initialData?._preserveAddresses) return;
+
+        const addresses = customer?.addresses ?? [];
+        const pickAddr = (...types: string[]) =>
+          types
+            .map((t) =>
+              addresses.find((a: any) => a.type === t && a.isDefault) ||
+              addresses.find((a: any) => a.type === t),
+            )
+            .find(Boolean);
+
+        const shipping = pickAddr('SHIPPING');
+        // Account/billing: prefer CHARGE, then STATEMENT (same as sales order / preinstall)
+        const charge = pickAddr('CHARGE', 'STATEMENT');
         // Populate Shipping Details
         setShipping({
-          shippingName: shipping?.name || '',
+          shippingName: shipping?.name || customer?.name || '',
           address1: shipping?.address1 || '',
           address2: shipping?.address2 || '',
           city: shipping?.city || '',
           state: shipping?.state || '',
-          postcode: shipping?.postcode || '',
+          postcode: shipping?.postcode || shipping?.postalCode || '',
           country: shipping?.country || '',
         });
 
         // Populate Account Details
         setAccount({
-          billingName: charge?.name || '',
+          billingName: charge?.name || customer?.name || '',
           address1: charge?.address1 || '',
           address2: charge?.address2 || '',
           city: charge?.city || '',
           state: charge?.state || '',
-          postcode: charge?.postcode || '',
+          postcode: charge?.postcode || charge?.postalCode || '',
           country: charge?.country || '',
         });
       })
@@ -237,6 +283,10 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
 
 
   useEffect(() => {
+    // Keep freight from preinstall/SO seed; only apply dispatch charge for freehand
+    if (initialData?._preserveCharges || isFromPreinstall || form.invoiceType === 'SALESORDER') {
+      return;
+    }
     if (form.customerId && form.dispatchId) {
       const dispatch = dispatches.find(item => item.id === form.dispatchId)
       const freight = Number(dispatch?.charge || 0)
@@ -289,6 +339,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
 
     if (initialData.customer) {
       setSelectedCustomerLabel(customerLabel(initialData.customer));
+      setOrderRequired(!!initialData.customer.orderRequired);
     }
 
     // Restore generic-account flags on edit so re-saving an existing invoice
@@ -323,22 +374,27 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
           const onHand = i.onHandQty != null
             ? Number(i.onHandQty)
             : (i.product?.onHand != null ? Number(i.product.onHand) : null);
+          const stockQty = initialData?.invoiceType === 'JOBBOOK'
+            ? availableStock(i.product ?? { onHand, committed: i.committedQty })
+            : onHand;
           const uninvoicedQty = i.uninvoicedQty != null ? Number(i.uninvoicedQty) : null;
-          const backOrderQty = i.soBackOrderQty != null
-            ? Number(i.soBackOrderQty)
-            : (i.backOrderQty != null ? Number(i.backOrderQty) : Number(i.backorderQty ?? 0));
+          const notInvoicedQty = i.notInvoicedQty != null
+            ? Number(i.notInvoicedQty)
+            : (initialData?.salesOrderId ? Number(i.backorderQty ?? i.backOrderQty ?? 0) : null);
           return {
             id: i.id,
             itemId: i.productId,
             description: i.description,
             qty,
             originalQty: qty,
-            backOrderQty,
-            backorderQty: backOrderQty,
             uninvoicedQty,
+            notInvoicedQty,
+            backorderQty: notInvoicedQty ?? Number(i.backorderQty ?? 0),
+            backOrderQty: notInvoicedQty ?? Number(i.backOrderQty ?? i.backorderQty ?? 0),
             unitPrice: Number(i.unitPrice),
+            ...savedLinePrice(i),
             discountPct: Number(i.discountPct ?? 0),
-            availableQty: onHand,
+            availableQty: stockQty,
           };
         }),
         { ...EMPTY_ROW },
@@ -427,9 +483,9 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
             ...d.reversalItems.map((i: any) => ({
               itemId: i.productId,
               description: i.description,
-              qty: i.quantity, // already negative
+              qty: i.quantity,
               backorderQty: 0,
-              unitPrice: Number(i.unitPrice),
+              ...savedLinePrice({ unitPrice: i.unitPrice, discountPct: i.discountPct, quantity: Math.abs(Number(i.quantity)) }),
               discountPct: Number(i.discountPct ?? 0),
               availableQty: null,
             })),
@@ -477,7 +533,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
               description: i.description,
               qty: i.quantity,
               backorderQty: 0,
-              unitPrice: Number(i.unitPrice),
+              ...savedLinePrice({ unitPrice: i.unitPrice, discountPct: i.discountPct, quantity: Math.abs(Number(i.quantity)) }),
               discountPct: Number(i.discountPct ?? 0),
               availableQty: null,
             })),
@@ -499,6 +555,10 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
         }
 
         const so = d.so;
+        if (so.customer?.orderRequired && !String(so.customerPO ?? '').trim()) {
+          setParentError('Order number is required.');
+          return;
+        }
         setParentRecord(so);
         update('salesOrderId', so.id);
         update('customerId', so.customerId);
@@ -539,15 +599,20 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
             const lineQty = Number(i.quantity ?? 0);
             const productOutstanding = Number(i.uninvoicedQty ?? i.quantity ?? 0);
             const defaultQty = Math.min(Math.max(onHand, 0), lineQty);
-            const backOrderQty = Number(i.backOrderQty ?? 0);
+            const notInvoicedQty = Number(i.notInvoicedQty ?? lineQty);
             return {
               itemId: i.productId,
               description: i.description,
               qty: defaultQty,
               uninvoicedQty: productOutstanding,
-              backOrderQty,
-              backorderQty: backOrderQty,
-              unitPrice: Number(i.unitPrice),
+              notInvoicedQty,
+              backorderQty: notInvoicedQty,
+              backOrderQty: notInvoicedQty,
+              ...savedLinePrice({
+                unitPrice: i.unitPrice,
+                discountPct: i.discountPct,
+                quantity: i.quantity,
+              }),
               discountPct: Number(i.discountPct ?? 0),
               availableQty: onHand,
             };
@@ -586,12 +651,67 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
     setShowCustomerDropdown(false);
   };
 
+  const commitCustomerNumber = async () => {
+    const term = customerSearch.trim();
+    if (!term) return;
+    const exact = customerResults.find(
+      (c: any) => c.customerNumber?.toLowerCase() === term.toLowerCase(),
+    );
+    if (exact) {
+      selectCustomer(exact);
+      return;
+    }
+    try {
+      const res = await api.get('/customers/lookup', { params: { number: term } });
+      const customer = res.data?.data ?? res.data;
+      if (customer?.id) {
+        selectCustomer(customer);
+        return;
+      }
+    } catch {
+      /* unrecognised number */
+    }
+    if (customerResults.length > 0 && !/^\d[\d\s-]*$/.test(term)) {
+      selectCustomer(customerResults[0]);
+      return;
+    }
+    setCustomerNumberNotice(INVALID_CUSTOMER_NUMBER);
+  };
+
   const clearSelectedCustomer = () => {
     update('customerId', '');
     setSelectedCustomerLabel('');
   };
 
+  const invoiceIsCurrent = async () => {
+    if (!initialData?.id || !seenUpdatedAt.current) return true;
+    try {
+      const res = await api.get(`/invoices/${initialData.id}`);
+      const fresh = res.data?.data ?? res.data;
+      const loaded = new Date(seenUpdatedAt.current).getTime();
+      const current = new Date(fresh?.updatedAt).getTime();
+      if (Number.isFinite(loaded) && Number.isFinite(current) && loaded !== current) {
+        showToast({
+          type: 'error',
+          title: 'Invoice changed',
+          message: 'This invoice changed after you opened it. Reload it before printing or saving.',
+        });
+        return false;
+      }
+    } catch {
+      return true;
+    }
+    return true;
+  };
+
+  const openInvoicePrint = async (docket = false) => {
+    if (!(await invoiceIsCurrent())) return;
+    const query = docket ? '?docket=1' : '';
+    window.open(`/invoices/${initialData.id}/print${query}`, '_blank', 'noopener');
+  };
+
   const handlePushToXero = async () => {
+    if (!(await invoiceIsCurrent())) return;
     setPushingToXero(true);
     try {
       const res = await api.post(`/admin/xero-config/push-invoice/${initialData.id}`, {});
@@ -610,6 +730,11 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
     if (!form.customerId) {
       showToast({ type: 'error', title: 'Validation', message: 'Customer is required' });
       return;
+    }
+
+    if (raisingInvoice && !isView) {
+      const allowed = await accountCheck(form.customerId, customerStatusRef.current, 'invoice');
+      if (!allowed) return;
     }
 
     // Generic accounts (Account 12 "Counter Sales" / Account 13 "Postal") need
@@ -650,7 +775,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
       return;
     }
 
-    if (orderRequired && !form.reference) {
+    if (orderRequired && !String(form.reference ?? '').trim()) {
       showToast({ type: 'error', title: 'Validation', message: 'Order number is required.' });
       return;
     }
@@ -669,10 +794,13 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
       }
     }*/
 
+    if (mode !== 'create' && !(await invoiceIsCurrent())) return;
+
     try {
       const payload = {
         ...form,
         invoiceType,
+        expectedUpdatedAt: mode === 'create' ? undefined : seenUpdatedAt.current,
         shippingName: shipping.shippingName,
         shippingAddress1: shipping.address1,
         shippingAddress2: shipping.address2,
@@ -696,7 +824,10 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
       const invoiceId = res.data?.data?.id ?? res.data?.id ?? initialData?.id;
 
       const cleanItems = realItems.map(i => {
-        const backorderQty = Number(i.backorderQty ?? i.backOrderQty ?? 0);
+        // B/Ord = remaining qty still to send from the sales order
+        const backorderQty = i.notInvoicedQty != null
+          ? Number(i.notInvoicedQty)
+          : Number(i.backorderQty ?? i.backOrderQty ?? 0);
         return {
           id: i.id,
           productId: i.itemId,
@@ -732,88 +863,68 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
         creditInvoiceNumbers = itemsResult?.creditInvoiceNumbers ?? [];
       }
 
-      // Preinstall link — _fromPreinstallId
+      // Preinstall link — marks INVOICED and auto-creates FM Install (FM Log)
       if (initialData?._fromPreinstallId) {
         await api.post(
           `/invoices/link-preinstall/${invoiceId}/${initialData._fromPreinstallId}`
         );
-
-        const addToLog = window.confirm('Invoice saved. Add this to the FM Install Log now?');
-        if (addToLog) {
-          try {
-            await api.post(`/fm-install/from-preinstall/${initialData._fromPreinstallId}`);
-            showToast({ type: 'success', title: 'Added to FM Log' });
-          } catch (err: any) {
-            showToast({
-              type: 'error',
-              title: 'Could not add to FM Log',
-              message: apiErrorMessage(err, 'Please add manually from the preinstall page'),
+        showToast({
+          type: 'success',
+          title: 'Added to FM Install Log',
+          message: 'Preinstall data was copied to FM Install.',
+        });
+      }
+      let emailed = false;
+      let emailError = '';
+      const canDeliver = form.status !== 'DRAFT' && form.status !== 'CANCELLED' && form.status !== 'REVERSED';
+      if (canDeliver && form.customerId && invoiceId) {
+        const custRes = await api.get(`/customers/${form.customerId}`);
+        const customer = custRes.data?.data ?? custRes.data;
+        if (customer?.invoiceDelivery === 'EMAIL_PDF') {
+          const contacts = (customer.contacts ?? []).filter((contact: any) => contact.email?.trim());
+          const contact = contacts.find((item: any) => item.role === 'INVOICE')
+            ?? contacts.find((item: any) => item.category === 'ACCOUNT')
+            ?? contacts.find((item: any) => item.isPrimary)
+            ?? contacts[0];
+          const address = contact?.email?.trim();
+          const sendEmail = await new Promise<boolean>((resolve) => {
+            setDeliveryPrompt({
+              open: true,
+              title: 'Email invoice',
+              message: address
+                ? `Send this invoice as a PDF to ${address}?`
+                : 'This customer has no invoice email address.',
+              confirmText: 'Send email',
+              cancelText: "Don't email",
+              resolve,
             });
+          });
+          if (sendEmail && address) {
+            try {
+              await api.post(`/invoices/${invoiceId}/email`);
+              emailed = true;
+            } catch (err: any) {
+              emailError = apiErrorMessage(err, 'The invoice was saved. The email was not sent.');
+            }
+          } else if (sendEmail && !address) {
+            emailError = 'The invoice was saved. Add an email on the customer contact, then send it again.';
           }
         }
       }
-      // let emailed = false;
-      // let printed = false;
-      // let emailError = '';
-      // const canDeliver = form.status !== 'DRAFT' && form.status !== 'CANCELLED' && form.status !== 'REVERSED';
-      // if (canDeliver && form.customerId && invoiceId) {
-      //   const custRes = await api.get(`/customers/${form.customerId}`);
-      //   const customer = custRes.data?.data ?? custRes.data;
-      //   const ask = (prompt: { title: string; message: string; confirmText: string; cancelText: string; printInvoiceId?: string }) =>
-      //     new Promise<boolean>((resolve) => {
-      //       setDeliveryPrompt({ open: true, ...prompt, resolve });
-      //     });
-      //   if (customer?.invoiceDelivery === 'EMAIL_PDF') {
-      //     const contacts = (customer.contacts ?? []).filter((contact: any) => contact.email?.trim());
-      //     const contact = contacts.find((item: any) => item.role === 'INVOICE')
-      //       ?? contacts.find((item: any) => item.category === 'ACCOUNT')
-      //       ?? contacts.find((item: any) => item.isPrimary)
-      //       ?? contacts[0];
-      //     const address = contact?.email?.trim();
-      //     const sendEmail = await ask({
-      //       title: 'Email invoice',
-      //       message: address
-      //         ? `Send this invoice as a PDF to ${address}?`
-      //         : 'This customer has no invoice email address.',
-      //       confirmText: 'Send email',
-      //       cancelText: "Don't email",
-      //     });
-      //     if (sendEmail && address) {
-      //       try {
-      //         await api.post(`/invoices/${invoiceId}/email`);
-      //         emailed = true;
-      //       } catch (err: any) {
-      //         emailError = apiErrorMessage(err, 'The invoice was saved. The email was not sent.');
-      //       }
-      //     } else if (sendEmail && !address) {
-      //       emailError = 'The invoice was saved. Add an email on the customer contact, then send it again.';
-      //     }
-      //   } else {
-      //     printed = await ask({
-      //       title: 'Print invoice',
-      //       message: 'Print this invoice to send with the goods?',
-      //       confirmText: 'Print',
-      //       cancelText: "Don't print",
-      //       printInvoiceId: invoiceId,
-      //     });
-      //   }
-      // }
 
-      // if (emailError) {
-      //   showToast({ type: 'error', title: 'Email failed', message: emailError });
-      // } else if (creditInvoiceNumbers.length) {
-      //   showToast({
-      //     type: 'success',
-      //     title: 'Invoice saved',
-      //     message: `Quantity reduced — Credit invoice(s) created: ${creditInvoiceNumbers.join(', ')}`,
-      //   });
-      // } else if (emailed) {
-      //   showToast({ type: 'success', title: 'Invoice saved', message: 'The PDF was emailed to the customer.' });
-      // } else if (printed) {
-      //   showToast({ type: 'success', title: 'Invoice saved', message: 'The print page was opened.' });
-      // } else {
-      //   showToast({ type: 'success', title: 'Success', message: 'Invoice saved successfully' });
-      // }
+      if (emailError) {
+        showToast({ type: 'error', title: 'Email failed', message: emailError });
+      } else if (creditInvoiceNumbers.length) {
+        showToast({
+          type: 'success',
+          title: 'Invoice saved',
+          message: `Quantity reduced — Credit invoice(s) created: ${creditInvoiceNumbers.join(', ')}`,
+        });
+      } else if (emailed) {
+        showToast({ type: 'success', title: 'Invoice saved', message: 'The PDF was emailed to the customer.' });
+      } else {
+        showToast({ type: 'success', title: 'Success', message: 'Invoice saved successfully' });
+      }
 
       router.push('/invoices');
 
@@ -838,6 +949,23 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
 
   return (
     <div className="space-y-4">
+      {accountModal}
+      <ConfirmModal
+        open={!!customerNumberNotice}
+        title=""
+        message={customerNumberNotice ?? ''}
+        confirmText="OK"
+        alertOnly
+        danger={false}
+        onConfirm={() => {
+          setCustomerNumberNotice(null);
+          setTimeout(() => customerNumberRef.current?.focus(), 0);
+        }}
+        onCancel={() => {
+          setCustomerNumberNotice(null);
+          setTimeout(() => customerNumberRef.current?.focus(), 0);
+        }}
+      />
       <ConfirmModal
         open={deliveryPrompt.open}
         title={deliveryPrompt.title}
@@ -861,13 +989,13 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
         )}
         <Button variant="outline" onClick={() => router.back()}>Back</Button>
         {isView && onEdit && <Button variant="outline" onClick={onEdit}>Edit</Button>}
-        {initialData?.id && initialData?.status !== 'DRAFT' && (
-          <Button variant="outline" onClick={() => window.open(`/invoices/${initialData.id}/print`, '_blank')}>
+        {initialData?.id && (
+          <Button variant="outline" onClick={() => openInvoicePrint()}>
             🖨️ Print
           </Button>
         )}
-        {initialData?.id && initialData?.status !== 'DRAFT' && initialData?.salesOrder?.orderType === 'DIRECT_TO_CUSTOMER' && (
-          <Button variant="outline" onClick={() => window.open(`/invoices/${initialData.id}/print?docket=1`, '_blank')}>
+        {initialData?.id && (
+          <Button variant="outline" onClick={() => openInvoicePrint(true)}>
             🖨️ Delivery Docket
           </Button>
         )}
@@ -997,6 +1125,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
                 ) : (
                   <>
                     <input
+                      ref={customerNumberRef}
                       type="text"
                       value={customerSearch}
                       onChange={e => {
@@ -1005,6 +1134,12 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
                       }}
                       onFocus={() => setShowCustomerDropdown(true)}
                       onBlur={() => setTimeout(() => setShowCustomerDropdown(false), 150)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void commitCustomerNumber();
+                        }
+                      }}
                       placeholder="Search customer by name or number..."
                       className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
                       disabled={isView}
@@ -1107,7 +1242,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
                 onChange={v => update('status', v)}
                 disabled={isView || form.status === 'REVERSED'}
               />
-              <Input label="Order Number" value={form.reference} onChange={e => update('reference', e.target.value)} disabled={isView} />
+              <Input label="Order Number" required={orderRequired} value={form.reference} onChange={e => update('reference', e.target.value)} disabled={isView} />
               <Input label="ABN Number" value={form.abnNumber} onChange={e => update('abnNumber', e.target.value)} disabled={isView} />
               {dispatches.length > 0 && (
                 <Select
@@ -1228,30 +1363,32 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
               lockedReduceOnly={!isView && isLocked}
               defaultOpen
               showBackorderQty={needsParent}
+              useAvailableStock={form.invoiceType === 'JOBBOOK' || form.invoiceType === 'SALESORDER'}
+
               form={form}
             />
           )}
           <div className="border rounded p-4 mt-4 bg-white">
             <h3 className="font-semibold mb-2">Notes</h3>
             {(isView || isLocked) ?
-              <p
-                className="w-full border rounded px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
-              >{form.externalNotes}</p>
+              <pre
+                className="w-full min-h-48 max-h-96 overflow-y-auto border rounded px-3 py-2 text-sm font-mono whitespace-pre-wrap break-words leading-6 bg-slate-50 text-slate-800"
+              >{form.externalNotes || '—'}</pre>
               :
               <textarea
                 value={form.externalNotes}
                 onChange={e => update('externalNotes', e.target.value)}
                 placeholder="Enter any notes..."
-                rows={10}
+                rows={14}
                 disabled={isView || isLocked}
-                className="w-full border rounded px-3 py-2 text-sm resize-y focus:outline-none focus:ring-2 focus:ring-ring"
+                className="w-full min-h-48 max-h-96 overflow-y-auto border rounded px-3 py-2 text-sm font-mono leading-6 resize-y focus:outline-none focus:ring-2 focus:ring-ring whitespace-pre"
               />
             }
           </div>
         </div>
 
         <div className="col-span-12 lg:col-span-3">
-          <SalesOrderCharges items={initialData?.invoiceType === "SUBSCRIPTION" ? initialData.fmSubscriptionItems : items} freight={form.freight} sundries={form.sundries} labour={form.labour} rounding={form.rounding} otherCharges={form.otherCharges} update={update} readOnly={isView || isLocked} />
+          <SalesOrderCharges items={initialData?.invoiceType === "SUBSCRIPTION" ? initialData.fmSubscriptionItems : items} freight={form.freight} sundries={form.sundries} labour={form.labour} rounding={form.rounding} otherCharges={form.otherCharges} update={update} readOnly={isView || isLocked} gstExempt={!!form.gstExempt} />
         </div>
       </div>
 

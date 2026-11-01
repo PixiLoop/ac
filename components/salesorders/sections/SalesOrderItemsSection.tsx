@@ -12,7 +12,8 @@ export function SalesOrderItemsSection({
   category,
   showBackorderQty = true,
   lockedReduceOnly = false,
-  form
+  form,
+  useAvailableStock = false,
 }: any) {
   //canonical empty row (matches table expectations)
   const EMPTY_ITEM = {
@@ -75,6 +76,7 @@ export function SalesOrderItemsSection({
         category={category}
         showBackorderQty={showBackorderQty}
         lockedReduceOnly={lockedReduceOnly}
+        useAvailableStock={useAvailableStock}
       />
       </div>
       {/* <SalesOrderTotals items={items} freight={freight} /> */}

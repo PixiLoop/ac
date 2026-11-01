@@ -72,6 +72,15 @@ type Item = {
   replacedBy?: string;
   billOfGoods: boolean;
   onHand: number;
+  stock?: {
+    onHand: number;
+    committed: number;
+    onOrder: number;
+    available: number;
+    salesOrders: number;
+    fmPreinstalls: number;
+    jobs: number;
+  };
   location1?: number;
   location2?: number;
   bin?: string;
@@ -100,6 +109,18 @@ type Item = {
   isFmHardware: boolean;
   fmUnitType?: string;
   fmUnitCode?: string;
+  aiOption?: boolean;
+  tmaOption?: boolean;
+  rimOption?: boolean;
+  nrcOption?: boolean;
+  internSim?: boolean;
+  mixVisSim?: boolean;
+  vision4GModem?: boolean;
+  cameraCount?: number;
+  fmVisionType?: string;
+  fmCameraType?: string;
+  fmSim1Type?: string;
+  fmSim2Type?: string;
   fourGUnitModem: boolean;
   mixUnitSim: boolean;
   isMonitor: boolean;
@@ -161,6 +182,22 @@ export default function InventoryItemViewPage() {
   const fmt = (v?: number | null, dp = 2) =>
     v != null ? Number(v).toFixed(dp) : '—';
 
+  const qty = (v?: number | null) => {
+    if (v == null || Number.isNaN(Number(v))) return '—';
+    const n = Number(v);
+    return Number.isInteger(n) ? String(n) : n.toFixed(3).replace(/\.?0+$/, '');
+  };
+
+  const stock = item.stock ?? {
+    onHand: Number(item.onHand ?? 0),
+    committed: 0,
+    onOrder: 0,
+    available: Number(item.onHand ?? 0),
+    salesOrders: 0,
+    fmPreinstalls: 0,
+    jobs: 0,
+  };
+
   const showFm = item.isFmHardware || item.status === 'FM Service';
 
   return (
@@ -181,6 +218,30 @@ export default function InventoryItemViewPage() {
           <div className="flex items-center gap-2">
             <Button variant="outline" onClick={() => router.push(`/inventory/${id}`)}>Edit Item</Button>
             <Button variant="outline" onClick={() => router.push('/inventory')}>Back to List</Button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+          <div className="rounded-lg border bg-white p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">On Hand</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{qty(stock.onHand)}</p>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Committed</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{qty(stock.committed)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">
+              Sales Orders {qty(stock.salesOrders)} · FMPs {qty(stock.fmPreinstalls)} · Jobs {qty(stock.jobs)}
+            </p>
+          </div>
+          <div className="rounded-lg border bg-white p-4">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">On Order</p>
+            <p className="mt-1 text-2xl font-semibold text-slate-900">{qty(stock.onOrder)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">Purchase orders on order</p>
+          </div>
+          <div className={`rounded-lg border p-4 ${stock.available <= 0 ? 'border-red-200 bg-red-50' : 'border-emerald-200 bg-emerald-50'}`}>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-slate-400">Available</p>
+            <p className={`mt-1 text-2xl font-semibold ${stock.available <= 0 ? 'text-red-700' : 'text-emerald-700'}`}>{qty(stock.available)}</p>
+            <p className="mt-1 text-[11px] text-slate-500">On hand less committed</p>
           </div>
         </div>
 
@@ -232,8 +293,13 @@ export default function InventoryItemViewPage() {
 
             {/* Stock & Location */}
             <SectionCard title="Stock &amp; Location">
-              <div className="grid gap-4 sm:grid-cols-3 md:grid-cols-6">
-                <Field label="On Hand" value={fmt(item.onHand, 3)} />
+              <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+                <Field label="On Hand" value={qty(stock.onHand)} />
+                <Field label="Committed" value={qty(stock.committed)} />
+                <Field label="On Order" value={qty(stock.onOrder)} />
+                <Field label="Available" value={qty(stock.available)} />
+              </div>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3 md:grid-cols-5">
                 <Field label="Location 1" value={item.location1} />
                 <Field label="Location 2" value={item.location2} />
                 <Field label="Bin" value={item.bin} />
@@ -306,6 +372,22 @@ export default function InventoryItemViewPage() {
                     <BoolField label="Mix Unit SIM" value={item.mixUnitSim} />
                     <BoolField label="Is Monitor" value={item.isMonitor} />
                     <BoolField label="Is Vision" value={item.isVision} />
+                  </div>
+                  <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+                    <Field label="Sim Card Size" value={item.fmSim1Type} />
+                    <Field label="Mix Sim for Vision" value={item.fmSim2Type} />
+                    <Field label="Camera Type" value={item.fmCameraType} />
+                    <Field label="Vision" value={item.fmVisionType} />
+                    <Field label="Cameras" value={item.cameraCount} />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+                    <BoolField label="Mix Sim for Vision" value={item.mixVisSim} />
+                    <BoolField label="4G Vision" value={item.vision4GModem} />
+                    <BoolField label="AI Option" value={item.aiOption} />
+                    <BoolField label="TMA Option" value={item.tmaOption} />
+                    <BoolField label="RIM Option" value={item.rimOption} />
+                    <BoolField label="NRC" value={item.nrcOption} />
+                    <BoolField label="Int SIM" value={item.internSim} />
                   </div>
                 </CardContent>
               </Card>

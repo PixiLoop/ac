@@ -6,7 +6,7 @@ import { api } from '../../../lib/api-client';
 import { useToast } from '../../ui/toast';
 import { Checkbox } from '../../ui/checkbox';
 import { Radio } from '../../ui/radio';
-import { Combobox, ComboboxChip, ComboboxChips, ComboboxChipsInput, ComboboxContent, ComboboxEmpty, ComboboxItem, ComboboxList, ComboboxValue } from '../../ui/combobox';
+import { CAMERA_BASE_REQUIRED, isCathexis, isMix4000, mixSim1Enabled, optionEnabled, supportsCamera } from '../../../lib/fm-rules';
 
 // ─── Vision types where camera count digit is NOT appended to service code ───
 const VISION_NO_COUNT = new Set(['DX', 'MN']);
@@ -14,10 +14,12 @@ const VISION_NO_COUNT = new Set(['DX', 'MN']);
 // ─── MiX Code S1 index mapping ───────────────────────────────────────────────
 const SIM_MIX_INDEX: Record<string, number> = { S1: 1, S2: 2, S3: 3, S4: 4 };
 
-export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSyncType, fmCustomerId }: any) {
+export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSyncType, fmCustomerId, fmRecordId, fmMixOrgId, invalidFields = [] }: any) {
     const [loading, setLoading] = useState(false)
     const [fmCustomer, setFmCustomer] = useState(null)
     const [customerOrgs, setCustomerOrgs] = useState([])
+    const [fmCustomerMixOrgId, setFmCustomerMixOrgId] = useState<string>(fmMixOrgId ?? '')
+    const [accountOptions, setAccountOptions] = useState<any[]>([]);
     const loadCustomer = async () => {
         if (!fmCustomerId) {
             setLoading(false);
@@ -41,17 +43,52 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
     };
 
     useEffect(() => {
+        if (!fmCustomerId) {
+            setAccountOptions([]);
+            return;
+        }
+        api.get('/fm-customers/options', { params: { customerId: fmCustomerId } })
+            .then(res => {
+                const data = res.data?.data ?? res.data;
+                setAccountOptions(Array.isArray(data) ? data : (data?.data ?? []));
+            })
+            .catch(() => setAccountOptions([]));
+    }, [fmCustomerId]);
+
+    useEffect(() => {
         loadCustomer();
     }, [fmCustomerId]);
 
     useEffect(() => {
-        if (fmCustomer) {
-            const orgs = fmCustomer?.fmCustomer?.FMCustomerOrgIds ? fmCustomer?.fmCustomer?.FMCustomerOrgIds?.map(item => ({ ...item.organizations })) : []
-            setCustomerOrgs(orgs)
-        } else {
-            setCustomerOrgs([])
+        if (fmMixOrgId) setFmCustomerMixOrgId(fmMixOrgId);
+    }, [fmMixOrgId]);
+
+    useEffect(() => {
+        let cancelled = false;
+        const apply = (rows: any[]) => {
+            const orgs = (rows ?? [])
+                .map((row: any) => row?.organizations ?? row)
+                .filter((org: any) => org?.id);
+            if (!cancelled) setCustomerOrgs(orgs);
+        };
+        if (fmRecordId) {
+            api.get(`/fm-customers/${fmRecordId}`)
+                .then(res => {
+                    const fm = res.data?.data ?? res.data;
+                    apply(fm?.FMCustomerOrgIds ?? []);
+                    if (!cancelled && fm?.mixOrgId) setFmCustomerMixOrgId(fm.mixOrgId);
+                })
+                .catch(() => { if (!cancelled) setCustomerOrgs([]); });
+        } else if (fmCustomer?.fmCustomer?.FMCustomerOrgIds) {
+            apply(fmCustomer.fmCustomer.FMCustomerOrgIds);
+            if (fmCustomer?.fmCustomer?.mixOrgId) {
+                setFmCustomerMixOrgId(fmCustomer.fmCustomer.mixOrgId);
+            }
+        } else if (!fmCustomerId) {
+            setCustomerOrgs([]);
         }
-    }, [fmCustomer])
+        return () => { cancelled = true; };
+    }, [fmRecordId, fmCustomer, fmCustomerId]);
 
 
     // ── Local form state — initialised from prop once, then self-managed ─────
@@ -76,6 +113,19 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
             return { ...prev, fleetNumber: fleetName };
         });
     }, [fleetName]);
+
+    // Default Mix Org ID from the FM Customer. Prefer that over a value that
+    // accidentally matches Fleet Name (legacy leakage of fleet → mixOrgId).
+    useEffect(() => {
+        if (!fmCustomerMixOrgId) return;
+        setForm((prev: any) => {
+            const current = prev?.mixOrgId ?? '';
+            const looksLikeFleet = Boolean(fleetName) && current === fleetName;
+            if (current && !looksLikeFleet) return prev;
+            if (current === fmCustomerMixOrgId) return prev;
+            return { ...prev, mixOrgId: fmCustomerMixOrgId };
+        });
+    }, [fmCustomerMixOrgId, fleetName]);
 
     useEffect(() => {
         if (!item?.installDetail?.installType) return;
@@ -284,6 +334,10 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
     // ── Vision radio change ──────────────────────────────────────────────────
     const handleVisionChange = async (val: string) => {
+        if (val && !supportsCamera(form.fmUnitType)) {
+            showToast({ type: 'error', title: CAMERA_BASE_REQUIRED, message: CAMERA_BASE_REQUIRED });
+            return;
+        }
         const noVis = !val;
         let cameras: any[] = [];
         let defaultCam: any = undefined;
@@ -347,6 +401,15 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
     const sortedBaseUnits = [...baseUnits].sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
     const sortedUnitCodes = [...unitCodes].sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+    const bad = (key: string) => invalidFields.includes(key);
+    const unit = form.fmUnitType;
+    const cameraSelected = !!(form.cameraType || form.visionType);
+    const aiOn = optionEnabled(accountOptions, ['AI']) && cameraSelected && !isCathexis(form.cameraType);
+    const tmaOn = optionEnabled(accountOptions, ['TMA']) && isMix4000(unit);
+    const rimOn = optionEnabled(accountOptions, ['RIM']) && isMix4000(unit);
+    const nrcOn = optionEnabled(accountOptions, ['NRC']) && cameraSelected;
+    const safeOn = optionEnabled(accountOptions, ['SAFE']);
+    const upper = (key: string, value: string) => update(key, value.toUpperCase());
 
     return (
         <div className="h-full flex flex-col bg-white border text-xs">
@@ -437,38 +500,41 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                         </LabelRow>
 
                         <LabelRow label="Mix Org ID">
-                            <Input className="bg-orange-100"
-                                value={form.mixOrgId ?? ''}
-                                onChange={(e: any) => update('mixOrgId', e.target.value)} />
-                        </LabelRow>
-                        <LabelRow label="Mix Org ID">
-                            <Combobox
-                                items={customerOrgs}
-                                multiple
-                                value={form?.organizations ?? []}
-                                onValueChange={e => {
-                                    patchForm({ organizations: e });
+                            <select
+                                className="w-full border p-1 bg-orange-100"
+                                value={(() => {
+                                    const current = form.mixOrgId ?? '';
+                                    const match = customerOrgs.find((org: any) => org.code === current || org.id === current);
+                                    return match?.code ?? current;
+                                })()}
+                                onChange={e => {
+                                    const code = e.target.value;
+                                    const org = customerOrgs.find((row: any) => row.code === code);
+                                    patchForm({
+                                        mixOrgId: code,
+                                        organizations: org ? [org] : [],
+                                    });
                                 }}
                             >
-                                <ComboboxChips className={"p-0"}>
-                                    <ComboboxValue>
-                                        {form?.organizations?.map((item) => (
-                                            <ComboboxChip key={item.id}>{item.label}</ComboboxChip>
-                                        ))}
-                                    </ComboboxValue>
-                                    <ComboboxChipsInput placeholder="Add organization" />
-                                </ComboboxChips>
-                                <ComboboxContent className={"bg-white"}>
-                                    <ComboboxEmpty>No items found.</ComboboxEmpty>
-                                    <ComboboxList>
-                                        {(item) => (
-                                            <ComboboxItem key={item} value={item}>
-                                                {item.label}
-                                            </ComboboxItem>
-                                        )}
-                                    </ComboboxList>
-                                </ComboboxContent>
-                            </Combobox>
+                                <option value="">Select</option>
+                                {customerOrgs.map((org: any) => (
+                                    <option key={org.id} value={org.code}>
+                                        {org.code}{org.label ? ` – ${org.label}` : ''}
+                                    </option>
+                                ))}
+                                {fmCustomerMixOrgId
+                                    && !customerOrgs.some((org: any) => org.code === fmCustomerMixOrgId || org.id === fmCustomerMixOrgId)
+                                    && (
+                                        <option value={fmCustomerMixOrgId}>{fmCustomerMixOrgId}</option>
+                                    )}
+                                {form.mixOrgId
+                                    && form.mixOrgId !== fmCustomerMixOrgId
+                                    && !(fleetName && form.mixOrgId === fleetName)
+                                    && !customerOrgs.some((org: any) => org.code === form.mixOrgId || org.id === form.mixOrgId)
+                                    && (
+                                        <option value={form.mixOrgId}>{form.mixOrgId}</option>
+                                    )}
+                            </select>
                         </LabelRow>
 
                         <LabelRow label="Asset Number">
@@ -477,6 +543,7 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                                     type="number"
                                     min={0}
                                     max={32767}
+                                    error={bad('assetNumber')}
                                     value={form.assetNumber ?? ''}
                                     onChange={(e: any) => {
                                         const val = e.target.value;
@@ -496,7 +563,9 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
                         <LabelRow label="Fleet Number">
                             <Input value={form.fleetNumber ?? ''}
-                                onChange={(e: any) => update('fleetNumber', e.target.value)} />
+                                error={bad('fleetNumber')}
+                                onChange={(e: any) => update('fleetNumber', e.target.value)}
+                                onBlur={(e: any) => upper('fleetNumber', e.target.value)} />
                         </LabelRow>
 
                         <LabelRow label="Veh VIN Code">
@@ -506,16 +575,21 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
                         <LabelRow label="Rego Number">
                             <Input value={form.regoNumber ?? ''}
-                                onChange={(e: any) => update('regoNumber', e.target.value)} />
+                                error={bad('regoNumber')}
+                                onChange={(e: any) => update('regoNumber', e.target.value)}
+                                onBlur={(e: any) => upper('regoNumber', e.target.value)} />
                         </LabelRow>
 
                         <LabelRow label="Veh Make">
                             <Input value={form.vehicleMake ?? ''}
-                                onChange={(e: any) => update('vehicleMake', e.target.value)} />
+                                error={bad('vehicleMake')}
+                                onChange={(e: any) => update('vehicleMake', e.target.value)}
+                                onBlur={(e: any) => upper('vehicleMake', e.target.value)} />
                         </LabelRow>
 
                         <LabelRow label="Veh Model">
                             <Input value={form.vehicleModel ?? ''}
+                                error={bad('vehicleModel')}
                                 onChange={(e: any) => update('vehicleModel', e.target.value)} />
                         </LabelRow>
 
@@ -552,6 +626,7 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                             <div className="mb-1.5">
                                 <Checkbox label="Mix Sim1"
                                     checked={form.mixSim1 ?? false}
+                                    disabled={!mixSim1Enabled(unit)}
                                     onChange={(v: boolean) => patchForm({ mixSim1: v, ...(!v && { sim1Type: undefined }) })} />
                             </div>
 
@@ -570,14 +645,18 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
                             <LabelRow label="Unit SIM">
                                 <Input value={form.unitSim ?? ''}
+                                    error={bad('unitSim')}
+                                    disabled={!form.mixSim1}
                                     onChange={(e: any) => update('unitSim', e.target.value)} />
                             </LabelRow>
                             <LabelRow label="Unit Serial">
                                 <Input value={form.unitSerial ?? ''}
+                                    error={bad('unitSerial')}
                                     onChange={(e: any) => update('unitSerial', e.target.value)} />
                             </LabelRow>
                             <LabelRow label="Unit IMEI">
                                 <Input value={form.unitIMEI ?? ''}
+                                    error={bad('unitIMEI')}
                                     onChange={(e: any) => update('unitIMEI', e.target.value)} />
                             </LabelRow>
                         </div>
@@ -624,6 +703,7 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                             <div className="flex items-center mb-1">
                                 <Checkbox label="Mix Sim2"
                                     checked={form.mixSim2 ?? false}
+                                    disabled={!hasVision}
                                     onChange={handleMixSim2Change} />
 
                                 {/* Camera count — only for V/X (not DX/MN) */}
@@ -647,6 +727,7 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                                     type="checkbox"
                                     id="chk-4gvis"
                                     checked={form.mixSim2 ?? false}
+                                    disabled={!hasVision}
                                     onChange={e => handleMixSim2Change(e.target.checked)}
                                     className="accent-green-600 w-3.5 h-3.5"
                                 />
@@ -673,12 +754,14 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
                             <LabelRow label="Vis SIM">
                                 <Input value={form.visSim ?? ''}
-                                    disabled={!form.mixSim2}
+                                    error={bad('visSim')}
+                                    disabled={!hasVision}
                                     onChange={(e: any) => update('visSim', e.target.value)} />
                             </LabelRow>
                             <LabelRow label="Vis IMEI">
                                 <Input value={form.visIMEI ?? ''}
-                                    disabled={!form.mixSim2}
+                                    error={bad('visIMEI')}
+                                    disabled={!hasVision}
                                     onChange={(e: any) => update('visIMEI', e.target.value)} />
                             </LabelRow>
 
@@ -687,6 +770,8 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                                 <>
                                     <LabelRow label="Vis 1 Serial">
                                         <Input value={form.vis1Serial ?? ''}
+                                            error={bad('vis1Serial')}
+                                            disabled={!hasVision}
                                             onChange={(e: any) => update('vis1Serial', e.target.value)} />
                                     </LabelRow>
                                     {cameraCount >= 2 && (
@@ -717,23 +802,27 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                             <div className="mb-1.5">
                                 <Checkbox label="AI Option"
                                     checked={form.aiOption ?? false}
+                                    disabled={!aiOn}
                                     onChange={(v: boolean) => update('aiOption', v)} />
                             </div>
                             <div className="mb-1.5 flex items-center gap-1.5">
                                 <Checkbox label="TMA Option"
                                     checked={form.tmaOption ?? false}
+                                    disabled={!tmaOn}
                                     onChange={(v: boolean) => update('tmaOption', v)} />
                                 <span className="text-slate-400">&gt; Mix 4000</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <Checkbox label="RIM Option"
                                     checked={form.rimOption ?? false}
+                                    disabled={!rimOn}
                                     onChange={(v: boolean) => update('rimOption', v)} />
                                 <span className="text-slate-400">&gt; Mix 4000</span>
                             </div>
                             <div className="flex items-center gap-1.5">
                                 <Checkbox label="NRC"
                                     checked={form.nrc ?? false}
+                                    disabled={!nrcOn}
                                     onChange={(v: boolean) => update('nrc', v)} />
                             </div>
                             <div className="flex items-center gap-1.5">
@@ -744,6 +833,7 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
                             <div className="flex items-center gap-1.5">
                                 <Checkbox label="Safe Guard"
                                     checked={form.safeGuard ?? false}
+                                    disabled={!safeOn}
                                     onChange={(v: boolean) => update('safeGuard', v)} />
                             </div>
                             <div className="flex items-center gap-1.5">

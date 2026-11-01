@@ -168,7 +168,9 @@ export default function FMCustomerPage({
       depots: fm.depots ?? '',
       invPeriod: fm.invPeriod ?? '',
       volOffset: fm.volOffset ?? '',
-      invoiceBy: fm.invoiceBy ?? '',
+      invoiceBy: fm.invoiceBy === 'ALL_UNITS' ? 'All_Units'
+        : fm.invoiceBy === 'FM_SERVICE' ? 'FM_Service'
+        : (fm.invoiceBy ?? ''),
       sortBy: fm.sortBy ?? '',
       listBy: fm.listBy ?? '',
       organizations: fm.FMCustomerOrgIds ? fm.FMCustomerOrgIds.map(item => ({ ...item.organizations })) : []
@@ -278,6 +280,21 @@ export default function FMCustomerPage({
       <div className="space-y-4">
         {readOnly && (
           <div className="flex justify-end gap-2">
+            <Button
+              variant="outline"
+              onClick={() => {
+                const fmNum = fmDetails.fmWebNumber?.trim();
+                const cusNum = customer?.customerNumber?.trim();
+                const query = fmNum
+                  ? `fmCusNum=${encodeURIComponent(fmNum)}`
+                  : cusNum
+                    ? `customer=${encodeURIComponent(cusNum)}`
+                    : '';
+                router.push(query ? `/fm-install?${query}` : '/fm-install');
+              }}
+            >
+              Install List
+            </Button>
             <Button onClick={() => router.push(`/admin/fm-customers/${initialCustomerId}`)}>
               Edit
             </Button>
@@ -298,6 +315,7 @@ export default function FMCustomerPage({
               onChange={setFmDetails}
               onCustomerSelect={handleCustomerSelect}
               readOnly={readOnly}
+              rejectUnlessFm={!!initialCustomerId}
             />
           </div>
 

@@ -12,7 +12,7 @@ export default function InventoryPage() {
   if (!has('inventory.view') && !has('inventory.create')) {
     return (
       <AdminShell title="Inventory">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

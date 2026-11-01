@@ -520,7 +520,7 @@ export class PurchaseOrdersService {
 
     // ── Supplier items (for PO create — show supplier's products) ─────────────
 
-    async supplierItems(supplierId: string) {
+    async supplierItems(supplierId: string, excludePoId?: string) {
         // Get supplier code first
         const supplier = await this.db.invSupplier.findUnique({
             where: { id: supplierId },
@@ -551,7 +551,43 @@ export class PurchaseOrdersService {
             orderBy: { productCode: 'asc' },
         });
 
-        return { supplier, items };
+        const outstanding = await this.openOrderQty(
+            items.map(item => item.id),
+            excludePoId,
+        );
+
+        return {
+            supplier,
+            items: items.map(item => ({
+                ...item,
+                // Quantity still to arrive on other purchase orders, including drafts.
+                onOrder: outstanding.get(item.id) ?? 0,
+            })),
+        };
+    }
+
+    /** Outstanding qty on purchase orders that have not been received or cancelled. */
+    private async openOrderQty(productIds: string[], excludePoId?: string) {
+        const totals = new Map<string, number>();
+        if (!productIds.length) return totals;
+
+        const lines = await this.db.purchaseOrderLine.findMany({
+            where: {
+                productId: { in: productIds },
+                purchaseOrder: {
+                    deletedAt: null,
+                    status: { in: ['DRAFT', 'SUBMITTED', 'PARTIALLY_RECEIVED'] },
+                    ...(excludePoId ? { id: { not: excludePoId } } : {}),
+                },
+            },
+            select: { productId: true, orderedQty: true, receivedQty: true },
+        });
+
+        for (const line of lines) {
+            const remaining = Math.max(0, Number(line.orderedQty) - Number(line.receivedQty));
+            totals.set(line.productId, (totals.get(line.productId) ?? 0) + remaining);
+        }
+        return totals;
     }
 
     private async sendPoEmail(po: any, attachmentType: string = 'PDF') {

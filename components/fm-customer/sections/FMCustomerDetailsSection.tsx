@@ -19,6 +19,7 @@ type Props = {
   onCustomerSelect: (customer: any) => void
   onChange: (v: FMDetails) => void,
   readOnly?: boolean
+  rejectUnlessFm?: boolean
 }
 
 export function FMCustomerDetailsSection({
@@ -26,7 +27,8 @@ export function FMCustomerDetailsSection({
   value,
   onCustomerSelect,
   onChange,
-  readOnly
+  readOnly,
+  rejectUnlessFm = false,
 }: Props) {
   const fleetRef = useRef<HTMLInputElement>(null)
 
@@ -61,6 +63,7 @@ export function FMCustomerDetailsSection({
           <CustomerSelect
             value={customer}
             disabled={readOnly}
+            rejectUnlessFm={rejectUnlessFm}
             onSelect={c => {
               onCustomerSelect(c)
               setTimeout(() => fleetRef.current?.focus(), 0)

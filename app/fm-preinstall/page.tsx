@@ -210,7 +210,7 @@ export default function FMPreinstallPage() {
   if (!canView) {
     return (
       <AdminShell title="FM Preinstall">
-        <p className="text-sm text-slate-600">You do not have permission.</p>
+        <p className="text-sm text-slate-600">You Do Not Have Access to This Process. Contact for Authorisation.</p>
       </AdminShell>
     );
   }

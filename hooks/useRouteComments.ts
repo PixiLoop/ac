@@ -4,6 +4,11 @@ import { useEffect } from 'react'
 import { usePathname } from 'next/navigation'
 import { useComments } from '../providers/CommentProvider'
 
+function isRecordId(segment: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(segment)
+    || /^c[a-z0-9]{24}$/i.test(segment)
+}
+
 export function useRouteComments() {
   const pathname = usePathname()
   const { setContext } = useComments()
@@ -12,43 +17,26 @@ export function useRouteComments() {
     if (!pathname) return
 
     const segments = pathname.split('?')[0].split('/').filter(Boolean)
+    const recordId = [...segments].reverse().find(isRecordId)
 
-    const page = segments[0] || 'dashboard'
-
-    let entityType = 'module'
-    let entityId = page
-    let title = page
-
-    // CREATE PAGE
-    if (segments.length === 2 && segments[1] === 'new') {
-      entityType = page
-      entityId = 'create'
-      title = `Create ${page}`
+    // Lists and unsaved new screens have no record id yet.
+    if (!recordId || segments.includes('new')) {
+      setContext(null)
+      return
     }
 
-    // EDIT PAGE
-    else if (segments.length === 2) {
-      entityType = page.slice(0, -1)
-      entityId = segments[1]
-      title = `${page} #${segments[1]}`
-    }
+    const page = segments[0] || 'record'
+    const idIndex = segments.lastIndexOf(recordId)
 
-    // VIEW PAGE
-    else if (segments.length === 3) {
-      entityType = page.slice(0, -1)
-      entityId = segments[1]
-      title = `${page} #${segments[1]}`
-    }
+    // /module/:id and /module/:id/view keep the existing comment thread key.
+    const entityType = idIndex === 1
+      ? page.slice(0, -1)
+      : (segments[idIndex - 1] || page).replace(/s$/, '')
 
-    const ctx = {
+    setContext({
       entityType,
-      entityId,
-      title,
-    }
-
-    console.log('Comment context set:', ctx)
-
-    setContext(ctx)
-
-  }, [pathname])
+      entityId: recordId,
+      title: `${page} #${recordId}`,
+    })
+  }, [pathname, setContext])
 }

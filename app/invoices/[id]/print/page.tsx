@@ -49,30 +49,20 @@ export default function PrintInvoicePage() {
   const paid     = Number(data.paidAmount ?? 0);
   const balance  = Number(data.balanceDue ?? 0);
 
-  const blank = '';
-  const totals = isDocket
-    ? [
-        { label: 'Subtotal (items)', value: blank },
-        ...(freight  ? [{ label: 'Freight',  value: blank }] : []),
-        ...(sundries ? [{ label: 'Sundries', value: blank }] : []),
-        ...(labour   ? [{ label: 'Labour',   value: blank }] : []),
-        { label: 'GST (10%)', value: blank },
-        ...(rounding ? [{ label: 'Rounding', value: blank }] : []),
-        { label: 'TOTAL', value: blank, bold: true, color: '#1d4ed8', topBorder: true },
-        ...(paid > 0    ? [{ label: 'Paid',        value: blank, color: '#166534' }] : []),
-        ...(balance > 0 ? [{ label: 'Balance Due', value: blank, bold: true, color: '#dc2626', bg: '#fef2f2' }] : []),
-      ]
-    : [
-        { label: 'Subtotal (items)', value: fmt(subtotal) },
-        ...(freight  ? [{ label: 'Freight',  value: fmt(freight)  }] : []),
-        ...(sundries ? [{ label: 'Sundries', value: fmt(sundries) }] : []),
-        ...(labour   ? [{ label: 'Labour',   value: fmt(labour)   }] : []),
-        { label: 'GST (10%)', value: fmt(gst) },
-        ...(rounding ? [{ label: 'Rounding', value: fmt(rounding) }] : []),
-        { label: 'TOTAL', value: fmt(total), bold: true, color: '#1d4ed8', topBorder: true },
-        ...(paid > 0    ? [{ label: 'Paid',        value: `(${fmt(paid)})`,  color: '#166534' }] : []),
-        ...(balance > 0 ? [{ label: 'Balance Due', value: fmt(balance), bold: true, color: '#dc2626', bg: '#fef2f2' }] : []),
-      ];
+  const isProforma = Boolean(data.isProforma) || data.status === 'DRAFT';
+  const docType = isDocket ? 'DELIVERY DOCKET' : isProforma ? 'PROFORMA INVOICE' : 'INVOICE';
+  const pricedTotals = [
+    { label: 'Subtotal (items)', value: fmt(subtotal) },
+    ...(freight  ? [{ label: 'Freight',  value: fmt(freight)  }] : []),
+    ...(sundries ? [{ label: 'Sundries', value: fmt(sundries) }] : []),
+    ...(labour   ? [{ label: 'Labour',   value: fmt(labour)   }] : []),
+    { label: 'GST', value: fmt(gst) },
+    ...(rounding ? [{ label: 'Rounding', value: fmt(rounding) }] : []),
+    { label: 'TOTAL', value: fmt(total), bold: true, color: '#1d4ed8', topBorder: true },
+    ...(paid > 0    ? [{ label: 'Paid',        value: `(${fmt(paid)})`,  color: '#166534' }] : []),
+    ...(balance > 0 ? [{ label: 'Balance Due', value: fmt(balance), bold: true, color: '#dc2626', bg: '#fef2f2' }] : []),
+  ];
+  const totals = pricedTotals;
 
   return (
     <>
@@ -90,7 +80,7 @@ export default function PrintInvoicePage() {
           <option value="template2">Template 2 — Dark Header</option>
         </select> */}
         <button onClick={() => window.print()} style={{ background: '#1d4ed8', color: 'white', border: 'none', padding: '8px 18px', borderRadius: 6, cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
-          {isDocket ? '🖨️ Print Delivery Docket / Save PDF' : '🖨️ Print / Save PDF'}
+          {isDocket ? '🖨️ Print Delivery Docket / Save PDF' : isProforma ? '🖨️ Print Proforma / Save PDF' : '🖨️ Print / Save PDF'}
         </button>
         <button onClick={() => window.close()} style={{ background: '#e2e8f0', color: '#374151', border: 'none', padding: '8px 18px', borderRadius: 6, cursor: 'pointer', fontSize: 13 }}>
           Close
@@ -99,7 +89,8 @@ export default function PrintInvoicePage() {
 
       <PrintTemplate
         variant={variant}
-        docType={isDocket ? 'DELIVERY DOCKET' : 'INVOICE'}
+        docType={docType}
+        footerNote={isProforma ? 'This is a proforma invoice and is not a tax invoice.' : undefined}
         docNumber={data.invoiceNumber}
         status={data.status}
         statusColor={STATUS_COLORS[data.status]}
@@ -131,15 +122,16 @@ export default function PrintInvoicePage() {
           { label: 'Disc%',      align: 'right', width: 80  },
           { label: 'Line Total', align: 'right', width: 110 },
         ]}
-        rows={items.map((item: any) => isDocket
-          ? [item.description, item.quantity, '', '', '']
-          : [
-              item.description,
-              item.quantity,
-              fmt(Number(item.unitPrice)),
-              item.discountPct ? `${item.discountPct}%` : '—',
-              fmt(Number(item.lineTotal)),
-            ])}
+        rows={items.map((item: any) => {
+          const qty = Number(item.quantity ?? item.qty ?? 0);
+          return [
+            item.description,
+            qty,
+            fmt(Number(item.unitPrice)),
+            item.discountPct ? `${item.discountPct}%` : '—',
+            fmt(Number(item.lineTotal)),
+          ];
+        })}
         totals={totals}
         notes={data.externalNotes}
       />

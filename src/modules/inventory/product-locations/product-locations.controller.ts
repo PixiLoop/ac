@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, UseGuards  } from '@nestjs/common';
-import { ProductLocationsService, AddProductLocationDto } from './product-locations.service';
+import type { ProductLocationsService, AddProductLocationDto } from './product-locations.service';
 import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { PermissionsGuard } from '../../../common/rbac/permissions.guard';
 import { Permissions } from '../../../common/rbac/permissions.decorator';

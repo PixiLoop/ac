@@ -171,7 +171,7 @@ export class FMPreinstallService {
   }
 
   async create(dto: any, userId: string) {
-    
+
     const TYPES_REQUIRING_TARGET = ['MODIFIED_INSTALL', 'WARRANTY', 'REPLACEMENT', 'TRANSFER_UNIT'];
     if (TYPES_REQUIRING_TARGET.includes(dto.type) && !dto.targetInstallId) {
       throw new Error('Target Record is required for this install type');
@@ -202,9 +202,9 @@ export class FMPreinstallService {
 
     const customer = dto.customerId
       ? await this.prisma.customer.findFirst({
-          where: { id: dto.customerId, deletedAt: null },
-          select: { id: true, fmCustomer: { select: { id: true } } },
-        })
+        where: { id: dto.customerId, deletedAt: null },
+        select: { id: true, fmCustomer: { select: { id: true } } },
+      })
       : null;
 
     if (!customer) throw new BadRequestException('Invalid Customer Number');
@@ -551,7 +551,7 @@ export class FMPreinstallService {
               data: { jobId: card.id },
             });
           }
-        } catch {}
+        } catch { }
 
         createdPreinstalls.push({
           id: preinstall.id,
@@ -604,7 +604,7 @@ export class FMPreinstallService {
           await this.prisma.fMPreinstall.update({
             where: { id: p.id },
             data: { installJobId: installationJob.id },
-          }).catch(() => {});
+          }).catch(() => { });
         }
       } catch (err) {
         console.warn('Could not create installation job in DB:', err);
@@ -1072,9 +1072,9 @@ export class FMPreinstallService {
     });
 
     // NEW PREINSTALLS GO INTO "Admin To Do"
-    const targetList = updatedBoard.lists.find(
+    const targetList = updatedBoard?.lists.find(
       (l: any) => l.name === 'Admin To Do',
-    ) ?? updatedBoard.lists[0];
+    ) ?? updatedBoard?.lists[0];
 
     if (!targetList) throw new Error('No list found in Workshop board');
 

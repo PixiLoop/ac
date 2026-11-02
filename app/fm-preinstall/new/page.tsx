@@ -8,20 +8,20 @@ import { Button } from '../../../components/ui/button';
 import { useToast } from '../../../components/ui/toast';
 import { api } from '../../../lib/api-client';
 import { FMPreinstallForm } from '../../../components/fm-preinstall/forms/FMPreinstallForm';
-import { CAMERA_BASE_REQUIRED, INSTALL_TYPE_REQUIRED, INVALID_SERVICE_CODE, NO_ITEMS, NOT_AN_FM_CUSTOMER, supportsCamera } from '../../../lib/fm-rules';
+import { useOperations } from '../../../providers/OperationsContext';
 
 export default function Page() {
   const router = useRouter();
   const { showToast } = useToast();
+  const { createInstallationJob } = useOperations();
 
   const [installDetail, setInstallDetail] = useState<Record<string, any>>({});
 
   const [form, setForm] = useState<any>({
     customerId: '',
     fmCustomerId: '',
-    type: '',
+    type: 'NEW_INSTALL',
     status: 'NOT_ACTIONED',
-    orderNumber: '',
   });
 
   const isLocked = form.status === 'COMPLETED' || form.status === 'INVOICED';
@@ -52,43 +52,19 @@ export default function Page() {
   };
 
   const save = async () => {
-    if (!form.customerId || !form.fmCustomerId) {
-      showToast({ type: 'error', title: NOT_AN_FM_CUSTOMER, message: NOT_AN_FM_CUSTOMER });
-      return;
-    }
-    if (!form.type) {
-      showToast({ type: 'error', title: INSTALL_TYPE_REQUIRED, message: INSTALL_TYPE_REQUIRED });
+    if (!form.customerId) {
+      showToast({ type: 'error', title: 'Customer required' });
       return;
     }
 
+    // Filter empty rows for validation check
     const validItems = items.filter(i => i.productId && i.productId !== '');
     if (!validItems.length) {
-      showToast({ type: 'error', title: NO_ITEMS, message: NO_ITEMS });
+      showToast({ type: 'error', title: 'Add at least 1 item' });
       return;
     }
-    const serviceCode = String(installDetail.serviceCode ?? '').trim();
-    // if (!serviceCode) {
-    //   showToast({ type: 'error', title: INVALID_SERVICE_CODE, message: INVALID_SERVICE_CODE });
-    //   return;
-    // }
-
-    const cameraOn = installDetail.visionType || installDetail.cameraType;
-    // if (cameraOn && !supportsCamera(installDetail.fmUnitType)) {
-    //   showToast({ type: 'error', title: CAMERA_BASE_REQUIRED, message: CAMERA_BASE_REQUIRED });
-    //   return;
-    // }
 
     try {
-      const lookup = await api.get('/products/by-code', { params: { code: serviceCode } });
-      const product = lookup.data?.data ?? lookup.data;
-
-      console.log(lookup);
-      
-      // if (!product?.id) {
-      //   showToast({ type: 'error', title: INVALID_SERVICE_CODE, message: INVALID_SERVICE_CODE });
-      //   return;
-      // }
-
       setSaving(true);
 
       const payload = {
@@ -98,14 +74,12 @@ export default function Page() {
         // SHIPPING
         shippingName: shipping?.name || '',
         shippingAddress1: shipping?.address1 || '',
-        shippingAddress2: `${shipping?.address2 || ''}||${shipping?.city || ''}||${shipping?.state || ''}||${shipping?.postcode || ''}`,
-        shippingAddress3: shipping?.postcode || '',
+        shippingAddress2: `${shipping?.address2 || ''}||${shipping?.city || ''}||${shipping?.state || ''}`,
 
         // BILLING
         billingName: account?.name || '',
         billingAddress1: account?.address1 || '',
-        billingAddress2: `${account?.address2 || ''}||${account?.city || ''}||${account?.state || ''}||${account?.postcode || ''}`,
-        billingAddress3: account?.postcode || '',
+        billingAddress2: `${account?.address2 || ''}||${account?.city || ''}||${account?.state || ''}`,
 
         installDetail: {
           ...installDetail,
@@ -127,7 +101,7 @@ export default function Page() {
           productId: i.productId,
           partNumber: i.partNumber || '',
           description: i.description || '',
-          quantity: i.quantity == null || i.quantity === '' ? 1 : Number(i.quantity),
+          quantity: i.quantity || 1,
           unitPrice: Number(i.unitPrice || 0),
           discountPct: i.discountPct ?? null,
           lineTotal: i.lineTotal ?? null,
@@ -138,16 +112,17 @@ export default function Page() {
       try {
         const preinstallNo = res.data?.data?.preinstallNo || res.data?.preinstallNo || `PI-${Date.now().toString().slice(-4)}`;
         const rego = form.regoNumber || installDetail?.regoNumber || 'TBD';
-        const vin = form.vinNumber || installDetail?.vinNumber || `VIN-${preinstallNo}`;
+        const vin = form.vinNumber || installDetail?.vinNumber || `VIN-${preinstallNo}-${Date.now().toString().slice(-4)}`;
         const fleet = form.fleetNumber || installDetail?.fleetNumber || 'FLEET-01';
         const makeModel = `${form.vehicleMake || installDetail?.vehicleMake || ''} ${form.vehicleModel || installDetail?.vehicleModel || ''}`.trim() || 'Commercial Vehicle';
 
-        const newJob = {
-          id: `INSTALL-${preinstallNo.replace(/[^0-9]/g, '') || Date.now().toString().slice(-4)}`,
+        await createInstallationJob({
           jobNumber: `JOB-${preinstallNo}`,
+          isWhiteboard: false,
+          jobType: 'FM Preinstall',
           customerId: form.customerId,
-          customerName: account?.name || form.shippingName || 'FM Customer',
-          customerContact: form.shippingName || 'Fleet Manager',
+          customerName: account?.name || shipping?.name || form.shippingName || 'FM Customer',
+          customerContact: shipping?.name || form.shippingName || 'Fleet Manager',
           customerPhone: '02 9876 5432',
           projectId: 'proj-fleet-telematics',
           projectName: 'Fleet Telematics Rollout',
@@ -158,8 +133,8 @@ export default function Page() {
             vin,
             makeModel,
           },
-          hardware: validItems.map(item => ({
-            id: item.productId,
+          hardware: validItems.map((item, idx) => ({
+            id: item.productId || `hw-${idx}`,
             model: item.partNumber || installDetail?.fmUnitCode || 'MIX4000',
             name: item.description || item.partNumber || 'Telematics Hardware',
             serialNumber: installDetail?.unitSerial || '',
@@ -175,52 +150,14 @@ export default function Page() {
           endTime: '12:00',
           isScheduled: !!(form.installer && (form.installDate || installDetail?.installDate)),
           status: 'Not Actioned',
-          checklistSections: [
-            {
-              id: 'sec-prep',
-              title: 'Hardware & Harness Pre-Check',
-              hardwareModel: 'MIX4000',
-              items: [
-                { id: `chk-${Date.now()}-1`, title: 'Verify serial and IMEI against preinstall sheet', isRequired: true, displayOrder: 1, completed: false, section: 'Hardware & Harness Pre-Check' },
-                { id: `chk-${Date.now()}-2`, title: 'Inspect harness cables and inline fuses', isRequired: true, displayOrder: 2, completed: false, section: 'Hardware & Harness Pre-Check' },
-              ],
-            },
-            {
-              id: 'sec-install',
-              title: 'Vehicle Installation & Telemetry Verification',
-              hardwareModel: 'MIX4000',
-              items: [
-                { id: `chk-${Date.now()}-3`, title: 'Secure mounting in cabin away from moving linkages', isRequired: true, displayOrder: 3, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
-                { id: `chk-${Date.now()}-4`, title: 'Connect ignition and continuous 12V/24V power lines', isRequired: true, displayOrder: 4, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
-                { id: `chk-${Date.now()}-5`, title: 'Confirm GPS fix and telematics cellular heartbeat', isRequired: true, displayOrder: 5, completed: false, section: 'Vehicle Installation & Telemetry Verification' },
-              ],
-            },
-          ],
-          timeline: [
-            {
-              id: `tl-${Date.now()}`,
-              status: 'Not Actioned',
-              timestamp: new Date().toISOString(),
-              updatedBy: 'Operations Dispatch',
-              note: `Installation job created from FM Preinstall ${preinstallNo}.`,
-            },
-          ],
-          notes: `Created from FM Preinstall ${preinstallNo}. Location: ${form.installLocation || installDetail?.installLocation || 'Main Workshop'}.`,
-          createdAt: new Date().toISOString(),
-          canInvoice: false,
-        };
+          notes: `Created from FM Preinstall ${preinstallNo}. Location: ${form.installLocation || installDetail?.installLocation || 'Main Workshop'}. Unit Code: ${installDetail?.fmUnitCode || 'N/A'}.`,
+        });
 
         if (typeof window !== 'undefined') {
-          const raw = localStorage.getItem('operations_installation_jobs');
-          let currentJobs: any[] = [];
-          if (raw) {
-            try { currentJobs = JSON.parse(raw); } catch (e) {}
-          }
-          currentJobs = [newJob, ...currentJobs.filter((j: any) => j.id !== newJob.id)];
-          localStorage.setItem('operations_installation_jobs', JSON.stringify(currentJobs));
+          window.dispatchEvent(new Event('operations_jobs_updated'));
         }
       } catch (jobErr) {
-        console.warn('Could not cache installation job locally:', jobErr);
+        console.warn('Could not auto-create installation job in context:', jobErr);
       }
 
       showToast({ type: 'success', title: 'Preinstall & Installation Job created successfully' });

@@ -1,4 +1,4 @@
-import { IsOptional, IsString, IsEnum, IsNumber } from 'class-validator';
+import { IsOptional, IsString, IsEnum } from 'class-validator';
 import { Type } from 'class-transformer';
 import { PreinstallStatus, PreinstallType } from '@prisma/client';
 
@@ -14,15 +14,6 @@ export class UpdateFMPreinstallDto {
 
   @IsOptional() @IsString()
   depot?: string;
-
-  @IsOptional() @IsString()
-  depotId?: string;
-
-  @IsOptional() @IsString()
-  customerId?: string;
-
-  @IsOptional() @IsString()
-  fmCustomerId?: string;
 
   @IsOptional() @IsString()
   orderNumber?: string;
@@ -75,32 +66,4 @@ export class UpdateFMPreinstallDto {
 
   @IsOptional()
   notes?: string;
-
-  // Charges / summary
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeParts?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeSundries?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeLabour?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeFreight?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeGst?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeRounding?: number;
-
-  @IsOptional() @Type(() => Number) @IsNumber()
-  chargeTotal?: number;
-
-  @IsOptional() @IsString()
-  dispatchMethod?: string;
-
-  @IsOptional() @IsString()
-  dispatchRef?: string;
 }

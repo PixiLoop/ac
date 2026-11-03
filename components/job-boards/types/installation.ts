@@ -150,6 +150,7 @@ export interface InstallationJob {
   lineItems?: InstallationLineItem[];
   technicianId?: string;
   technicianName?: string;
+  userId?: string;
   installationDate?: string; // YYYY-MM-DD
   startTime?: string; // HH:mm
   endTime?: string; // HH:mm

@@ -2,7 +2,9 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 type ListAssignedParams = {
-  userId: string;
+  userId?: string;
+  technicianId?: string;
+  assignedTo?: string;
   skip?: number;
   take?: number;
   status?: string;
@@ -233,7 +235,7 @@ export class JobsService {
   }
 
   async findAssigned(params: ListAssignedParams) {
-    const { userId, skip = 0, take = 20, status, search } = params;
+    const { userId, technicianId, assignedTo, skip = 0, take = 20, status, search } = params;
 
     const where: any = {};
     if (search) {
@@ -241,6 +243,32 @@ export class JobsService {
         { id: { contains: search, mode: 'insensitive' } },
         { jobNumber: { contains: search, mode: 'insensitive' } },
         { location: { contains: search, mode: 'insensitive' } },
+      ];
+    }
+
+    if (status && status !== 'all' && status !== 'All') {
+      const dbStatus = Object.keys(statusMappingToFrontend).find(
+        (k) =>
+          statusMappingToFrontend[k].toLowerCase() === status.toLowerCase() ||
+          k.toLowerCase() === status.toLowerCase(),
+      ) || status;
+      where.status = dbStatus;
+    }
+
+    if (assignedTo && ['technician', 'contractor', 'subcontractor'].includes(assignedTo)) {
+      where.assignedTo = assignedTo;
+    }
+
+    const targetUserId = technicianId || userId;
+    if (targetUserId && targetUserId !== 'all' && targetUserId !== 'ALL') {
+      where.AND = [
+        ...(where.AND || []),
+        {
+          OR: [
+            { technicianId: targetUserId },
+            { userId: targetUserId },
+          ],
+        },
       ];
     }
 
@@ -309,11 +337,8 @@ export class JobsService {
     let lastError: any;
     for (const include of attempts) {
       try {
-        const jobs = await (this.prisma as any ).installationJob.findMany({
-          where: {
-            technicianId: userId,
-            ...where
-          },
+        const jobs = await (this.prisma as any).installationJob.findMany({
+          where,
           include,
           orderBy: { createdAt: 'desc' },
         });

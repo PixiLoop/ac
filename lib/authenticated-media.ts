@@ -2,15 +2,29 @@ import { baseURL } from './api-client'
 
 export function resolveMediaUrl(path?: string | null) {
   if (!path) return ''
-  if (path.startsWith('http://') || path.startsWith('https://') || path.startsWith('blob:')) {
+  if (
+    path.startsWith('http://') ||
+    path.startsWith('https://') ||
+    path.startsWith('blob:') ||
+    path.startsWith('data:')
+  ) {
     return path
   }
-  return `${baseURL}${path.startsWith('/') ? '' : '/'}${path}`
+  const cleanBase = (baseURL || '').replace(/\/+$/, '')
+  const cleanPath = path.startsWith('/') ? path : `/${path}`
+  if (cleanBase && cleanPath.startsWith(cleanBase)) {
+    return cleanPath
+  }
+  if (cleanBase.endsWith('/api') && cleanPath.startsWith('/api/')) {
+    return cleanPath
+  }
+  return `${cleanBase}${cleanPath}`
 }
 
-/** Private Azure blobs must be fetched via JWT API proxy (same as checklist photos). */
+/** Private Azure blobs or authenticated proxy file endpoints. */
 export function needsAuthMediaFetch(url: string) {
   if (!url) return false
+  if (url.startsWith('data:') || url.startsWith('blob:')) return false
   if (url.includes('.blob.core.windows.net/')) return true
   return (
     (url.includes('/job-boards/') || url.includes('/installations/')) &&
@@ -20,26 +34,32 @@ export function needsAuthMediaFetch(url: string) {
 
 export async function fetchAuthenticatedObjectUrl(path?: string | null): Promise<string | null> {
   if (!path) return null
+  if (path.startsWith('data:') || path.startsWith('blob:')) return path
   const absolute = resolveMediaUrl(path)
-  if (!needsAuthMediaFetch(absolute)) return absolute
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
-  const res = await fetch(absolute, {
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  })
-  if (!res.ok) throw new Error(`HTTP ${res.status}`)
-  const contentType = (res.headers.get('content-type') || '').toLowerCase()
-  const blob = await res.blob()
-  if (
-    contentType.includes('application/json') ||
-    contentType.includes('text/') ||
-    blob.size < 32
-  ) {
-    throw new Error(`Unexpected media payload (${contentType || 'unknown'}, ${blob.size}b)`)
+  try {
+    const token = typeof window !== 'undefined' ? localStorage.getItem('accessToken') : null
+    const res = await fetch(absolute, {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    })
+    if (!res.ok) {
+      return absolute
+    }
+    const contentType = (res.headers.get('content-type') || '').toLowerCase()
+    const blob = await res.blob()
+    if (
+      contentType.includes('application/json') ||
+      contentType.includes('text/') ||
+      blob.size < 32
+    ) {
+      return absolute
+    }
+    const imageBlob =
+      contentType.startsWith('image/') || blob.type.startsWith('image/')
+        ? blob
+        : new Blob([blob], { type: contentType || 'image/jpeg' })
+    return URL.createObjectURL(imageBlob)
+  } catch {
+    return absolute
   }
-  const imageBlob =
-    contentType.startsWith('image/') || blob.type.startsWith('image/')
-      ? blob
-      : new Blob([blob], { type: contentType || 'image/jpeg' })
-  return URL.createObjectURL(imageBlob)
 }

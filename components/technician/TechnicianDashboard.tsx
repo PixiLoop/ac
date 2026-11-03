@@ -32,10 +32,28 @@ import { buildChecklistForHardware } from '../job-boards/types/mockData';
 import { TechnicianWorkOrderModal } from './TechnicianWorkOrderModal';
 import { useAuth } from '../../providers/auth-provider';
 
-export const TechnicianDashboard: React.FC = () => {
+export interface TechnicianDashboardProps {
+    roleMode?: 'technician' | 'contractor' | 'subcontractor';
+}
+
+export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMode }) => {
     const { user, loading, logout } = useAuth();
     const router = useRouter();
-    const { assignedJobs, changeJobStatus, getChecklistStats, refreshFromApi, checklistTemplates } = useOperations();
+    const {
+        assignedJobs,
+        changeJobStatus,
+        getChecklistStats,
+        refreshFromApi,
+        checklistTemplates,
+        technicians,
+        contractors,
+        subContractors,
+    } = useOperations();
+
+    const [selectedRole, setSelectedRole] = useState<'all' | 'technician' | 'contractor' | 'subcontractor'>(
+        roleMode || 'all'
+    );
+    const [selectedWorkerId, setSelectedWorkerId] = useState<string>('all');
 
     const [activeTech, setActiveTech] = useState({
         id: 'tech-1',
@@ -43,7 +61,7 @@ export const TechnicianDashboard: React.FC = () => {
         firstName: 'John',
         lastName: 'Smith',
         email: 'john.smith@aerotrack.com.au',
-        role: 'Senior Field Technician',
+        role: roleMode === 'contractor' ? 'Authorized Contractor' : roleMode === 'subcontractor' ? 'Field Subcontractor' : 'Senior Field Technician',
         depot: 'Sydney Eastern Creek Depot',
         phone: '+61 412 345 678',
         avatar: 'JS',
@@ -61,6 +79,28 @@ export const TechnicianDashboard: React.FC = () => {
     const [startedJobIds, setStartedJobIds] = useState<Set<string>>(() => {
         return new Set<string>();
     });
+
+    // Update active worker based on logged-in user
+    useEffect(() => {
+        if (user) {
+            setActiveTech((prev) => ({
+                ...prev,
+                id: user.id || prev.id,
+                displayName: user.displayName || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email || prev.displayName,
+                firstName: user.firstName || prev.firstName,
+                lastName: user.lastName || prev.lastName,
+                email: user.email || prev.email,
+                role: (user as any).role || prev.role,
+                avatar: ((user.displayName || user.firstName || 'JS')[0] + ((user.lastName || '')[0] || '')).toUpperCase(),
+            }));
+        }
+    }, [user]);
+
+    useEffect(() => {
+        if (roleMode) {
+            setSelectedRole(roleMode);
+        }
+    }, [roleMode]);
 
     useEffect(() => {
         refreshFromApi();
@@ -133,17 +173,43 @@ export const TechnicianDashboard: React.FC = () => {
         return pool.map(ensureJobChecklist);
     }, [assignedJobs, ensureJobChecklist]);
 
-    // Filter assigned jobs specifically for the active technician
+    // Filter assigned jobs according to selected role and worker
     const technicianJobs = useMemo(() => {
         return sourceJobs.filter((job) => {
-            if (!job.technicianId && !job.technicianName) return true; // Fallback for unassigned/general queue
-            return (
-                job.technicianId === activeTech.id ||
-                job.technicianName?.toLowerCase() === activeTech.displayName.toLowerCase() ||
-                (user && (job.technicianId === user.id || job.technicianName === user.displayName))
-            );
+            // 1. Role filter (technician, contractor, subcontractor)
+            if (selectedRole !== 'all') {
+                const assigned = (job.assignedTo || 'technician').toLowerCase();
+                if (assigned !== selectedRole.toLowerCase()) return false;
+            }
+
+            // 2. Worker selection filter
+            if (selectedWorkerId !== 'all') {
+                const matchWorker =
+                    job.technicianId === selectedWorkerId ||
+                    job.userId === selectedWorkerId ||
+                    job.technicianName?.toLowerCase() === selectedWorkerId.toLowerCase();
+                if (!matchWorker) return false;
+            } else {
+                // If in default view and logged in as a field technician/contractor (not admin/manager)
+                const userRole = (user as any)?.role;
+                const isManager =
+                    userRole === 'SUPER_ADMIN' ||
+                    userRole === 'ADMIN' ||
+                    userRole === 'DISPATCHER';
+
+                if (!isManager && user?.id) {
+                    const matchUser =
+                        job.technicianId === user.id ||
+                        job.userId === user.id ||
+                        (user.displayName && job.technicianName?.toLowerCase() === user.displayName.toLowerCase());
+                    // If job explicitly matches user, show it; otherwise if user is viewing specific role, show queue
+                    if (!matchUser && selectedRole === 'all') return false;
+                }
+            }
+
+            return true;
         });
-    }, [sourceJobs, activeTech, user]);
+    }, [sourceJobs, selectedRole, selectedWorkerId, user]);
 
     const todayStr = useMemo(() => new Date().toISOString().split('T')[0], []);
 
@@ -405,6 +471,101 @@ export const TechnicianDashboard: React.FC = () => {
                     </button>
                 </div>
             </header>
+
+            {/* Persona / Role Selector Bar (Technician, Contractor, Subcontractor) */}
+            <div className="bg-white border-b border-slate-200 px-4 sm:px-8 py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-2xs">
+                <div className="flex items-center gap-1.5 overflow-x-auto scrollbar-none">
+                    <span className="text-xs font-semibold text-slate-500 mr-1 flex items-center gap-1">
+                        <User className="w-3.5 h-3.5" /> Portal View:
+                    </span>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedRole('all')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                            selectedRole === 'all'
+                                ? 'bg-slate-900 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                    >
+                        All Field Jobs ({sourceJobs.length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedRole('technician')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            selectedRole === 'technician'
+                                ? 'bg-blue-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                    >
+                        <Wrench className="w-3 h-3" />
+                        Technicians ({sourceJobs.filter((j) => (j.assignedTo || 'technician') === 'technician').length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedRole('contractor')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            selectedRole === 'contractor'
+                                ? 'bg-indigo-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                    >
+                        <Truck className="w-3 h-3" />
+                        Contractors ({sourceJobs.filter((j) => j.assignedTo === 'contractor').length})
+                    </button>
+                    <button
+                        type="button"
+                        onClick={() => setSelectedRole('subcontractor')}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                            selectedRole === 'subcontractor'
+                                ? 'bg-purple-600 text-white shadow-xs'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                        }`}
+                    >
+                        <ShieldCheck className="w-3 h-3" />
+                        Subcontractors ({sourceJobs.filter((j) => j.assignedTo === 'subcontractor').length})
+                    </button>
+                </div>
+
+                {/* Filter by specific installer / worker */}
+                <div className="flex items-center gap-2 text-xs">
+                    <span className="text-slate-500 font-medium">Assigned Worker:</span>
+                    <select
+                        value={selectedWorkerId}
+                        onChange={(e) => setSelectedWorkerId(e.target.value)}
+                        className="bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1 text-slate-800 text-xs font-medium cursor-pointer focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                        <option value="all">All Assigned & Open Queue</option>
+                        {technicians.length > 0 && (
+                            <optgroup label="Internal Technicians">
+                                {technicians.map((t) => (
+                                    <option key={t.id} value={t.id}>
+                                        {t.displayName || `${t.firstName ?? ''} ${t.lastName ?? ''}`.trim() || t.id}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                        {contractors.length > 0 && (
+                            <optgroup label="Contractors">
+                                {contractors.map((c: any) => (
+                                    <option key={c.id} value={c.id}>
+                                        {c.displayName || `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() || c.name || c.id}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                        {subContractors.length > 0 && (
+                            <optgroup label="Subcontractors">
+                                {subContractors.map((s: any) => (
+                                    <option key={s.id} value={s.id}>
+                                        {s.displayName || `${s.firstName ?? ''} ${s.lastName ?? ''}`.trim() || s.name || s.id}
+                                    </option>
+                                ))}
+                            </optgroup>
+                        )}
+                    </select>
+                </div>
+            </div>
 
             {/* Main Content Area */}
             <main className="flex-1 w-full mx-auto p-4 sm:p-6 space-y-6">
@@ -840,7 +1001,7 @@ export const TechnicianDashboard: React.FC = () => {
             {/* Technician Work Order Modal */}
             {selectedJob && (
                 <TechnicianWorkOrderModal
-                    job={selectedJob}
+                    job={sourceJobs.find((j) => j.id === selectedJob.id) || selectedJob}
                     isOpen={!!selectedJob}
                     onClose={() => setSelectedJob(null)}
                     technicianName={activeTech.displayName}

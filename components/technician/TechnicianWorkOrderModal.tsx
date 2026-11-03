@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import { InstallationJob, ChecklistSection } from '../job-boards/types/installation';
 import { useOperations } from '../../providers/OperationsContext';
+import { AuthenticatedPhoto } from '../job-boards/operations/shared/AuthenticatedPhoto';
 
 export interface WorkOrderPhoto {
   id: string;
@@ -108,7 +109,7 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   onClose,
   technicianName,
 }) => {
-  const { toggleChecklistItem, changeJobStatus, getChecklistStats, uploadChecklistPhoto } =
+  const { toggleChecklistItem, changeJobStatus, getChecklistStats, uploadChecklistPhoto, deleteChecklistPhoto } =
     useOperations();
   const [activeTab, setActiveTab] = useState<'checklists' | 'hardware' | 'signoff'>('checklists');
   const [notes, setNotes] = useState(job.notes || '');
@@ -174,7 +175,18 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
       }
 
       if (existingChecklistPhotos.length > 0) {
-        setPhotos(existingChecklistPhotos);
+        setPhotos((current) => {
+          const map = new Map<string, WorkOrderPhoto>();
+          for (const p of existingChecklistPhotos) {
+            map.set(p.id, p);
+          }
+          for (const p of current) {
+            if (!map.has(p.id)) {
+              map.set(p.id, p);
+            }
+          }
+          return Array.from(map.values());
+        });
       } else {
         // Initial illustrative mock installation photos for this specific work order
         const initialMock: WorkOrderPhoto[] = [];
@@ -184,19 +196,19 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
     } catch (e) {
       console.warn('Error loading photos from storage', e);
     }
-  }, [job.id, storageKey, signoffStorageKey]);
+  }, [job.id, job.checklistSections, storageKey, signoffStorageKey]);
 
-  // Persist photos to localStorage whenever updated
+  // Persist photos to state and localStorage whenever updated
   const savePhotos = useCallback(
     (updatedPhotos: WorkOrderPhoto[]) => {
-      // setPhotos(updatedPhotos);
-      // if (typeof window !== 'undefined') {
-      //   try {
-      //     localStorage.setItem(storageKey, JSON.stringify(updatedPhotos));
-      //   } catch (e) {
-      //     console.warn('Failed to persist photos to localStorage:', e);
-      //   }
-      // }
+      setPhotos(updatedPhotos);
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(storageKey, JSON.stringify(updatedPhotos));
+        } catch (e) {
+          console.warn('Failed to persist photos to localStorage:', e);
+        }
+      }
     },
     [storageKey]
   );
@@ -204,22 +216,31 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
   // Persist signoff details
   const saveSignoffData = useCallback(
     (notesVal: string, nameVal: string, signedVal: boolean) => {
-      // if (typeof window !== 'undefined') {
-      //   try {
-      //     localStorage.setItem(
-      //       signoffStorageKey,
-      //       JSON.stringify({
-      //         notes: notesVal,
-      //         signoffName: nameVal,
-      //         signedOff: signedVal,
-      //         updatedAt: new Date().toISOString(),
-      //       })
-      //     );
-      //   } catch (e) {}
-      // }
+      if (typeof window !== 'undefined') {
+        try {
+          localStorage.setItem(
+            signoffStorageKey,
+            JSON.stringify({
+              notes: notesVal,
+              signoffName: nameVal,
+              signedOff: signedVal,
+              updatedAt: new Date().toISOString(),
+            })
+          );
+        } catch (e) {}
+      }
     },
     [signoffStorageKey]
   );
+
+  const renderThumbnail = (photoUrl: string, altText: string, imgClass: string) => {
+    if (!photoUrl) return null;
+    if (photoUrl.startsWith('data:') || photoUrl.startsWith('blob:')) {
+      // eslint-disable-next-line @next/next/no-img-element
+      return <img src={photoUrl} alt={altText} className={imgClass} />;
+    }
+    return <AuthenticatedPhoto src={photoUrl} alt={altText} className={imgClass} openOnClick={false} />;
+  };
 
   if (!isOpen) return null;
 
@@ -275,26 +296,53 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
           overrideCategory ||
           (associatedTask ? `Checklist: ${associatedTask.itemTitle}` : activePhotoCategory);
 
+        // Determine which checklist item to attach this photo to
+        let targetSectionId = associatedTask?.sectionId;
+        let targetItemId = associatedTask?.itemId;
+        let targetItemTitle = associatedTask?.itemTitle;
+
+        if (!targetItemId && job.checklistSections && job.checklistSections.length > 0) {
+          // Look for an item matching activePhotoCategory or fallback to first available item
+          for (const sec of job.checklistSections) {
+            for (const item of sec.items) {
+              if (
+                item.title.toLowerCase().includes(activePhotoCategory.toLowerCase()) ||
+                sec.title.toLowerCase().includes(activePhotoCategory.toLowerCase())
+              ) {
+                targetSectionId = sec.id;
+                targetItemId = item.id;
+                targetItemTitle = item.title;
+                break;
+              }
+            }
+            if (targetItemId) break;
+          }
+          if (!targetItemId && job.checklistSections[0]?.items?.[0]) {
+            targetSectionId = job.checklistSections[0].id;
+            targetItemId = job.checklistSections[0].items[0].id;
+            targetItemTitle = job.checklistSections[0].items[0].title;
+          }
+        }
+
         const newPhoto: WorkOrderPhoto = {
           id: photoId,
           url: compressedBase64,
           fileName: file.name,
           category,
           timestamp: timeFormatted,
-          checklistItemId: associatedTask?.itemId,
-          checklistItemTitle: associatedTask?.itemTitle,
+          checklistItemId: targetItemId,
+          checklistItemTitle: targetItemTitle,
         };
 
         newPhotoList.push(newPhoto);
 
-        // Also notify backend if this was a checklist item photo
-        if (associatedTask) {
-          uploadChecklistPhoto(
-            job.id,
-            associatedTask.sectionId,
-            associatedTask.itemId,
-            file
-          ).catch(() => {});
+        // Persist photo directly to backend checklist item so it is stored in database and Azure/local storage
+        if (targetSectionId && targetItemId) {
+          try {
+            await uploadChecklistPhoto(job.id, targetSectionId, targetItemId, file);
+          } catch (uploadErr) {
+            console.warn('Backend checklist photo upload error:', uploadErr);
+          }
         }
       } catch (err) {
         console.error('Failed to process image file:', err);
@@ -330,8 +378,18 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
     }
   };
 
-  const handleDeletePhoto = (photoId: string, e?: React.MouseEvent) => {
+  const handleDeletePhoto = async (photoId: string, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
+    const photoToDelete = photos.find((p) => p.id === photoId);
+    if (photoToDelete?.checklistItemId) {
+      for (const sec of job.checklistSections || []) {
+        const item = sec.items.find((i) => i.id === photoToDelete.checklistItemId);
+        if (item) {
+          deleteChecklistPhoto(job.id, sec.id, item.id, photoId).catch(() => {});
+          break;
+        }
+      }
+    }
     const updated = photos.filter((p) => p.id !== photoId);
     savePhotos(updated);
     if (lightboxPhotoIndex !== null && lightboxPhotoIndex >= updated.length) {
@@ -671,11 +729,11 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                                       onClick={() => setLightboxPhotoIndex(globalIdx >= 0 ? globalIdx : 0)}
                                       className="relative group w-14 h-14 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 cursor-pointer shadow-2xs hover:ring-2 hover:ring-blue-500 transition-all"
                                     >
-                                      <img
-                                        src={photo.url}
-                                        alt={photo.fileName || 'Proof'}
-                                        className="w-full h-full object-cover"
-                                      />
+                                      {renderThumbnail(
+                                        photo.url,
+                                        photo.fileName || 'Proof',
+                                        'w-full h-full object-cover'
+                                      )}
                                       <div className="absolute inset-0 bg-slate-950/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white">
                                         <Eye className="w-3.5 h-3.5" />
                                       </div>
@@ -859,11 +917,11 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                           key={photo.id}
                           className="group relative rounded-xl overflow-hidden border border-slate-200 bg-slate-100 aspect-square shadow-2xs hover:shadow-md transition-all flex flex-col justify-end"
                         >
-                          <img
-                            src={photo.url}
-                            alt={photo.fileName || 'Installation photo'}
-                            className="absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
-                          />
+                          {renderThumbnail(
+                            photo.url,
+                            photo.fileName || 'Installation photo',
+                            'absolute inset-0 w-full h-full object-cover transition-transform duration-300 group-hover:scale-105'
+                          )}
 
                           {/* Gradient overlay for text legibility */}
                           <div className="absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-black/30 pointer-events-none" />
@@ -1076,11 +1134,11 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
 
           {/* Photo Display & Navigation */}
           <div className="relative max-w-5xl max-h-[75vh] w-full flex items-center justify-center overflow-hidden">
-            <img
-              src={photos[lightboxPhotoIndex].url}
-              alt="Installation Proof"
-              className="max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/10"
-            />
+            {renderThumbnail(
+              photos[lightboxPhotoIndex].url,
+              photos[lightboxPhotoIndex].fileName || 'Installation Proof',
+              'max-h-[75vh] max-w-full object-contain rounded-2xl shadow-2xl border border-white/10'
+            )}
 
             {/* Left Nav Button */}
             {photos.length > 1 && (

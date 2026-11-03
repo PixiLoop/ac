@@ -4,5 +4,5 @@ import React from 'react';
 import { TechnicianDashboard } from '../../components/technician/TechnicianDashboard';
 
 export default function TechnicianDashboardPage() {
-  return <TechnicianDashboard />;
+  return <TechnicianDashboard roleMode="technician" />;
 }

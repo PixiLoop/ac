@@ -31,6 +31,8 @@ import { SearchSelect } from '../../../components/ui/SearchSelect';
 import { FormSection } from '../../../components/forms/FormSection';
 import { FMInstallDetailsPanel } from '../../../components/fm-preinstall/sections/FMInstallDetailsPanel';
 import { BulkRolloutList } from '../../../components/fm-preinstall/BulkRolloutList';
+import { useOperations } from '../../../providers/OperationsContext';
+import { buildChecklistForHardware } from '../../../components/job-boards/types/mockData';
 
 interface VehicleRow {
     id: string;
@@ -76,6 +78,7 @@ function IndexBadge({ children }: { children: React.ReactNode }) {
 export default function BulkFMPreinstallPage() {
     const router = useRouter();
     const { showToast } = useToast();
+    const { createInstallationJob, refreshFromApi, checklistTemplates } = useOperations();
 
     // Tab State: 'records' (Read) or 'create' (Create)
     const [activeTab, setActiveTab] = useState<'records' | 'create'>('records');
@@ -738,9 +741,47 @@ export default function BulkFMPreinstallPage() {
             const masterJobId = data.masterJobId || `INSTALL-BULK-${Date.now().toString().slice(-4)}`;
             const masterJobNumber = data.masterJobNumber || `JOB-BULK-${vehicles.length}V`;
 
+            const unitModel = installDetail.fmUnitCode || installDetail.fmUnitType || 'MIX4000';
+            const matchingTemplates = buildChecklistForHardware([unitModel], checklistTemplates);
+            const resolvedChecklist = matchingTemplates.length > 0 ? matchingTemplates : [
+                {
+                    id: 'sec-fleet-prep',
+                    title: `Fleet Hardware Pre-Configuration (${vehicles.length} Units)`,
+                    hardwareModel: unitModel,
+                    items: [
+                        { id: `chk-b1`, title: `Program and flash firmware on ${vehicles.length}x ${unitModel} devices`, isRequired: true, displayOrder: 1, completed: false, section: 'Fleet Prep' },
+                        { id: `chk-b2`, title: `Insert and verify M2M SIM cards & APN connectivity`, isRequired: true, displayOrder: 2, completed: false, section: 'Fleet Prep' },
+                        { id: `chk-b3`, title: `Assemble ${vehicles.length} harness looms & fuse packs`, isRequired: true, displayOrder: 3, completed: false, section: 'Fleet Prep' },
+                    ],
+                },
+                {
+                    id: 'sec-fleet-install',
+                    title: `On-Site Vehicle Installation (${vehicles.length} Vehicles)`,
+                    hardwareModel: unitModel,
+                    items: vehicles.slice(0, 10).map((v, i) => ({
+                        id: `chk-veh-${i}`,
+                        title: `Install & certify unit in Fleet #${v.fleetNumber} (${v.regoNumber} - ${v.vehicleMake} ${v.vehicleModel})`,
+                        isRequired: true,
+                        displayOrder: i + 1,
+                        completed: false,
+                        section: 'Vehicle Installation',
+                    })),
+                },
+            ];
+
+            const selectedUser = users.find((u) => u.id === installerId);
+            const roleName = String(selectedUser?.role?.name || selectedUser?.role || '').toLowerCase();
+            const assignedRole: 'technician' | 'contractor' | 'subcontractor' = roleName.includes('subcontractor') || roleName.includes('sub-contractor')
+                ? 'subcontractor'
+                : roleName.includes('contractor')
+                ? 'contractor'
+                : 'technician';
+
             const newJob = {
                 id: masterJobId,
                 jobNumber: masterJobNumber,
+                assignedTo: assignedRole,
+                isWhiteboard: false,
                 customerId,
                 customerName: selectedCustomer?.name || shippingAddress.name || 'FM Customer',
                 customerContact: shippingAddress.name || 'Fleet Manager',
@@ -756,50 +797,26 @@ export default function BulkFMPreinstallPage() {
                 },
                 hardware: packageItems.map((item) => ({
                     id: item.productId,
-                    model: item.partNumber || installDetail.fmUnitCode || 'MIX4000',
+                    model: item.partNumber || unitModel,
                     name: `${item.description} (x${vehicles.length})`,
                     serialNumber: 'Batch Rollout',
                     imei: 'Batch Rollout',
                     category: 'Fleet Rollout Package',
                 })),
                 technicianId: installerId || undefined,
-                technicianName: users.find((u) => u.id === installerId)
-                    ? `${users.find((u) => u.id === installerId).firstName} ${users.find((u) => u.id === installerId).lastName}`
+                technicianName: selectedUser
+                    ? `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}`.trim() || selectedUser.displayName || selectedUser.email
                     : undefined,
                 installationDate: installDate,
                 startTime: '08:00',
                 endTime: '17:00',
                 isScheduled: !!(installerId && installDate),
-                status: 'Not Actioned',
-                checklistSections: [
-                    {
-                        id: 'sec-fleet-prep',
-                        title: `Fleet Hardware Pre-Configuration (${vehicles.length} Units)`,
-                        hardwareModel: installDetail.fmUnitCode || 'MIX4000',
-                        items: [
-                            { id: `chk-b1`, title: `Program and flash firmware on ${vehicles.length}x ${installDetail.fmUnitCode || 'MIX4000'} devices`, isRequired: true, displayOrder: 1, completed: false, section: 'Fleet Prep' },
-                            { id: `chk-b2`, title: `Insert and verify M2M SIM cards & APN connectivity`, isRequired: true, displayOrder: 2, completed: false, section: 'Fleet Prep' },
-                            { id: `chk-b3`, title: `Assemble ${vehicles.length} harness looms & fuse packs`, isRequired: true, displayOrder: 3, completed: false, section: 'Fleet Prep' },
-                        ],
-                    },
-                    {
-                        id: 'sec-fleet-install',
-                        title: `On-Site Vehicle Installation (${vehicles.length} Vehicles)`,
-                        hardwareModel: installDetail.fmUnitCode || 'MIX4000',
-                        items: vehicles.slice(0, 10).map((v, i) => ({
-                            id: `chk-veh-${i}`,
-                            title: `Install & certify unit in Fleet #${v.fleetNumber} (${v.regoNumber} - ${v.vehicleMake} ${v.vehicleModel})`,
-                            isRequired: true,
-                            displayOrder: i + 1,
-                            completed: false,
-                            section: 'Vehicle Installation',
-                        })),
-                    },
-                ],
+                status: 'Not Actioned' as any,
+                checklistSections: resolvedChecklist,
                 timeline: [
                     {
                         id: `tl-${Date.now()}`,
-                        status: 'Not Actioned',
+                        status: 'Not Actioned' as any,
                         timestamp: new Date().toISOString(),
                         updatedBy: 'Operations Dispatch',
                         note: `Bulk installation job created for ${vehicles.length} vehicles. Linked preinstalls: ${createdPreinstalls.map((p: any) => p.preinstallNo).join(', ')}`,
@@ -810,6 +827,13 @@ export default function BulkFMPreinstallPage() {
                 canInvoice: false,
             };
 
+            try {
+                await createInstallationJob(newJob as any);
+                await refreshFromApi();
+            } catch (jobErr) {
+                console.warn('Could not auto-create bulk installation job in context:', jobErr);
+            }
+
             if (typeof window !== 'undefined') {
                 const raw = localStorage.getItem('operations_installation_jobs');
                 let currentJobs: any[] = [];
@@ -818,6 +842,7 @@ export default function BulkFMPreinstallPage() {
                 }
                 currentJobs = [newJob, ...currentJobs.filter((j: any) => j.id !== newJob.id)];
                 localStorage.setItem('operations_installation_jobs', JSON.stringify(currentJobs));
+                window.dispatchEvent(new Event('operations_jobs_updated'));
             }
 
             setSaveProgress(100);

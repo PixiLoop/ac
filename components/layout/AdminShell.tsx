@@ -515,6 +515,35 @@ export function AdminShell({ title, children, showTableDensity }: any) {
                   >
                     <ClipboardList className="h-3.5 w-3.5" />Job Book Entry
                   </Link>
+                  <div className="pt-1 mt-1 border-t border-slate-200/60">
+                    <Link
+                      href="/technician"
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-blue-700',
+                        pathname === '/technician' && 'bg-blue-50 font-semibold'
+                      )}
+                    >
+                      <Wrench className="h-3.5 w-3.5" />Technician Portal
+                    </Link>
+                    <Link
+                      href="/contractor"
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-indigo-700',
+                        pathname === '/contractor' && 'bg-indigo-50 font-semibold'
+                      )}
+                    >
+                      <Truck className="h-3.5 w-3.5" />Contractor Portal
+                    </Link>
+                    <Link
+                      href="/subcontractor"
+                      className={cn(
+                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-purple-700',
+                        pathname === '/subcontractor' && 'bg-purple-50 font-semibold'
+                      )}
+                    >
+                      <Shield className="h-3.5 w-3.5" />Subcontractor Portal
+                    </Link>
+                  </div>
                 </div>
               )}
             </div>

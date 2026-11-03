@@ -14,13 +14,17 @@ export class JobsController {
     @Query('take') take = '20',
     @Query('status') status = 'all',
     @Query('search') search?: string,
+    @Query('assignedTo') assignedTo?: string,
+    @Query('technicianId') technicianId?: string,
   ) {
-    const userId = req.user?.id;
+    const userId = technicianId || req.user?.id;
     const numSkip = Number(skip) || 0;
     const numTake = Number(take) || 20;
 
     const data = await this.jobsService.findAssigned({
       userId,
+      technicianId,
+      assignedTo,
       skip: numSkip,
       take: numTake,
       status,

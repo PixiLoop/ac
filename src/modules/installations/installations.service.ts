@@ -124,65 +124,210 @@ export class InstallationsService {
   /**
    * Attach ACTIVE checklist templates for the given hardware models onto a job.
    * Skips models that already have at least one checklist section on the job.
+   * If no database template exists for the model, automatically provisions standard QA sections.
    */
   private async attachChecklistsForModels(jobId: string, models: string[]) {
-    const uniqueDbModels = Array.from(
-      new Set(
-        models
-          .map((m) => this.toDbHardwareModel(m))
-          .filter((m): m is string => !!m),
-      ),
-    );
+    const rawCandidates = models.length > 0 ? models.map((m) => String(m || '').trim()).filter(Boolean) : ['MIX4000'];
+    const candidates = Array.from(new Set(rawCandidates));
 
-    for (const dbModel of uniqueDbModels) {
+    for (const candidate of candidates) {
+      const validEnums = [
+        'MIX4000',
+        'FM3306',
+        'HD_CAMERA',
+        'STANDARD_CAMERA',
+        'BASE_UNIT',
+        'SIM',
+        'GPS_UNIT',
+        'CAN_BUS_INTERFACE',
+        'DRIVER_ID_KEYPAD',
+      ];
+      const dbModel = this.toDbHardwareModel(candidate) || (validEnums.includes(candidate.toUpperCase()) ? candidate.toUpperCase() : 'MIX4000');
+      const label = this.toFrontendHardwareModel(dbModel) || candidate;
+
       const existingCount = await (this.prisma as any).jobChecklistSection.count({
         where: { jobId, hardwareModel: dbModel },
       });
       if (existingCount > 0) continue;
 
-      const tmpl = await (this.prisma as any).checklistTemplate.findFirst({
-        where: { hardwareModel: dbModel, status: 'ACTIVE' },
-        include: {
-          sections: {
-            orderBy: { displayOrder: 'asc' },
-            include: {
-              items: { orderBy: { displayOrder: 'asc' } },
-            },
+      let tmpl: any = null;
+      try {
+        // 1. Try finding segment and its associated ChecklistTemplate
+        const segment = await (this.prisma as any).fMServiceSegment.findFirst({
+          where: {
+            isActive: true,
+            OR: [
+              { code: { equals: candidate, mode: 'insensitive' } },
+              { label: { equals: candidate, mode: 'insensitive' } },
+              { id: candidate },
+            ],
           },
-        },
-        orderBy: { updatedAt: 'desc' },
-      });
-      if (!tmpl?.sections?.length) continue;
-
-      const label = this.toFrontendHardwareModel(dbModel) || dbModel;
-      let sectionOrder =
-        (await (this.prisma as any).jobChecklistSection.count({ where: { jobId } })) + 1;
-
-      for (const sec of tmpl.sections) {
-        await (this.prisma as any).jobChecklistSection.create({
-          data: {
-            jobId,
-            title: `${label} Checklist — ${sec.title}`,
-            hardwareModel: dbModel,
-            hardwareName: tmpl.hardwareType,
-            displayOrder: sectionOrder++,
-            items: {
-              create: (sec.items || []).map((item: any, idx: number) => ({
-                templateItemId: item.id,
-                title: item.title,
-                description: item.description || null,
-                section: sec.title,
-                hardwareModel: dbModel,
-                isRequired: item.isRequired ?? true,
-                displayOrder: item.displayOrder ?? idx + 1,
-                completed: false,
-                notes: '',
-                photos: [],
-                comments: [],
-              })),
+          include: {
+            ChecklistTemplate: {
+              where: { status: 'ACTIVE' },
+              include: {
+                sections: {
+                  orderBy: { displayOrder: 'asc' },
+                  include: {
+                    items: { orderBy: { displayOrder: 'asc' } },
+                  },
+                },
+              },
             },
           },
         });
+
+        if (segment?.ChecklistTemplate?.length) {
+          tmpl = { ...segment.ChecklistTemplate[0], FMServiceSegment: segment };
+        }
+
+        // 2. Direct template lookup by fmSegmentId, segment code/label, or name
+        if (!tmpl) {
+          tmpl = await (this.prisma as any).checklistTemplate.findFirst({
+            where: {
+              status: 'ACTIVE',
+              OR: [
+                ...(segment ? [{ fmSegmentId: segment.id }] : []),
+                { FMServiceSegment: { code: { equals: candidate, mode: 'insensitive' } } },
+                { FMServiceSegment: { label: { equals: candidate, mode: 'insensitive' } } },
+                { name: { contains: candidate, mode: 'insensitive' } },
+                { name: { contains: label, mode: 'insensitive' } },
+              ],
+            },
+            include: {
+              sections: {
+                orderBy: { displayOrder: 'asc' },
+                include: {
+                  items: { orderBy: { displayOrder: 'asc' } },
+                },
+              },
+              FMServiceSegment: true,
+            },
+            orderBy: { updatedAt: 'desc' },
+          });
+        }
+
+        // 3. If still not found, check any active template in the system before falling back to generic
+        if (!tmpl) {
+          tmpl = await (this.prisma as any).checklistTemplate.findFirst({
+            where: { status: 'ACTIVE' },
+            include: {
+              sections: {
+                orderBy: { displayOrder: 'asc' },
+                include: {
+                  items: { orderBy: { displayOrder: 'asc' } },
+                },
+              },
+              FMServiceSegment: true,
+            },
+            orderBy: { updatedAt: 'desc' },
+          });
+        }
+      } catch (err: any) {
+        this.logger.warn(`Template lookup error for ${candidate}: ${err?.message}`);
+      }
+
+      let sectionsToCreate = tmpl?.sections;
+      const hardwareTitle = tmpl?.FMServiceSegment?.label || tmpl?.name || `${label} Telematics System`;
+
+      // Fallback default QA sections only when no template is configured in DB
+      if (!sectionsToCreate || sectionsToCreate.length === 0) {
+        sectionsToCreate = [
+          {
+            title: 'Pre-Installation Inspection',
+            items: [
+              {
+                title: 'Verify vehicle ignition OFF and isolate auxiliary battery',
+                description: 'Essential safety check prior to vehicle wiring harness modification',
+                isRequired: true,
+              },
+              {
+                title: 'Inspect physical mounting clearance behind dashboard/trim',
+                description: 'Ensure adequate airflow and zero obstruction with vehicle steering/pedal linkages',
+                isRequired: true,
+              },
+              {
+                title: 'Confirm unit serial number & SIM allocation match work order',
+                description: 'Verify hardware matches digital dispatch records',
+                isRequired: true,
+              },
+            ],
+          },
+          {
+            title: 'Mounting & Wiring Harness',
+            items: [
+              {
+                title: 'Securely mount unit bracket using automotive-grade ties/hardware',
+                description: 'Unit must be vibration-resistant and firmly anchored to subframe',
+                isRequired: true,
+              },
+              {
+                title: 'Connect constant 12V/24V power, chassis ground, and ignition sense',
+                description: 'Solder or crimp heat-shrink inline blade fuses according to specification',
+                isRequired: true,
+              },
+              {
+                title: 'Position GPS & cellular antenna with clear line-of-sight to sky',
+                description: 'Mount on windshield or top dash; avoid metal overhangs',
+                isRequired: true,
+              },
+            ],
+          },
+          {
+            title: 'Function Testing & Evidence Sign-Off',
+            items: [
+              {
+                title: 'Cycle vehicle ignition and verify status LED indicators',
+                description: 'Confirm solid cellular registration and satellite fix lock',
+                isRequired: true,
+              },
+              {
+                title: 'Capture photographic evidence of installed hardware & fuse tap',
+                description: 'Upload high-resolution photo for QA sign-off verification',
+                isRequired: true,
+              },
+              {
+                title: 'Tidy wiring loom with loom tape and reinstall all trim panels',
+                description: 'Return vehicle cabin to OEM clean condition',
+                isRequired: true,
+              },
+            ],
+          },
+        ];
+      }
+
+      let sectionOrder =
+        (await (this.prisma as any).jobChecklistSection.count({ where: { jobId } })) + 1;
+
+      for (const sec of sectionsToCreate) {
+        try {
+          await (this.prisma as any).jobChecklistSection.create({
+            data: {
+              jobId,
+              title: `${tmpl?.name || label} — ${sec.title}`,
+              hardwareModel: dbModel,
+              hardwareName: hardwareTitle,
+              displayOrder: sec.displayOrder || sectionOrder++,
+              items: {
+                create: (sec.items || []).map((item: any, idx: number) => ({
+                  templateItemId: item.id || null,
+                  title: item.title,
+                  description: item.description || null,
+                  section: sec.title,
+                  hardwareModel: dbModel,
+                  isRequired: item.isRequired ?? true,
+                  displayOrder: item.displayOrder ?? idx + 1,
+                  completed: false,
+                  notes: '',
+                  photos: [],
+                  comments: [],
+                })),
+              },
+            },
+          });
+        } catch (createErr: any) {
+          this.logger.warn(`Failed to create checklist section for job ${jobId}: ${createErr?.message}`);
+        }
       }
     }
   }
@@ -479,33 +624,62 @@ export class InstallationsService {
     const dbStatus = statusMappingToDb[dto.status] || 'NOT_ACTIONED';
 
     const techId = dto.technicianId || null;
-    const job = await (this.prisma as any).installationJob.create({
-      data: {
-        id,
-        jobNumber,
-        customerId,
-        projectId: dto.projectId || 'proj-fleet-telematics',
-        vehicleId,
-        location: dto.location || 'Main Workshop',
-        technicianId: techId,
-        // user relation is on userId — keep in sync with technicianId
-        userId: techId,
-        installationDate: dto.installationDate ? new Date(dto.installationDate) : null,
-        startTime: dto.startTime || null,
-        endTime: dto.endTime || null,
-        isScheduled: !!dto.isScheduled,
-        status: dbStatus,
-        notes: dto.notes || '',
-        salesOrderId: dto.salesOrderId ?? undefined,
-        timeline: {
-          create: {
-            status: dbStatus,
-            updatedByName: 'Operations Dispatch',
-            note: 'Job created',
-          },
-        },
+    const assignedTo = dto.assignedTo && ['technician', 'contractor', 'subcontractor'].includes(dto.assignedTo)
+      ? dto.assignedTo
+      : 'technician';
+
+    let job = await (this.prisma as any).installationJob.findFirst({
+      where: {
+        OR: [{ id }, { jobNumber }],
       },
     });
+
+    if (job) {
+      job = await (this.prisma as any).installationJob.update({
+        where: { id: job.id },
+        data: {
+          customerId: customerId || job.customerId,
+          vehicleId: vehicleId || job.vehicleId,
+          location: dto.location || job.location,
+          technicianId: techId || job.technicianId,
+          userId: techId || job.userId,
+          assignedTo: assignedTo || job.assignedTo,
+          installationDate: dto.installationDate ? new Date(dto.installationDate) : job.installationDate,
+          startTime: dto.startTime || job.startTime,
+          endTime: dto.endTime || job.endTime,
+          isScheduled: dto.isScheduled !== undefined ? !!dto.isScheduled : job.isScheduled,
+          notes: dto.notes ? `${job.notes ? job.notes + ' | ' : ''}${dto.notes}` : job.notes,
+        },
+      });
+    } else {
+      job = await (this.prisma as any).installationJob.create({
+        data: {
+          id,
+          jobNumber,
+          customerId,
+          projectId: dto.projectId || 'proj-fleet-telematics',
+          vehicleId,
+          location: dto.location || 'Main Workshop',
+          technicianId: techId,
+          userId: techId,
+          assignedTo,
+          installationDate: dto.installationDate ? new Date(dto.installationDate) : null,
+          startTime: dto.startTime || null,
+          endTime: dto.endTime || null,
+          isScheduled: !!dto.isScheduled,
+          status: dbStatus,
+          notes: dto.notes || '',
+          salesOrderId: dto.salesOrderId ?? undefined,
+          timeline: {
+            create: {
+              status: dbStatus,
+              updatedByName: 'Operations Dispatch',
+              note: 'Job created',
+            },
+          },
+        },
+      });
+    }
 
     const hardwareList: any[] = Array.isArray(dto.hardware) ? dto.hardware : [];
     const createdModels: string[] = [];
@@ -531,9 +705,8 @@ export class InstallationsService {
       }
     }
 
-    if (createdModels.length) {
-      await this.attachChecklistsForModels(job.id, createdModels);
-    }
+    const modelsToAttach = createdModels.length > 0 ? createdModels : ['MIX4000'];
+    await this.attachChecklistsForModels(job.id, modelsToAttach);
 
     return this.getJob(job.id);
   }
@@ -682,13 +855,9 @@ export class InstallationsService {
     }
 
     const models = (job.hardware || []).map((h: any) => h.model).filter(Boolean);
-    if (!models.length) {
-      throw new BadRequestException(
-        'Add hardware to this job first, then generate the checklist from matching templates.',
-      );
-    }
+    const modelsToAttach = models.length > 0 ? models : ['MIX4000'];
 
-    await this.attachChecklistsForModels(id, models);
+    await this.attachChecklistsForModels(id, modelsToAttach);
     return this.getJob(id);
   }
 
@@ -1048,8 +1217,16 @@ export class InstallationsService {
       data: { photos },
     });
 
+    const clientPhoto = {
+      id: photoId,
+      url: `/installations/${jobId}/checklist/${sectionId}/items/${itemId}/photos/${photoId}/file`,
+      blobName,
+      fileName: file.originalname || `${photoId}${ext}`,
+      createdAt: photo.createdAt,
+    };
+
     const job = await this.getJob(jobId);
-    return { photo, job };
+    return { photo: clientPhoto, job };
   }
 
   private resolvePhotoBlobName(photo: {
@@ -1080,11 +1257,24 @@ export class InstallationsService {
       where: { id: itemId, sectionId },
       select: { id: true, photos: true, checklistSection: { select: { jobId: true } } },
     });
-    if (!item || item.checklistSection?.jobId !== jobId) {
-      throw new NotFoundException('Checklist item not found on this job');
+
+    let photo = this.parsePhotos(item?.photos).find((p) => p.id === photoId);
+
+    // Fallback across all checklist items for this job in case of direct lookups
+    if (!photo) {
+      const allJobItems = await (this.prisma as any).jobChecklistItem.findMany({
+        where: { checklistSection: { jobId } },
+        select: { photos: true },
+      });
+      for (const it of allJobItems) {
+        const found = this.parsePhotos(it.photos).find((p) => p.id === photoId);
+        if (found) {
+          photo = found;
+          break;
+        }
+      }
     }
 
-    const photo = this.parsePhotos(item.photos).find((p) => p.id === photoId);
     if (!photo) {
       throw new NotFoundException('Photo not found');
     }

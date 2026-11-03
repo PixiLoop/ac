@@ -116,7 +116,219 @@ export class ChecklistTemplatesService {
     };
   }
 
+  async ensureDefaultTemplates() {
+    try {
+      const count = await this.prisma.checklistTemplate.count({
+        where: { status: 'ACTIVE' },
+      });
+      if (count > 0) return;
+
+      const mixSegment = await this.prisma.fMServiceSegment.findFirst({
+        where: { code: 'MIX4000' },
+      });
+
+      if (mixSegment) {
+        await this.prisma.checklistTemplate.create({
+          data: {
+            name: 'MiX4000 Fleet Telematics Commissioning Checklist',
+            fmSegmentId: mixSegment.id,
+            status: 'ACTIVE',
+            sections: {
+              create: [
+                {
+                  title: 'Pre-Installation & Safety Verification',
+                  displayOrder: 1,
+                  items: {
+                    create: [
+                      {
+                        title: 'Verify vehicle ignition OFF and isolate auxiliary battery',
+                        description: 'Essential safety check prior to vehicle wiring harness modification',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Inspect physical mounting clearance behind dashboard/trim',
+                        description: 'Ensure adequate airflow and zero obstruction with vehicle steering/pedal linkages',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                      {
+                        title: 'Confirm unit serial number & SIM allocation match work order',
+                        description: 'Verify hardware matches digital dispatch records',
+                        isRequired: true,
+                        displayOrder: 3,
+                      },
+                    ],
+                  },
+                },
+                {
+                  title: 'Mounting & Wiring Harness',
+                  displayOrder: 2,
+                  items: {
+                    create: [
+                      {
+                        title: 'Securely mount unit bracket using automotive-grade ties/hardware',
+                        description: 'Unit must be vibration-resistant and firmly anchored to subframe',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Connect constant 12V/24V power, chassis ground, and ignition sense',
+                        description: 'Solder or crimp heat-shrink inline blade fuses according to specification',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                      {
+                        title: 'Position GPS & cellular antenna with clear line-of-sight to sky',
+                        description: 'Mount on windshield or top dash; avoid metal overhangs',
+                        isRequired: true,
+                        displayOrder: 3,
+                      },
+                    ],
+                  },
+                },
+                {
+                  title: 'CAN-Bus Telematics & Sensor Integration',
+                  displayOrder: 3,
+                  items: {
+                    create: [
+                      {
+                        title: 'Tap CAN-High and CAN-Low vehicle bus wiring using OEM-grade twisted pair',
+                        description: 'Connect to vehicle FMS gateway or OBD-II port as specified',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Verify digital inputs for PTO / auxiliary sensors',
+                        description: 'Test digital input voltage states with multimeter',
+                        isRequired: false,
+                        displayOrder: 2,
+                      },
+                    ],
+                  },
+                },
+                {
+                  title: 'Function Testing & Evidence Sign-Off',
+                  displayOrder: 4,
+                  items: {
+                    create: [
+                      {
+                        title: 'Cycle vehicle ignition and verify status LED indicators',
+                        description: 'Confirm solid cellular registration and satellite fix lock',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Capture photographic evidence of installed hardware & fuse tap',
+                        description: 'Upload high-resolution photo for QA sign-off verification',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                      {
+                        title: 'Tidy wiring loom with loom tape and reinstall all trim panels',
+                        description: 'Return vehicle cabin to OEM clean condition',
+                        isRequired: true,
+                        displayOrder: 3,
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
+
+      const fm3306Segment = await this.prisma.fMServiceSegment.findFirst({
+        where: { code: 'FM3306' },
+      });
+
+      if (fm3306Segment) {
+        await this.prisma.checklistTemplate.create({
+          data: {
+            name: 'FM3306 Fleet Installation Checklist',
+            fmSegmentId: fm3306Segment.id,
+            status: 'ACTIVE',
+            sections: {
+              create: [
+                {
+                  title: 'Pre-Install Inspection',
+                  displayOrder: 1,
+                  items: {
+                    create: [
+                      {
+                        title: 'Confirm vehicle voltage supply (12V/24V) and isolate battery',
+                        description: 'Verify electrical system stability before tapping harness',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Verify FM3306 IMEI and active M2M SIM card configuration',
+                        description: 'Check APN settings and SIM ICCID match work order',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                    ],
+                  },
+                },
+                {
+                  title: 'Hardware & Loom Installation',
+                  displayOrder: 2,
+                  items: {
+                    create: [
+                      {
+                        title: 'Secure FM3306 device behind instrument cluster',
+                        description: 'Mount securely away from moving linkages and heat sources',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Connect main power harness and inline blade fuse',
+                        description: 'Verify 3A inline fuse installed on permanent 12V/24V feed',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                      {
+                        title: 'Route external antenna to windscreen header panel',
+                        description: 'Clean glass with isopropanol alcohol wipe and affix antenna',
+                        isRequired: true,
+                        displayOrder: 3,
+                      },
+                    ],
+                  },
+                },
+                {
+                  title: 'Commissioning & Photo Sign-Off',
+                  displayOrder: 3,
+                  items: {
+                    create: [
+                      {
+                        title: 'Verify GPS fix lock and server telematics ping',
+                        description: 'Check diagnostic portal for live telemetry data stream',
+                        isRequired: true,
+                        displayOrder: 1,
+                      },
+                      {
+                        title: 'Upload photographic verification of installation and serial tag',
+                        description: 'Take high-clarity photo of unit mounting and fuse tap',
+                        isRequired: true,
+                        displayOrder: 2,
+                      },
+                    ],
+                  },
+                },
+              ],
+            },
+          },
+        });
+      }
+    } catch (e: any) {
+      // Non-fatal if DB is offline or already seeded
+    }
+  }
+
   async findAll(params?: { search?: string; category?: string }) {
+    await this.ensureDefaultTemplates();
     const where: any = {};
 
     if (params?.category && params.category !== 'All') {
@@ -132,21 +344,109 @@ export class ChecklistTemplatesService {
       ];
     }
 
-    const templates = await this.prisma.checklistTemplate.findMany({
-      where,
-      include: {
-        sections: {
-          include: {
-            items: true,
+    try {
+      const templates = await this.prisma.checklistTemplate.findMany({
+        where,
+        include: {
+          sections: {
+            include: {
+              items: true,
+            },
           },
+          FMServiceSegment: true
         },
-        FMServiceSegment: true
-      },
-      orderBy: { updatedAt: 'desc' },
-    });
+        orderBy: { updatedAt: 'desc' },
+      });
 
-    const formatted = templates.map((t) => this.formatTemplate(t));
-    return { data: formatted, total: formatted.length };
+      const formatted = templates.map((t) => this.formatTemplate(t));
+      return { data: formatted, total: formatted.length };
+    } catch (err: any) {
+      console.warn(`[ChecklistTemplatesService] Database offline; returning standard built-in templates: ${err?.message}`);
+      return {
+        data: [
+          {
+            id: 'tmpl-mix4000',
+            name: 'MIX4000 Telematics Pre-Install Checklist',
+            hardwareType: 'MIX4000',
+            fmSegmentId: 'seg-mix4000',
+            category: 'Standard Fleet',
+            description: 'Standard telematics verification and functional checklist for MIX4000 units',
+            isActive: true,
+            sections: [
+              {
+                id: 'sec-mix-prep',
+                title: 'Device & Harness Verification',
+                displayOrder: 1,
+                items: [
+                  { id: 'itm-mix-1', title: 'Verify serial and IMEI against preinstall work order', isRequired: true, displayOrder: 1, requiresPhoto: false },
+                  { id: 'itm-mix-2', title: 'Inspect power loom fuse ratings (3A constant, 2A ignition)', isRequired: true, displayOrder: 2, requiresPhoto: false },
+                  { id: 'itm-mix-3', title: 'Confirm internal SIM card is seated and APN configured', isRequired: true, displayOrder: 3, requiresPhoto: false },
+                ],
+              },
+              {
+                id: 'sec-mix-mount',
+                title: 'Installation & Physical Mounting',
+                displayOrder: 2,
+                items: [
+                  { id: 'itm-mix-4', title: 'Secure MIX4000 main body with cable ties behind dash', isRequired: true, displayOrder: 1, requiresPhoto: true },
+                  { id: 'itm-mix-5', title: 'Route GPS/cellular antenna with unobstructed skyward view', isRequired: true, displayOrder: 2, requiresPhoto: true },
+                  { id: 'itm-mix-6', title: 'Solder and heat-shrink all primary power connections', isRequired: true, displayOrder: 3, requiresPhoto: true },
+                ],
+              },
+              {
+                id: 'sec-mix-qa',
+                title: 'Signoff & Telematics Verification',
+                displayOrder: 3,
+                items: [
+                  { id: 'itm-mix-7', title: 'Observe LED status: solid green GPS fix, blinking cellular', isRequired: true, displayOrder: 1, requiresPhoto: false },
+                  { id: 'itm-mix-8', title: 'Confirm ping received in server commissioning tool', isRequired: true, displayOrder: 2, requiresPhoto: false },
+                  { id: 'itm-mix-9', title: 'Capture photo of completed dash reassembly', isRequired: true, displayOrder: 3, requiresPhoto: true },
+                ],
+              },
+            ],
+          },
+          {
+            id: 'tmpl-fm3306',
+            name: 'FM3306 Advanced Telematics Checklist',
+            hardwareType: 'FM3306',
+            fmSegmentId: 'seg-fm3306',
+            category: 'Advanced Telematics',
+            description: 'Heavy vehicle checklist with CAN bus integration and peripheral sensor validation',
+            isActive: true,
+            sections: [
+              {
+                id: 'sec-fm33-prep',
+                title: 'Pre-Install CAN & Power Setup',
+                displayOrder: 1,
+                items: [
+                  { id: 'itm-fm33-1', title: 'Check vehicle battery voltage (12V / 24V compatibility)', isRequired: true, displayOrder: 1, requiresPhoto: false },
+                  { id: 'itm-fm33-2', title: 'Locate CAN High & CAN Low pairs using schematic', isRequired: true, displayOrder: 2, requiresPhoto: false },
+                ],
+              },
+              {
+                id: 'sec-fm33-mount',
+                title: 'Unit Placement & Wiring',
+                displayOrder: 2,
+                items: [
+                  { id: 'itm-fm33-3', title: 'Install CAN contact clamp without piercing wire cores', isRequired: true, displayOrder: 1, requiresPhoto: true },
+                  { id: 'itm-fm33-4', title: 'Firmly mount FM3306 unit to chassis bracket', isRequired: true, displayOrder: 2, requiresPhoto: true },
+                ],
+              },
+              {
+                id: 'sec-fm33-qa',
+                title: 'Diagnostic Test & Handover',
+                displayOrder: 3,
+                items: [
+                  { id: 'itm-fm33-5', title: 'Read live CAN engine telemetry (RPM, odometer, fuel)', isRequired: true, displayOrder: 1, requiresPhoto: false },
+                  { id: 'itm-fm33-6', title: 'Capture final wiring harness neatness photo', isRequired: true, displayOrder: 2, requiresPhoto: true },
+                ],
+              },
+            ],
+          },
+        ],
+        total: 2,
+      };
+    }
   }
 
   async findOne(id: string) {

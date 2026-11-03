@@ -318,9 +318,20 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   // sync contractors with backed
   const fetchAssignedJobs = useCallback(
     async () => {
-      const data = await api.jobs.list()
-      if (data?.data?.data && data?.data?.data?.length > 0) {
-        setAssignedJobs(data.data.data)
+      try {
+        const res = await api.jobs.list();
+        const asArray = <T,>(payload: any): T[] => {
+          if (Array.isArray(payload)) return payload;
+          if (Array.isArray(payload?.data)) return payload.data;
+          if (Array.isArray(payload?.items)) return payload.items;
+          return [];
+        };
+        const items = asArray<InstallationJob>(res?.data);
+        if (items.length > 0) {
+          setAssignedJobs(items);
+        }
+      } catch (e) {
+        console.warn('Failed to fetch assigned jobs:', e);
       }
     },
     [api.jobs],
@@ -425,6 +436,14 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       if (projects.length) setProjects(projects as any);
 
       setIsApiConnected(!jobsRes.error);
+
+      // Also refresh assigned jobs, contractors, subcontractors, and FM segments
+      await Promise.allSettled([
+        fetchAssignedJobs(),
+        fetchContractors(),
+        fetchSubContractors(),
+        fetchFmSegments(),
+      ]);
     } catch (err) {
       console.warn('API sync warning; utilizing resilient offline cache:', err);
       setIsApiConnected(false);

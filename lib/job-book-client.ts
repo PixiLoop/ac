@@ -444,7 +444,8 @@ export const api = {
 
     jobs: {
         list: async (params: Record<string, string> = {}) => {
-            return request<{ data: InstallationJob[]; total: number }>(`/jobs/assigned`);
+            const qs = new URLSearchParams(params).toString();
+            return request<{ data: InstallationJob[]; total: number }>(`/jobs/assigned${qs ? `?${qs}` : ''}`);
         },
     },
 

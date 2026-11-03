@@ -13,7 +13,7 @@ import { useOperations } from '../../../providers/OperationsContext';
 export default function Page() {
   const router = useRouter();
   const { showToast } = useToast();
-  const { createInstallationJob } = useOperations();
+  const { createInstallationJob, refreshFromApi } = useOperations();
 
   const [installDetail, setInstallDetail] = useState<Record<string, any>>({});
 
@@ -116,9 +116,42 @@ export default function Page() {
         const fleet = form.fleetNumber || installDetail?.fleetNumber || 'FLEET-01';
         const makeModel = `${form.vehicleMake || installDetail?.vehicleMake || ''} ${form.vehicleModel || installDetail?.vehicleModel || ''}`.trim() || 'Commercial Vehicle';
 
+        // Detect installer and assignment role (technician, contractor, subcontractor)
+        const installerId = form.installer || installDetail?.installer || undefined;
+        const selectedUser = users.find(u => u.id === installerId);
+        const roleName = String(selectedUser?.role?.name || selectedUser?.role || '').toLowerCase();
+        const assignedRole: 'technician' | 'contractor' | 'subcontractor' = roleName.includes('subcontractor') || roleName.includes('sub-contractor')
+          ? 'subcontractor'
+          : roleName.includes('contractor')
+          ? 'contractor'
+          : 'technician';
+
+        const unitModel = installDetail?.fmUnitCode || installDetail?.fmUnitType || 'MIX4000';
+        const itemsHardware = validItems.map((item, idx) => ({
+          id: item.productId || `hw-${idx}`,
+          model: item.partNumber || unitModel,
+          name: item.description || item.partNumber || `${unitModel} Telematics Unit`,
+          serialNumber: installDetail?.unitSerial || '',
+          imei: installDetail?.unitIMEI || '',
+          category: 'Telematics Unit' as const,
+        }));
+
+        const primaryHardware = {
+          id: 'hw-primary',
+          model: unitModel,
+          name: `${unitModel} Primary Telematics Device`,
+          serialNumber: installDetail?.unitSerial || '',
+          imei: installDetail?.unitIMEI || '',
+          category: 'Telematics Unit' as const,
+        };
+
+        const hardwareList = itemsHardware.length > 0
+          ? (itemsHardware.some(h => (h.model || '').toUpperCase() === (unitModel || '').toUpperCase()) ? itemsHardware : [primaryHardware, ...itemsHardware])
+          : [primaryHardware];
+
         await createInstallationJob({
           jobNumber: `JOB-${preinstallNo}`,
-          assignedTo: 'technician',
+          assignedTo: assignedRole,
           isWhiteboard: false,
           jobType: 'FM Preinstall',
           customerId: form.customerId,
@@ -134,25 +167,20 @@ export default function Page() {
             vin,
             makeModel,
           },
-          hardware: validItems.map((item, idx) => ({
-            id: item.productId || `hw-${idx}`,
-            model: item.partNumber || installDetail?.fmUnitCode || 'MIX4000',
-            name: item.description || item.partNumber || 'Telematics Hardware',
-            serialNumber: installDetail?.unitSerial || '',
-            imei: installDetail?.unitIMEI || '',
-            category: 'Telematics Unit',
-          })),
-          technicianId: form.installer || installDetail?.installer || undefined,
-          technicianName: users.find(u => u.id === (form.installer || installDetail?.installer))
-            ? `${users.find(u => u.id === (form.installer || installDetail?.installer)).firstName} ${users.find(u => u.id === (form.installer || installDetail?.installer)).lastName}`
-            : (form.installer || installDetail?.installer || undefined),
+          hardware: hardwareList,
+          technicianId: installerId,
+          technicianName: selectedUser
+            ? `${selectedUser.firstName || ''} ${selectedUser.lastName || ''}`.trim() || selectedUser.displayName || selectedUser.email
+            : installerId,
           installationDate: (form.installDate || installDetail?.installDate) ? new Date(form.installDate || installDetail?.installDate).toISOString().split('T')[0] : undefined,
           startTime: '09:00',
           endTime: '12:00',
-          isScheduled: !!(form.installer && (form.installDate || installDetail?.installDate)),
+          isScheduled: !!(installerId && (form.installDate || installDetail?.installDate)),
           status: 'Not Actioned',
-          notes: `Created from FM Preinstall ${preinstallNo}. Location: ${form.installLocation || installDetail?.installLocation || 'Main Workshop'}. Unit Code: ${installDetail?.fmUnitCode || 'N/A'}.`,
+          notes: `Created from FM Preinstall ${preinstallNo}. Location: ${form.installLocation || installDetail?.installLocation || 'Main Workshop'}. Unit Code: ${unitModel}.`,
         });
+
+        await refreshFromApi();
 
         if (typeof window !== 'undefined') {
           window.dispatchEvent(new Event('operations_jobs_updated'));

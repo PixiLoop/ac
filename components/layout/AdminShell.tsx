@@ -477,7 +477,7 @@ export function AdminShell({ title, children, showTableDensity }: any) {
                       pathname.startsWith('/admin/job-boards') && 'bg-slate-200/70 font-semibold text-slate-900'
                     )}
                   >
-                    <Boxes className="h-3.5 w-3.5" />Workshop Kanban Board
+                    <Boxes className="h-3.5 w-3.5" />Switch Board
                   </Link>
                   <Link
                     href="/job-boards/calendar"
@@ -515,35 +515,6 @@ export function AdminShell({ title, children, showTableDensity }: any) {
                   >
                     <ClipboardList className="h-3.5 w-3.5" />Job Book Entry
                   </Link>
-                  <div className="pt-1 mt-1 border-t border-slate-200/60">
-                    <Link
-                      href="/technician"
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-blue-700',
-                        pathname === '/technician' && 'bg-blue-50 font-semibold'
-                      )}
-                    >
-                      <Wrench className="h-3.5 w-3.5" />Technician Portal
-                    </Link>
-                    <Link
-                      href="/contractor"
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-indigo-700',
-                        pathname === '/contractor' && 'bg-indigo-50 font-semibold'
-                      )}
-                    >
-                      <Truck className="h-3.5 w-3.5" />Contractor Portal
-                    </Link>
-                    <Link
-                      href="/subcontractor"
-                      className={cn(
-                        'flex items-center gap-2 px-2 py-1.5 text-[11px] rounded transition-colors text-purple-700',
-                        pathname === '/subcontractor' && 'bg-purple-50 font-semibold'
-                      )}
-                    >
-                      <Shield className="h-3.5 w-3.5" />Subcontractor Portal
-                    </Link>
-                  </div>
                 </div>
               )}
             </div>
@@ -698,7 +669,7 @@ export function AdminShell({ title, children, showTableDensity }: any) {
               'flex-1 py-4 pt-16 flex flex-col min-h-0 w-full max-w-none min-w-0',
               isJobBookNav ? 'px-3 sm:px-4' : 'px-6',
               pathname.startsWith('/job-boards/calendar') ||
-              pathname.startsWith('/job-boards/dashboard')
+                pathname.startsWith('/job-boards/dashboard')
                 ? 'overflow-hidden'
                 : 'overflow-y-auto',
             )}

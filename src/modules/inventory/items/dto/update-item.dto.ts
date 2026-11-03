@@ -148,6 +148,9 @@ export class UpdateItemDto {
   fmMixCode?: string;
 
   @IsOptional() @IsString()
+  fmUnitType?: string;
+
+  @IsOptional() @IsString()
   fmUnitCode?: string;
 
   @IsOptional() @IsBoolean()
@@ -182,6 +185,9 @@ export class UpdateItemDto {
 
   @IsOptional() @IsBoolean()
   vision4GModem?: boolean;
+
+  @IsOptional() @IsBoolean()
+  fuelRebate?: boolean;
 
   @IsOptional() @Type(() => Number) @IsInt()
   cameraCount?: number;

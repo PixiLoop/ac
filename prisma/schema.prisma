@@ -39,6 +39,7 @@ model User {
   createdInstallationJobs InstallationJob[]    @relation("JobCreator")
   installationJobs        InstallationJob[]
   jobBoards               JobBoard[]
+  jobBoardLabels          JobBoardLabel[]
   timelineEvents          JobTimelineEvent[]   @relation("TimelineActor")
   jobTimelineEvents       JobTimelineEvent[]
   userJobs                UserJob[]
@@ -666,7 +667,10 @@ model JobCard {
   listId            String
   title             String
   description       String?
+  location          String?
   dueDate           DateTime?
+  recurring         String?
+  dueReminder       String?
   sortOrder         Int
   createdAt         DateTime               @default(now())
   updatedAt         DateTime               @updatedAt
@@ -713,6 +717,7 @@ model Product {
   isFmHardware         Boolean               @default(false)
   isMonitor            Boolean               @default(false)
   fmMixCode            String?
+  fmUnitType           String?
   fmUnitCode           String?
   fourGUnitModem       Boolean               @default(false)
   mixUnitSim           Boolean               @default(false)
@@ -886,6 +891,21 @@ model CardLabel {
   color  String
   card   JobCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
 
+  @@schema("admin")
+}
+
+// Shared label library — available on every job board for this user.
+model JobBoardLabel {
+  id        String   @id @default(cuid())
+  userId    String
+  name      String
+  color     String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, name])
+  @@index([userId])
   @@schema("admin")
 }
 
@@ -1097,14 +1117,42 @@ model FMPreinstall {
   targetInstallId    String?
   notes              String?
   depotId            String?
+  isBulk             Boolean            @default(false)
   installDetail      FMInstallDetail?
   Depots             Depots?            @relation(fields: [depotId], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "Depot")
   customer           Customer           @relation(fields: [customerId], references: [id])
   fmCustomer         FMCustomer         @relation(fields: [fmCustomerId], references: [id])
   targetInstall      FMInstall?         @relation("PreinstallTarget", fields: [targetInstallId], references: [id])
   items              FMPreinstallItem[]
+  bulkVehicles       FMPreinstallBulkVehicle[]
   fmpJobs            fmpJobs[]
 
+  @@schema("admin")
+}
+
+model FMPreinstallBulkVehicle {
+  id           String       @id @default(cuid())
+  preinstallId String
+  rowNo        Int
+  regoNumber   String?
+  vinNumber    String?
+  assetNumber  String?
+  fleetNumber  String?
+  vehicleMake  String?
+  vehicleModel String?
+  yearVariant  String?
+  depot        String?
+  site         String?
+  serviceCode  String?
+  fmUnitCode   String?
+  installer    String?
+  installDate  DateTime?
+  notes        String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  preinstall   FMPreinstall @relation(fields: [preinstallId], references: [id], onDelete: Cascade)
+
+  @@index([preinstallId])
   @@schema("admin")
 }
 

@@ -557,7 +557,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
 
         const so = d.so;
         if (so.customer?.orderRequired && !String(so.customerPO ?? '').trim()) {
-          setParentError('Order number is required.');
+          setParentError('Customer PO (Order Number) is required for this customer.');
           return;
         }
         setParentRecord(so);
@@ -777,7 +777,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
     }
 
     if (orderRequired && !String(form.reference ?? '').trim()) {
-      showToast({ type: 'error', title: 'Validation', message: 'Order number is required.' });
+      showToast({ type: 'error', title: 'Validation', message: 'Customer PO (Order Number) is required for this customer.' });
       return;
     }
     // Qty + backorder validation for parent types

@@ -2,7 +2,7 @@
 
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Pencil, Trash2, MessageSquare, Paperclip, CheckSquare } from 'lucide-react'
+import { Pencil, Trash2, MessageSquare, Paperclip, CheckSquare, Clock } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { api } from '../../lib/api-client'
@@ -10,7 +10,16 @@ import { useToast } from '../ui/toast'
 import ConfirmModal from '../ui/ConfirmModal'
 import { fetchAuthenticatedObjectUrl } from '../../lib/authenticated-media'
 
-export default function SortableCard({ card, reload }: any) {
+const CARD_COLORS = [
+  { bg: '#ffffff', border: '#e2e8f0' },
+  { bg: '#f0f9ff', border: '#bae6fd' },
+  { bg: '#f0fdf4', border: '#bbf7d0' },
+  { bg: '#fffbeb', border: '#fde68a' },
+  { bg: '#faf5ff', border: '#e9d5ff' },
+  { bg: '#fff1f2', border: '#fecdd3' },
+]
+
+export default function SortableCard({ card, cardIndex = 0, reload }: any) {
   const {
     attributes,
     listeners,
@@ -30,6 +39,7 @@ export default function SortableCard({ card, reload }: any) {
   const [loading, setLoading] = useState(false)
   const pointerStart = useRef<{ x: number; y: number } | null>(null)
   const didDrag = useRef(false)
+  const tint = CARD_COLORS[cardIndex % CARD_COLORS.length]
 
   const style = {
     transform: CSS.Transform.toString(transform),
@@ -38,6 +48,8 @@ export default function SortableCard({ card, reload }: any) {
     touchAction: 'none' as const,
     userSelect: 'none' as const,
     WebkitUserSelect: 'none' as const,
+    backgroundColor: tint.bg,
+    borderColor: tint.border,
   }
 
   const openDetail = () => {
@@ -65,11 +77,19 @@ export default function SortableCard({ card, reload }: any) {
     }
   }
 
-  const rawCover =
-    card.coverImageUrl ||
-    card.attachments?.find((a: any) =>
-      /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.fileName || a.fileUrl || ''),
-    )?.fileUrl
+  const isColorCover =
+    !!card.coverImageUrl && /^color:#([0-9a-f]{3}|[0-9a-f]{6})$/i.test(String(card.coverImageUrl).trim())
+  const coverColor = isColorCover
+    ? String(card.coverImageUrl).replace(/^color:/i, '')
+    : null
+
+  const rawCover = isColorCover
+    ? null
+    : card.coverImageUrl
+      ? `${card.coverImageUrl}${String(card.coverImageUrl).includes('?') ? '&' : '?'}v=${card.updatedAt || ''}`
+      : card.attachments?.find((a: any) =>
+          /\.(png|jpe?g|gif|webp|bmp)$/i.test(a.fileName || a.fileUrl || ''),
+        )?.fileUrl
 
   const [coverUrl, setCoverUrl] = useState<string | null>(null)
 
@@ -139,12 +159,16 @@ export default function SortableCard({ card, reload }: any) {
           }
           openDetail()
         }}
-        className="bg-white rounded shadow hover:shadow-md cursor-grab active:cursor-grabbing relative overflow-hidden select-none"
+        className="rounded-lg border shadow-sm hover:shadow-md cursor-grab active:cursor-grabbing relative overflow-hidden select-none"
       >
-        {coverUrl && (
+        {(coverUrl || coverColor) && (
           <div
             className="h-28 w-full bg-cover bg-center pointer-events-none"
-            style={{ backgroundImage: `url(${coverUrl})` }}
+            style={
+              coverUrl
+                ? { backgroundImage: `url(${coverUrl})` }
+                : { backgroundColor: coverColor || undefined }
+            }
           />
         )}
 
@@ -163,6 +187,33 @@ export default function SortableCard({ card, reload }: any) {
           )}
 
           <div className="text-sm font-medium text-slate-800 pr-10">{card.title}</div>
+
+          {card.dueDate && (
+            <div className="mt-2">
+              <span
+                className={`inline-flex items-center gap-1 text-[11px] font-medium px-2 py-0.5 rounded ${
+                  new Date(card.dueDate).getTime() < Date.now()
+                    ? 'bg-red-100 text-red-800'
+                    : new Date(card.dueDate).getTime() < Date.now() + 2 * 86400000
+                      ? 'bg-amber-100 text-amber-800'
+                      : 'bg-slate-100 text-slate-700'
+                }`}
+                title="Due date (Completion Time)"
+              >
+                <Clock size={11} />
+                {new Date(card.dueDate).toLocaleString('en-AU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                })}
+                {new Date(card.dueDate).getTime() < Date.now() + 2 * 86400000 &&
+                  new Date(card.dueDate).getTime() >= Date.now() && (
+                    <span className="ml-0.5">Due soon</span>
+                  )}
+              </span>
+            </div>
+          )}
 
           {(commentCount > 0 || attachmentCount > 0 || checklistItems.length > 0) && (
             <div className="mt-2 flex items-center gap-3 text-xs text-slate-500">

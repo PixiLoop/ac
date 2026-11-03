@@ -202,6 +202,48 @@ export class JobBookEntriesService {
     return this.formatEntry(row);
   }
 
+  private formatShippingLocation(row: {
+    shippingAddress1?: string | null;
+    shippingAddress2?: string | null;
+    shippingAddress3?: string | null;
+  }) {
+    const line = [
+      row.shippingAddress1,
+      row.shippingAddress2,
+      row.shippingAddress3,
+      'Australia',
+    ]
+      .map((v) => String(v || '').trim())
+      .filter(Boolean)
+      .join(', ');
+    return row.shippingAddress1 || row.shippingAddress2 || row.shippingAddress3
+      ? line
+      : null;
+  }
+
+  private async syncLinkedCardFields(entryId: string, row: {
+    shippingAddress1?: string | null;
+    shippingAddress2?: string | null;
+    shippingAddress3?: string | null;
+    completionTime?: Date | string | null;
+  }) {
+    const location = this.formatShippingLocation(row);
+    const dueDate = row.completionTime ? new Date(row.completionTime) : null;
+    const data: { location?: string | null; dueDate?: Date | null } = {};
+    if (location) data.location = location;
+    // Completion Time = board card Due date
+    data.dueDate = dueDate && !Number.isNaN(dueDate.getTime()) ? dueDate : null;
+    if (!Object.keys(data).length) return;
+    await this.prisma.jobCard.updateMany({
+      where: {
+        sourceType: 'JOB_BOOK_ENTRY',
+        sourceRefId: entryId,
+        deletedAt: null,
+      },
+      data,
+    });
+  }
+
   async create(dto: any) {
     const data = this.mapDto(dto);
     if (!data.customerNumber) {
@@ -218,6 +260,7 @@ export class JobBookEntriesService {
       data: { ...data, entryNumber },
       include: { customer: { select: { id: true, name: true, customerNumber: true } } },
     });
+    await this.syncLinkedCardFields(row.id, row);
     return this.formatEntry(row);
   }
 
@@ -246,6 +289,7 @@ export class JobBookEntriesService {
       data,
       include: { customer: { select: { id: true, name: true, customerNumber: true } } },
     });
+    await this.syncLinkedCardFields(id, row);
     return this.formatEntry(row);
   }
 

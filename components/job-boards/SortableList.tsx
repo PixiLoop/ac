@@ -8,10 +8,27 @@ import { useState, useRef, useEffect } from 'react'
 import { api } from '../../lib/api-client'
 import ConfirmModal from '../../components/ui/ConfirmModal'
 import BoardColorPicker from './BoardColorPicker'
-import { Pencil, Trash2 } from 'lucide-react'
+import { Pencil, Search, Trash2 } from 'lucide-react'
 
 
-export default function SortableList({ list, reload, activeId, setBoard, hideAddCard }: any) {
+const LIST_TINTS = [
+  '#f8fafc', // slate
+  '#eff6ff', // blue
+  '#f0fdf4', // green
+  '#fff7ed', // orange
+  '#faf5ff', // purple
+  '#fef2f2', // rose
+]
+
+export default function SortableList({
+  list,
+  listIndex = 0,
+  columnWidth = 280,
+  reload,
+  activeId,
+  setBoard,
+  hideAddCard,
+}: any) {
   const {
     attributes,
     listeners,
@@ -23,22 +40,58 @@ export default function SortableList({ list, reload, activeId, setBoard, hideAdd
     id: list.id,
   })
 
+  const listTint = list.color || LIST_TINTS[listIndex % LIST_TINTS.length]
+  const width = Math.max(220, Number(columnWidth) || 280)
+
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
     opacity: isDragging ? 0 : 1,
+    background: listTint,
+    width,
+    minWidth: width,
   }
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [deleting, setDeleting] = useState(false)
 
   const [adding, setAdding] = useState(false)
   const [title, setTitle] = useState('')
+  const [listSearch, setListSearch] = useState('')
+  const [showSearch, setShowSearch] = useState(false)
+  const listSearchRef = useRef<HTMLInputElement>(null)
 
   const [editingName, setEditingName] = useState(false)
   const [newName, setNewName] = useState(list.name)
   const [hovering, setHovering] = useState(false)
   const [showColors, setShowColors] = useState(false)
   const headerRef = useRef<HTMLDivElement>(null)
+
+  const q = listSearch.trim().toLowerCase()
+  const visibleCards = !q
+    ? list.cards || []
+    : (list.cards || []).filter((card: any) => {
+        const labels = (card.labels || []).map((l: any) => l.name || '').join(' ')
+        const members = (card.members || [])
+          .map((m: any) => m.user?.displayName || m.user?.email || '')
+          .join(' ')
+        const hay = [
+          card.title,
+          card.description,
+          card.location,
+          labels,
+          members,
+        ]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+        return hay.includes(q)
+      })
+
+  useEffect(() => {
+    if (showSearch) {
+      setTimeout(() => listSearchRef.current?.focus(), 0)
+    }
+  }, [showSearch])
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -60,17 +113,14 @@ export default function SortableList({ list, reload, activeId, setBoard, hideAdd
   return (
     <div
       ref={setNodeRef}
-      className="min-w-[260px] w-[260px] rounded-lg shadow-sm flex flex-col max-h-full overflow-hidden"
-      style={{
-        background: list.color || '#ffffff',
-      }}
-
+      style={style}
+      className="shrink-0 rounded-xl shadow-sm border border-slate-200/80 flex flex-col h-full max-h-full min-h-0 overflow-hidden"
     >
       <div
         ref={headerRef}
-        className="relative p-3"
+        className="relative p-3 shrink-0"
         style={{
-          background: list.color || '#ffffff',
+          background: listTint,
           borderBottom: '1px solid rgba(0,0,0,0.08)',
         }}
         onMouseEnter={() => setHovering(true)}
@@ -101,36 +151,57 @@ export default function SortableList({ list, reload, activeId, setBoard, hideAdd
           <div
             {...attributes}
             {...listeners}
-            className="font-semibold cursor-grab pr-12 select-none"
+            className="font-semibold cursor-grab pr-24 select-none truncate"
             style={{ touchAction: 'none', userSelect: 'none' }}
           >
             {list.name}
           </div>
         )}
 
-        {/* Hover Icons */}
-        {hovering && !editingName && (
-          <div className="absolute right-3 top-3 flex items-center gap-2 text-gray-500">
-            {/* Edit */}
+        {/* Hover Icons — search next to edit */}
+        {(hovering || showSearch || !!listSearch) && !editingName && (
+          <div className="absolute right-2 top-2.5 flex items-center gap-1.5 text-gray-500 bg-inherit z-10">
             <button
+              type="button"
+              title="Search cards"
+              onClick={(e) => {
+                e.stopPropagation()
+                setShowSearch((v) => {
+                  if (v) {
+                    setListSearch('')
+                    return false
+                  }
+                  return true
+                })
+              }}
+              className={`hover:text-black ${showSearch || listSearch ? 'text-blue-600' : ''}`}
+            >
+              <Search size={15} />
+            </button>
+
+            <button
+              type="button"
               onClick={() => setEditingName(true)}
               className="hover:text-black text-sm"
+              title="Rename list"
             >
               <Pencil size={16} />
             </button>
 
-            {/* Delete */}
             <button
+              type="button"
               onClick={() => setConfirmOpen(true)}
               className="hover:text-red-500 text-sm"
+              title="Delete list"
             >
               <Trash2 size={16} />
             </button>
 
-            {/* Color */}
             <button
+              type="button"
               onClick={() => setShowColors(!showColors)}
               className="hover:text-black text-sm"
+              title="List color"
             >
               🎨
             </button>
@@ -152,27 +223,55 @@ export default function SortableList({ list, reload, activeId, setBoard, hideAdd
             />
           </div>
         )}
+
+        {showSearch && (
+          <div className="relative mt-2">
+            <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-[1]" />
+            <input
+              ref={listSearchRef}
+              value={listSearch}
+              onChange={(e) => setListSearch(e.target.value)}
+              onPointerDown={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') {
+                  setListSearch('')
+                  setShowSearch(false)
+                }
+              }}
+              placeholder="Search…"
+              className="w-full !h-7 !rounded border border-slate-200 bg-white !pl-8 !pr-2 !text-[11px] text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-400 focus:border-blue-400"
+              style={{ paddingLeft: 32 }}
+            />
+          </div>
+        )}
       </div>
 
-      <div className="px-3 py-2 space-y-2 overflow-y-auto max-h-[60vh] w-full">
+      <div
+        className="px-3 py-2 space-y-2 overflow-y-auto flex-1 min-h-0 w-full job-board-v-scroll"
+        style={{ background: listTint }}
+      >
         <SortableContext
-          items={list.cards.map((c: any) => c.id)}
+          items={visibleCards.map((c: any) => c.id)}
           strategy={verticalListSortingStrategy}
         >
-          {list.cards.map(card => (
+          {visibleCards.map((card: any, cardIndex: number) => (
             <SortableCard
               key={card.id}
               card={card}
+              cardIndex={cardIndex}
               activeId={activeId}
               reload={reload}
             />
           ))}
         </SortableContext>
+        {q && visibleCards.length === 0 && (
+          <p className="text-[11px] text-slate-500 px-1 py-2">No cards match “{listSearch.trim()}”</p>
+        )}
       </div>
 
       {/* Add Card only when Display cards from = Manual */}
       {!hideAddCard && (
-        <div className="px-3 pb-3 w-full">
+        <div className="px-3 py-2 w-full shrink-0 border-t border-slate-200/70" style={{ background: listTint }}>
           {adding ? (
             <div className="space-y-2 w-full">
               <input
@@ -193,7 +292,7 @@ export default function SortableList({ list, reload, activeId, setBoard, hideAdd
                         { title }
                       )
                       const newCard = res.data?.data ?? res.data
-                      list.cards = [...list.cards, newCard]
+                      list.cards = [newCard, ...list.cards]
 
                       setTitle('')
                       setAdding(false)

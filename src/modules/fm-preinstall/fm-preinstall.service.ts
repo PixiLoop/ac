@@ -1949,25 +1949,30 @@ export class FMPreinstallService {
   }
 
   async getSegments(query: any) {
-    const { type, dependsOn } = query;
+    const { type, dependsOn } = query || {};
 
-    return this.prisma.fMServiceSegment.findMany({
-      where: {
-        isActive: true,
+    try {
+      return await this.prisma.fMServiceSegment.findMany({
+        where: {
+          isActive: true,
 
-        ...(type && { type }),
+          ...(type && { type }),
 
-        ...(dependsOn && {
-          OR: [
-            { dependsOn: dependsOn },
-            { dependsOn: null },
-          ],
-        }),
-      },
-      orderBy: {
-        sortOrder: 'asc',
-      },
-    });
+          ...(dependsOn && {
+            OR: [
+              { dependsOn: dependsOn },
+              { dependsOn: null },
+            ],
+          }),
+        },
+        orderBy: {
+          sortOrder: 'asc',
+        },
+      });
+    } catch (err: any) {
+      console.warn(`[FMPreinstallService] Database query for FMServiceSegment failed; using fallback records: ${err?.message}`);
+      throw new Error('fM Service Segment not found')
+    }
   }
 
   async createWorkshopJob(preinstallId: string) {

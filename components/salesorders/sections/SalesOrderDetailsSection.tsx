@@ -10,6 +10,7 @@ export function SalesOrderDetailsSection({
   readOnly = false,
   title = 'Sales Order Details',
   selectedCustomer = null,
+  orderRequired = false,
 }: any) {
   return (
     <FormSection
@@ -17,11 +18,15 @@ export function SalesOrderDetailsSection({
       required
       defaultOpen={defaultOpen}
     >
-      <SalesOrderDetailsForm value={value} update={update}
+      <SalesOrderDetailsForm
+        value={value}
+        update={update}
         freight={freight}
         readOnly={readOnly}
         setFreight={setFreight}
-        selectedCustomer={selectedCustomer} />
+        selectedCustomer={selectedCustomer}
+        orderRequired={orderRequired}
+      />
     </FormSection>
   );
 }

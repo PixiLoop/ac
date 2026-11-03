@@ -1,7 +1,7 @@
 'use client';
 
+import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { useEffect, useState } from 'react';
 
 import { AdminShell } from '../../../components/layout/AdminShell';
 import { Button } from '../../../components/ui/button';
@@ -17,6 +17,20 @@ import { accountPricingFields, savedLinePrice } from '../../../lib/line-pricing'
 import { availableStock } from '../../../lib/available-stock';
 
 export default function NewSalesOrderPage() {
+  return (
+    <Suspense
+      fallback={
+        <AdminShell title="Create Sales Order">
+          <div className="p-6 text-sm text-slate-500">Loading sales order…</div>
+        </AdminShell>
+      }
+    >
+      <NewSalesOrderPageInner />
+    </Suspense>
+  );
+}
+
+function NewSalesOrderPageInner() {
   const router = useRouter();
   const { showToast } = useToast();
   const { check: accountCheck, modal: accountModal } = useAccountStatusGate();
@@ -26,6 +40,7 @@ export default function NewSalesOrderPage() {
     priceLevel: 'RETAIL',
     actionDate: new Date().toISOString().split('T')[0],
     terms: 'DAYS_30',
+    paymentTerms: 'DAYS_30',
     salesFactor: 1,
     status: 'PENDING',
     freight: 0,

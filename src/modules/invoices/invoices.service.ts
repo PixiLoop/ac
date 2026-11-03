@@ -95,7 +95,17 @@ export class InvoicesService {
                 dispatch: { select: { id: true, method: true, accountNo: true, accountName: true } },
                 items: {
                     where: { deletedAt: null },
-                    include: { product: { select: { onHand: true, committed: true } } },
+                    include: {
+                        product: {
+                            select: {
+                                onHand: true,
+                                committed: true,
+                                billOfGoods: true,
+                                productCode: true,
+                                name: true,
+                            },
+                        },
+                    },
                 },
                 subscriptionReport: true,
                 fmSubscriptionItems: true
@@ -116,6 +126,7 @@ export class InvoicesService {
             ...invoice,
             items: invoice.items.map(item => ({
                 ...item,
+                billOfGoods: !!item.product?.billOfGoods,
                 onHandQty: Number(item.product?.onHand ?? 0),
                 uninvoicedQty: invoice.salesOrderId
                     ? (uninvoicedByProduct.get(item.productId) ?? 0)
@@ -165,7 +176,7 @@ export class InvoicesService {
         }
 
         const remaining = new Map<string, number>();
-        for (const [productId, qty] of Array.from(ordered)) {
+        for (const [productId, qty] of ordered) {
             remaining.set(productId, Math.max(0, qty - (invoicedQtyMap.get(productId) ?? 0)));
         }
         return remaining;
@@ -581,7 +592,7 @@ export class InvoicesService {
         const positiveItems = items.filter(i => Number(i.quantity) > 0);
         if (!positiveItems.length) return;
 
-        const productIds = Array.from(new Set(positiveItems.map(i => i.productId)));
+        const productIds = [...new Set(positiveItems.map(i => i.productId))];
         const products = await this.prisma.product.findMany({
             where: { id: { in: productIds } },
             select: { id: true, productCode: true, onHand: true },
@@ -746,7 +757,7 @@ export class InvoicesService {
 
         const { byProduct } = await notInvoicedBySalesOrderLine(this.prisma, salesOrderId);
         const salesOrderBackOrder: Record<string, number> = {};
-        for (const [productId, qty] of Array.from(byProduct.entries())) {
+        for (const [productId, qty] of byProduct) {
             salesOrderBackOrder[productId] = qty;
         }
 
@@ -771,7 +782,7 @@ export class InvoicesService {
             ordered.set(item.productId, (ordered.get(item.productId) ?? 0) + Number(item.quantity));
         }
         const productRemaining = new Map<string, number>();
-        for (const [productId, qty] of Array.from(ordered)) {
+        for (const [productId, qty] of ordered) {
             productRemaining.set(productId, Math.max(0, qty - (invoicedQtyMap.get(productId) ?? 0)));
         }
 
@@ -994,7 +1005,7 @@ export class InvoicesService {
         }
 
         const reversalItems: { productId: string; description: string; quantity: number; unitPrice: number; discountPct: number }[] = [];
-        for (const [productId, agg] of Array.from(originalByProduct.entries())) {
+        for (const [productId, agg] of originalByProduct.entries()) {
             const alreadyReversed = reversedQtyMap.get(productId) ?? 0;
             const remaining = agg.quantity - alreadyReversed;
             if (remaining > 0) {
@@ -1048,9 +1059,10 @@ export class InvoicesService {
         await this.assertCustomerOrderNumber(preinstall.customerId, preinstall.orderNumber);
 
         // 2. Only INSTALLED status can be invoiced
-        if (preinstall.status !== 'INSTALLED') {
+        const invoiceable = ['NOT_ACTIONED', 'WORKSHOP_SETUP', 'WAITING_INSTALL', 'INSTALLED'];
+        if (!invoiceable.includes(preinstall.status)) {
             throw new BadRequestException(
-                `Cannot invoice preinstall with status ${preinstall.status}. Must be INSTALLED.`
+                `Cannot invoice preinstall with status ${preinstall.status}.`
             );
         }
 
@@ -1085,9 +1097,9 @@ export class InvoicesService {
 
         const cameraOn = !empty(d?.visionType) || !empty(d?.cameraType);
         const unit = String(d?.fmUnitType ?? '').trim().toUpperCase();
-        if (cameraOn && !['SA', 'SA_M2', 'M2', 'FMS'].includes(unit)) {
-            throw new BadRequestException('Base Unit must be SA, SA_M2, M2 or FMS to support a Camera System');
-        }
+        // if (cameraOn && !['SA', 'SA_M2', 'M2', 'FMS'].includes(unit)) {
+        //     throw new BadRequestException('Base Unit must be SA, SA_M2, M2 or FMS to support a Camera System');
+        // }
 
         // 4. Build externalNotes from install detail (text entry field)
         const notes = this.formatPreinstallNotes(d, { includeHeader: true });
@@ -1165,15 +1177,21 @@ export class InvoicesService {
                 customer: true,
                 fmCustomer: true,
                 installDetail: true,
-                items: { where: { deletedAt: null } },
+                items: {
+                    where: { deletedAt: null },
+                    include: {
+                        product: { select: { billOfGoods: true, productCode: true, name: true } },
+                    },
+                },
             },
         });
 
         if (!preinstall) throw new NotFoundException('Preinstall not found');
 
-        if (preinstall.status !== 'INSTALLED' && preinstall.status !== 'WAITING_INSTALL') {
+        const invoiceable = ['NOT_ACTIONED', 'WORKSHOP_SETUP', 'WAITING_INSTALL', 'INSTALLED'];
+        if (!invoiceable.includes(preinstall.status)) {
             throw new BadRequestException(
-                `Status ${preinstall.status} — only INSTALLED can be invoiced`
+                `Status ${preinstall.status} — preinstall cannot be invoiced in this status`
             );
         }
 
@@ -1200,7 +1218,6 @@ export class InvoicesService {
         const ship = splitPacked(preinstall.shippingAddress2);
         const bill = splitPacked(preinstall.billingAddress2);
 
-        // Return pre-populated invoice data only — no DB write
         return {
             preinstallId: preinstall.id,
             preinstallNo: preinstall.preinstallNo,
@@ -1228,14 +1245,22 @@ export class InvoicesService {
             shippingCity: ship.city || null,
             shippingState: ship.state || null,
             shippingPostcode: preinstall.shippingAddress3 || ship.postcode || null,
-            items: preinstall.items.map(item => ({
-                productId: item.productId,
-                description: item.description,
-                quantity: item.quantity,
-                unitPrice: Number(item.unitPrice),
-                discountPct: Number(item.discountPct ?? 0),
-                partNumber: item.partNumber,
-            })),
+            items: preinstall.items.map(item => {
+                const bog = !!item.product?.billOfGoods;
+                const base = String(item.description || item.product?.name || '').trim();
+                const description = bog && base && !/\(BoG\)\s*$/i.test(base)
+                    ? `${base} (BoG)`
+                    : base;
+                return {
+                    productId: item.productId,
+                    description,
+                    quantity: item.quantity,
+                    unitPrice: Number(item.unitPrice),
+                    discountPct: Number(item.discountPct ?? 0),
+                    partNumber: item.partNumber,
+                    billOfGoods: bog,
+                };
+            }),
         };
     }
 
@@ -1245,7 +1270,10 @@ export class InvoicesService {
             where: { id: invoiceId, deletedAt: null },
             include: {
                 customer: { include: { contacts: { where: { deletedAt: null } } } },
-                items: { where: { deletedAt: null } },
+                items: {
+                    where: { deletedAt: null },
+                    include: { product: { select: { billOfGoods: true } } },
+                },
                 fmSubscriptionItems: true,
             },
         });
@@ -1361,12 +1389,17 @@ export class InvoicesService {
             doc.moveTo(margin, y).lineTo(pageW - margin, y).strokeColor(navy).lineWidth(2).stroke();
             y += 16;
 
-            const lines = (invoice.items?.length ? invoice.items : invoice.fmSubscriptionItems ?? []).map((item: any) => ({
-                label: item.description || item.label || 'Item',
-                qty: Number(item.quantity ?? 0),
-                price: Number(item.unitPrice ?? item.rate ?? 0),
-                total: Number(item.lineTotal ?? item.total ?? (Number(item.quantity ?? 0) * Number(item.unitPrice ?? item.rate ?? 0))),
-            }));
+            const lines = (invoice.items?.length ? invoice.items : invoice.fmSubscriptionItems ?? []).map((item: any) => {
+                const base = String(item.description || item.label || 'Item').trim();
+                const bog = !!item.billOfGoods || !!item.product?.billOfGoods;
+                const label = bog && base && !/\(BoG\)\s*$/i.test(base) ? `${base} (BoG)` : base;
+                return {
+                    label,
+                    qty: Number(item.quantity ?? 0),
+                    price: Number(item.unitPrice ?? item.rate ?? 0),
+                    total: Number(item.lineTotal ?? item.total ?? (Number(item.quantity ?? 0) * Number(item.unitPrice ?? item.rate ?? 0))),
+                };
+            });
 
             const cols = {
                 desc: { x: margin + 8, w: 270 },

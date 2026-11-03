@@ -774,8 +774,8 @@ export default function BulkFMPreinstallPage() {
             const assignedRole: 'technician' | 'contractor' | 'subcontractor' = roleName.includes('subcontractor') || roleName.includes('sub-contractor')
                 ? 'subcontractor'
                 : roleName.includes('contractor')
-                ? 'contractor'
-                : 'technician';
+                    ? 'contractor'
+                    : 'technician';
 
             const newJob = {
                 id: masterJobId,
@@ -913,22 +913,20 @@ export default function BulkFMPreinstallPage() {
             <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg mb-5 w-fit border border-slate-200">
                 <button
                     onClick={() => setActiveTab('records')}
-                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
-                        activeTab === 'records'
+                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${activeTab === 'records'
                             ? 'bg-white text-indigo-700 shadow-sm'
                             : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                        }`}
                 >
                     <Layers className="w-3.5 h-3.5" />
                     Bulk Records
                 </button>
                 <button
                     onClick={() => setActiveTab('create')}
-                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
-                        activeTab === 'create'
+                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${activeTab === 'create'
                             ? 'bg-white text-indigo-700 shadow-sm'
                             : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                        }`}
                 >
                     <Plus className="w-3.5 h-3.5" />
                     New Bulk Rollout
@@ -940,1007 +938,1006 @@ export default function BulkFMPreinstallPage() {
             ) : (
                 <>
 
-            {/* Completion Modal / Banner */}
-            {completedResult && (
-                <div className="mb-6 bg-emerald-50 border-2 border-emerald-300 rounded-xl p-5 shadow-sm">
-                    <div className="flex items-start gap-4">
-                        <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
-                            <CheckCircle2 className="w-6 h-6" />
-                        </div>
-                        <div className="flex-1">
-                            <div className="flex items-center justify-between flex-wrap gap-2">
-                                <h3 className="font-semibold text-emerald-900 text-base">
-                                    Successfully Generated {completedResult.count} FM Preinstall Records!
-                                </h3>
-                                <span className="text-xs px-2.5 py-1 bg-emerald-200 text-emerald-800 rounded-full font-mono font-bold">
-                                    {completedResult.jobNumber}
-                                </span>
-                            </div>
-                            <p className="text-xs text-emerald-700 mt-1">
-                                One master installation job was created for <strong>{completedResult.customerName}</strong> in Job Book, with individual preinstall sheets generated for each vehicle.
-                            </p>
-
-                            {/* Badges of created preinstall numbers */}
-                            <div className="mt-3 flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white/80 rounded-lg border border-emerald-200">
-                                {completedResult.preinstalls.map((p: any, idx: number) => (
-                                    <span
-                                        key={p.id || idx}
-                                        className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 border rounded text-slate-700 cursor-pointer"
-                                        onClick={() => router.push(`/fm-preinstall/${p.id}`)}
-                                        title={`View ${p.preinstallNo} (Fleet: ${p.fleetNumber})`}
-                                    >
-                                        <strong>{p.preinstallNo}</strong>
-                                        <span className="text-slate-400">({p.fleetNumber || p.regoNumber})</span>
-                                    </span>
-                                ))}
-                            </div>
-
-                            {/* Action buttons */}
-                            <div className="mt-4 flex items-center gap-3 flex-wrap">
-                                <Button
-                                    size="sm"
-                                    onClick={() => {
-                                        setCompletedResult(null);
-                                        setActiveTab('records');
-                                    }}
-                                    className="bg-indigo-700 hover:bg-indigo-800 text-white"
-                                >
-                                    View Bulk Rollouts
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={() => router.push('/fm-preinstall')}
-                                    className="bg-emerald-700 hover:bg-emerald-800 text-white"
-                                >
-                                    View All Preinstalls
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => router.push('/job-boards/installations')}
-                                    className="border-emerald-300 text-emerald-800 hover:bg-emerald-100"
-                                >
-                                    Open in Job Book
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    variant="ghost"
-                                    onClick={() => setCompletedResult(null)}
-                                    className="text-slate-600"
-                                >
-                                    Create Another Fleet Job
-                                </Button>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Main Grid: Form Sections */}
-            <div className="space-y-5">
-
-                {/* SECTION 1: Customer & Master Job Header */}
-                <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between pb-3 mb-4 border-b">
-                        <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                            Customer & Fleet Job Details
-                        </h2>
-                        {fmFleetName && (
-                            <span className="text-xs bg-indigo-50 text-indigo-700 font-medium px-2.5 py-1 rounded-md border border-indigo-200">
-                                FM Fleet: <strong>{fmFleetName}</strong>
-                            </span>
-                        )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 text-xs">
-                        {/* Customer Search Select */}
-                        <div className="sm:col-span-2 lg:col-span-4">
-                            <label className="text-slate-600 font-medium block mb-1">
-                                Select Customer <span className="text-rose-500">*</span>
-                            </label>
-                            <CustomerSearchSelect
-                                value={selectedCustomer || customerId}
-                                onSelect={handleCustomerSelect}
-                                label=""
-                            />
-                        </div>
-
-                        {/* Job Title */}
-                        <div className="sm:col-span-2 lg:col-span-4">
-                            <label className="text-slate-600 font-medium block mb-1">Fleet Job Title</label>
-                            <Input
-                                placeholder="e.g. 20-Vehicle Rollout"
-                                value={jobTitle}
-                                onChange={(e) => setJobTitle(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Install Type */}
-                        <div className="sm:col-span-1 lg:col-span-2">
-                            <label className="text-slate-600 font-medium block mb-1">Install Type</label>
-                            <Select
-                                value={type}
-                                onChange={(val: any) => {
-                                    const nextType = typeof val === 'string' ? val : (val?.target?.value ?? String(val ?? ''));
-                                    setType(nextType);
-                                    updateInstallDetail({ installType: nextType });
-                                }}
-                                options={INSTALL_TYPES}
-                            />
-                        </div>
-
-                        {/* Order / PO Number */}
-                        <div className="sm:col-span-1 lg:col-span-2">
-                            <label className="text-slate-600 font-medium block mb-1">Order / PO #</label>
-                            <Input
-                                placeholder="e.g. PO-8921"
-                                value={orderNumber}
-                                onChange={(e) => setOrderNumber(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Install Date */}
-                        <div className="sm:col-span-1 lg:col-span-3">
-                            <label className="text-slate-600 font-medium block mb-1">Installation Date</label>
-                            <Input
-                                type="date"
-                                value={installDate}
-                                onChange={(e) => setInstallDate(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Install Location */}
-                        <div className="sm:col-span-1 lg:col-span-3">
-                            <label className="text-slate-600 font-medium block mb-1">Install Location</label>
-                            <Input
-                                placeholder="e.g. Main Yard or Customer Depot"
-                                value={installLocation}
-                                onChange={(e) => setInstallLocation(e.target.value)}
-                            />
-                        </div>
-
-                        {/* Assigned Installer / Technician */}
-                        <div className="sm:col-span-1 lg:col-span-3">
-                            <label className="text-slate-600 font-medium block mb-1">Lead Installer / Tech</label>
-                            <select
-                                className="w-full border rounded-md p-2 text-xs bg-white text-slate-800"
-                                value={installerId}
-                                onChange={(e) => setInstallerId(e.target.value)}
-                            >
-                                <option value="">Unassigned (Operations Pool)</option>
-                                {users.map((u) => (
-                                    <option key={u.id} value={u.id}>
-                                        {u.displayName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Depot Selector if customer has depots */}
-                        <div className="sm:col-span-1 lg:col-span-3">
-                            <label className="text-slate-600 font-medium block mb-1">Customer Depot</label>
-                            <select
-                                className="w-full border rounded-md p-2 text-xs bg-white text-slate-800"
-                                value={depotId}
-                                onChange={(e) => setDepotId(e.target.value)}
-                            >
-                                <option value="">Default Depot</option>
-                                {depots.map((d) => (
-                                    <option key={d.id} value={d.id}>
-                                        {d.name || d.code}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Collapsible Address Verification */}
-                    <div className="mt-3 pt-3 border-t">
-                        <button
-                            type="button"
-                            onClick={() => setShowAddressDetails(!showAddressDetails)}
-                            className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
-                        >
-                            {showAddressDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
-                            {showAddressDetails ? 'Hide' : 'Review'} Shipping & Billing Address Snapshots
-                        </button>
-
-                        {showAddressDetails && (
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 bg-slate-50 p-3 rounded-lg border text-xs">
-                                <div>
-                                    <h4 className="font-semibold text-slate-700 mb-2">Shipping Destination</h4>
-                                    <div className="space-y-1.5">
-                                        <Input
-                                            placeholder="Shipping Name"
-                                            value={shippingAddress.name}
-                                            onChange={(e) => setShippingAddress({ ...shippingAddress, name: e.target.value })}
-                                        />
-                                        <Input
-                                            placeholder="Street Address 1"
-                                            value={shippingAddress.address1}
-                                            onChange={(e) => setShippingAddress({ ...shippingAddress, address1: e.target.value })}
-                                        />
-                                        <div className="grid grid-cols-3 gap-1.5">
-                                            <Input
-                                                placeholder="City"
-                                                value={shippingAddress.city}
-                                                onChange={(e) => setShippingAddress({ ...shippingAddress, city: e.target.value })}
-                                            />
-                                            <Input
-                                                placeholder="State"
-                                                value={shippingAddress.state}
-                                                onChange={(e) => setShippingAddress({ ...shippingAddress, state: e.target.value })}
-                                            />
-                                            <Input
-                                                placeholder="Postcode"
-                                                value={shippingAddress.postcode}
-                                                onChange={(e) => setShippingAddress({ ...shippingAddress, postcode: e.target.value })}
-                                            />
-                                        </div>
-                                    </div>
+                    {/* Completion Modal / Banner */}
+                    {completedResult && (
+                        <div className="mb-6 bg-emerald-50 border-2 border-emerald-300 rounded-xl p-5 shadow-sm">
+                            <div className="flex items-start gap-4">
+                                <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-xl">
+                                    <CheckCircle2 className="w-6 h-6" />
                                 </div>
-
-                                <div>
-                                    <h4 className="font-semibold text-slate-700 mb-2">Billing Account</h4>
-                                    <div className="space-y-1.5">
-                                        <Input
-                                            placeholder="Billing Name"
-                                            value={billingAddress.name}
-                                            onChange={(e) => setBillingAddress({ ...billingAddress, name: e.target.value })}
-                                        />
-                                        <Input
-                                            placeholder="Street Address 1"
-                                            value={billingAddress.address1}
-                                            onChange={(e) => setBillingAddress({ ...billingAddress, address1: e.target.value })}
-                                        />
-                                        <div className="grid grid-cols-3 gap-1.5">
-                                            <Input
-                                                placeholder="City"
-                                                value={billingAddress.city}
-                                                onChange={(e) => setBillingAddress({ ...billingAddress, city: e.target.value })}
-                                            />
-                                            <Input
-                                                placeholder="State"
-                                                value={billingAddress.state}
-                                                onChange={(e) => setBillingAddress({ ...billingAddress, state: e.target.value })}
-                                            />
-                                            <Input
-                                                placeholder="Postcode"
-                                                value={billingAddress.postcode}
-                                                onChange={(e) => setBillingAddress({ ...billingAddress, postcode: e.target.value })}
-                                            />
-                                        </div>
+                                <div className="flex-1">
+                                    <div className="flex items-center justify-between flex-wrap gap-2">
+                                        <h3 className="font-semibold text-emerald-900 text-base">
+                                            Successfully Generated {completedResult.count} FM Preinstall Records!
+                                        </h3>
+                                        <span className="text-xs px-2.5 py-1 bg-emerald-200 text-emerald-800 rounded-full font-mono font-bold">
+                                            {completedResult.jobNumber}
+                                        </span>
                                     </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
-                </div>
+                                    <p className="text-xs text-emerald-700 mt-1">
+                                        One master installation job was created for <strong>{completedResult.customerName}</strong> in Job Book, with individual preinstall sheets generated for each vehicle.
+                                    </p>
 
-                {/* SECTION 2: Standard Hardware & Line Items (Per Vehicle) */}
-                <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
-                    <div className="flex items-center justify-between pb-3 mb-4 border-b">
-                        <div>
-                            <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
-                                Standard Hardware & Bill of Materials (Per Vehicle)
-                            </h2>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                Every vehicle in this bulk job will receive this configuration and hardware kit.
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <span className="text-xs text-slate-400 block">Kit Cost / Vehicle</span>
-                            <span className="text-sm font-bold text-slate-800 font-mono">${packageTotalPerVehicle.toFixed(2)}</span>
-                        </div>
-                    </div>
-
-                    {/* FM INSTALLATION DETAILS SECTION (Matched to /fm-preinstall/new) */}
-                    <div className="mb-5 border rounded-lg overflow-hidden bg-white shadow-xs">
-                        <div className="flex justify-between items-center px-3.5 py-2.5 bg-slate-100 border-b">
-                            <div className="flex items-center gap-2 flex-wrap">
-                                <span className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                                    FM INSTALLATION DETAILS (Per Vehicle Specification)
-                                </span>
-                                {installDetail.serviceCode && (
-                                    <span className="font-mono text-[11px] font-bold px-2 py-0.5 bg-cyan-100 text-cyan-800 border border-cyan-300 rounded">
-                                        SVC: {installDetail.serviceCode}
-                                    </span>
-                                )}
-                                {installDetail.mixCode && (
-                                    <span className="font-mono text-[11px] px-2 py-0.5 bg-yellow-100 text-amber-800 border border-yellow-300 rounded">
-                                        MIX: {installDetail.mixCode}
-                                    </span>
-                                )}
-                            </div>
-                            <div className="flex items-center gap-2">
-                                <Button
-                                    type="button"
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => setShowInstallDetailsModal(true)}
-                                    className="h-6 text-[11px] px-2.5 bg-white hover:bg-slate-50 text-indigo-700 border-indigo-200"
-                                >
-                                    <ExternalLink className="w-3 h-3 mr-1" />
-                                    Open Full FM Panel
-                                </Button>
-                            </div>
-                        </div>
-
-                        <div className="p-3.5">
-                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
-                                {/* ══ LEFT COLUMN: Core Telematics Unit & Service Codes ══════ */}
-                                <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-lg border border-slate-200">
-                                    <div className="text-xs font-semibold text-slate-700 pb-1 mb-1 border-b border-slate-200 flex items-center justify-between">
-                                        <span>Core Telematics & Service Codes</span>
-                                        <span className="text-[10px] text-slate-400 font-normal">Base unit & network segments</span>
+                                    {/* Badges of created preinstall numbers */}
+                                    <div className="mt-3 flex flex-wrap gap-1.5 max-h-28 overflow-y-auto p-2 bg-white/80 rounded-lg border border-emerald-200">
+                                        {completedResult.preinstalls.map((p: any, idx: number) => (
+                                            <span
+                                                key={p.id || idx}
+                                                className="inline-flex items-center gap-1 text-[11px] font-mono px-2 py-0.5 bg-slate-100 hover:bg-indigo-50 border rounded text-slate-700 cursor-pointer"
+                                                onClick={() => router.push(`/fm-preinstall/${p.id}`)}
+                                                title={`View ${p.preinstallNo} (Fleet: ${p.fleetNumber})`}
+                                            >
+                                                <strong>{p.preinstallNo}</strong>
+                                                <span className="text-slate-400">({p.fleetNumber || p.regoNumber})</span>
+                                            </span>
+                                        ))}
                                     </div>
 
-                                    <LabelRow label="Install Type">
-                                        <select
-                                            className="w-full border rounded p-1 bg-white text-xs"
-                                            value={type}
-                                            onChange={(e) => {
-                                                setType(e.target.value);
-                                                updateInstallDetail({ installType: e.target.value });
+                                    {/* Action buttons */}
+                                    <div className="mt-4 flex items-center gap-3 flex-wrap">
+                                        <Button
+                                            size="sm"
+                                            onClick={() => {
+                                                setCompletedResult(null);
+                                                setActiveTab('records');
                                             }}
+                                            className="bg-indigo-700 hover:bg-indigo-800 text-white"
                                         >
-                                            {INSTALL_TYPES.map((t) => (
-                                                <option key={t.value} value={t.value}>{t.label}</option>
-                                            ))}
-                                        </select>
-                                    </LabelRow>
-
-                                    <LabelRow label="FM Unit Type">
-                                        <div className="flex gap-1 items-center">
-                                            <select
-                                                className="flex-1 border rounded p-1 bg-white text-xs"
-                                                value={installDetail.fmUnitType ?? ''}
-                                                onChange={(e) => handleUnitChange(e.target.value)}
-                                            >
-                                                <option value="">Select</option>
-                                                {sortedBaseUnits.map((b: any) => (
-                                                    <option key={b.id} value={b.code}>{b.label}</option>
-                                                ))}
-                                            </select>
-                                            <IndexBadge>{fmutIndex}</IndexBadge>
-                                        </div>
-                                    </LabelRow>
-
-                                    <LabelRow label="FM Unit Code">
-                                        <div className="flex gap-1 items-center">
-                                            <select
-                                                className="flex-1 border rounded p-1 bg-white text-xs"
-                                                value={installDetail.fmUnitCode ?? ''}
-                                                onChange={(e) => updateInstallDetail({ fmUnitCode: e.target.value })}
-                                            >
-                                                <option value="">Select</option>
-                                                {sortedUnitCodes.map((c: any) => (
-                                                    <option key={c.id} value={c.code}>{c.label}</option>
-                                                ))}
-                                            </select>
-                                            <IndexBadge>{unitCodeIndex}</IndexBadge>
-                                            <IndexBadge>{fmutIndex}</IndexBadge>
-                                        </div>
-                                    </LabelRow>
-
-                                    <LabelRow label="4G Modem">
-                                        <select
-                                            className="w-full border rounded p-1 bg-white text-xs"
-                                            value={installDetail.modem4G === false ? 'NO' : 'YES'}
-                                            onChange={(e) => updateInstallDetail({ modem4G: e.target.value === 'YES' })}
+                                            View Bulk Rollouts
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={() => router.push('/fm-preinstall')}
+                                            className="bg-emerald-700 hover:bg-emerald-800 text-white"
                                         >
-                                            <option value="YES">Yes</option>
-                                            <option value="NO">No</option>
-                                        </select>
-                                    </LabelRow>
+                                            View All Preinstalls
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => router.push('/job-boards/installations')}
+                                            className="border-emerald-300 text-emerald-800 hover:bg-emerald-100"
+                                        >
+                                            Open in Job Book
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            variant="ghost"
+                                            onClick={() => setCompletedResult(null)}
+                                            className="text-slate-600"
+                                        >
+                                            Create Another Fleet Job
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    )}
 
-                                    <LabelRow label="Service Code">
-                                        <div className="flex gap-1 items-center">
-                                            <Input
-                                                className="flex-1 bg-cyan-100/70 font-bold tracking-wide text-xs border-cyan-300 text-cyan-900"
-                                                value={installDetail.serviceCode ?? ''}
-                                                readOnly
-                                            />
-                                            <IndexBadge>{(installDetail.serviceCode ?? '').length || ''}</IndexBadge>
-                                        </div>
-                                    </LabelRow>
+                    {/* Main Grid: Form Sections */}
+                    <div className="space-y-5">
 
-                                    <LabelRow label="MIX Code">
-                                        <Input
-                                            className="font-mono bg-yellow-50 text-xs border-yellow-300 text-amber-900"
-                                            value={installDetail.mixCode ?? ''}
-                                            readOnly
-                                        />
-                                    </LabelRow>
+                        {/* SECTION 1: Customer & Master Job Header */}
+                        <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
+                            <div className="flex items-center justify-between pb-3 mb-4 border-b">
+                                <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                                    Customer & Fleet Job Details
+                                </h2>
+                                {fmFleetName && (
+                                    <span className="text-xs bg-indigo-50 text-indigo-700 font-medium px-2.5 py-1 rounded-md border border-indigo-200">
+                                        FM Fleet: <strong>{fmFleetName}</strong>
+                                    </span>
+                                )}
+                            </div>
 
-                                    <LabelRow label="Mix Org ID">
-                                        <Input
-                                            className="bg-orange-50 text-xs border-orange-200"
-                                            placeholder="e.g. 5049"
-                                            value={installDetail.mixOrgId ?? ''}
-                                            onChange={(e) => updateInstallDetail({ mixOrgId: e.target.value })}
-                                        />
-                                    </LabelRow>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-12 gap-3 text-xs">
+                                {/* Customer Search Select */}
+                                <div className="sm:col-span-2 lg:col-span-4">
+                                    <label className="text-slate-600 font-medium block mb-1">
+                                        Select Customer <span className="text-rose-500">*</span>
+                                    </label>
+                                    <CustomerSearchSelect
+                                        value={selectedCustomer || customerId}
+                                        onSelect={handleCustomerSelect}
+                                        label=""
+                                    />
                                 </div>
 
-                                {/* ══ RIGHT COLUMN: Monitor, Vision & Options ══════ */}
-                                <div className="space-y-3">
-                                    {/* ── MONITOR DETAILS ── */}
-                                    <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
-                                        <div className="font-semibold text-xs text-slate-700 mb-1.5">Monitor Details</div>
-                                        <div className="mb-2">
-                                            <Checkbox
-                                                label="Mix Sim1"
-                                                checked={installDetail.mixSim1 ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ mixSim1: v, ...(!v && { sim1Type: undefined }) })}
-                                            />
+                                {/* Job Title */}
+                                <div className="sm:col-span-2 lg:col-span-4">
+                                    <label className="text-slate-600 font-medium block mb-1">Fleet Job Title</label>
+                                    <Input
+                                        placeholder="e.g. 20-Vehicle Rollout"
+                                        value={jobTitle}
+                                        onChange={(e) => setJobTitle(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Install Type */}
+                                <div className="sm:col-span-1 lg:col-span-2">
+                                    <label className="text-slate-600 font-medium block mb-1">Install Type</label>
+                                    <Select
+                                        value={type}
+                                        onChange={(val: any) => {
+                                            const nextType = typeof val === 'string' ? val : (val?.target?.value ?? String(val ?? ''));
+                                            setType(nextType);
+                                            updateInstallDetail({ installType: nextType });
+                                        }}
+                                        options={INSTALL_TYPES}
+                                    />
+                                </div>
+
+                                {/* Order / PO Number */}
+                                <div className="sm:col-span-1 lg:col-span-2">
+                                    <label className="text-slate-600 font-medium block mb-1">Order / PO #</label>
+                                    <Input
+                                        placeholder="e.g. PO-8921"
+                                        value={orderNumber}
+                                        onChange={(e) => setOrderNumber(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Install Date */}
+                                <div className="sm:col-span-1 lg:col-span-3">
+                                    <label className="text-slate-600 font-medium block mb-1">Installation Date</label>
+                                    <Input
+                                        type="date"
+                                        value={installDate}
+                                        onChange={(e) => setInstallDate(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Install Location */}
+                                <div className="sm:col-span-1 lg:col-span-3">
+                                    <label className="text-slate-600 font-medium block mb-1">Install Location</label>
+                                    <Input
+                                        placeholder="e.g. Main Yard or Customer Depot"
+                                        value={installLocation}
+                                        onChange={(e) => setInstallLocation(e.target.value)}
+                                    />
+                                </div>
+
+                                {/* Assigned Installer / Technician */}
+                                <div className="sm:col-span-1 lg:col-span-3">
+                                    <label className="text-slate-600 font-medium block mb-1">Lead Installer / Tech</label>
+                                    <select
+                                        className="w-full border rounded-md p-2 text-xs bg-white text-slate-800"
+                                        value={installerId}
+                                        onChange={(e) => setInstallerId(e.target.value)}
+                                    >
+                                        <option value="">Unassigned (Operations Pool)</option>
+                                        {users.map((u) => (
+                                            <option key={u.id} value={u.id}>
+                                                {u.displayName || `${u.firstName || ''} ${u.lastName || ''}`.trim() || u.email}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Depot Selector if customer has depots */}
+                                <div className="sm:col-span-1 lg:col-span-3">
+                                    <label className="text-slate-600 font-medium block mb-1">Customer Depot</label>
+                                    <select
+                                        className="w-full border rounded-md p-2 text-xs bg-white text-slate-800"
+                                        value={depotId}
+                                        onChange={(e) => setDepotId(e.target.value)}
+                                    >
+                                        <option value="">Default Depot</option>
+                                        {depots.map((d) => (
+                                            <option key={d.id} value={d.id}>
+                                                {d.name || d.code}
+                                            </option>
+                                        ))}
+                                    </select>
+                                </div>
+                            </div>
+
+                            {/* Collapsible Address Verification */}
+                            <div className="mt-3 pt-3 border-t">
+                                <button
+                                    type="button"
+                                    onClick={() => setShowAddressDetails(!showAddressDetails)}
+                                    className="text-xs text-indigo-600 hover:text-indigo-800 font-medium flex items-center gap-1"
+                                >
+                                    {showAddressDetails ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
+                                    {showAddressDetails ? 'Hide' : 'Review'} Shipping & Billing Address Snapshots
+                                </button>
+
+                                {showAddressDetails && (
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-3 bg-slate-50 p-3 rounded-lg border text-xs">
+                                        <div>
+                                            <h4 className="font-semibold text-slate-700 mb-2">Shipping Destination</h4>
+                                            <div className="space-y-1.5">
+                                                <Input
+                                                    placeholder="Shipping Name"
+                                                    value={shippingAddress.name}
+                                                    onChange={(e) => setShippingAddress({ ...shippingAddress, name: e.target.value })}
+                                                />
+                                                <Input
+                                                    placeholder="Street Address 1"
+                                                    value={shippingAddress.address1}
+                                                    onChange={(e) => setShippingAddress({ ...shippingAddress, address1: e.target.value })}
+                                                />
+                                                <div className="grid grid-cols-3 gap-1.5">
+                                                    <Input
+                                                        placeholder="City"
+                                                        value={shippingAddress.city}
+                                                        onChange={(e) => setShippingAddress({ ...shippingAddress, city: e.target.value })}
+                                                    />
+                                                    <Input
+                                                        placeholder="State"
+                                                        value={shippingAddress.state}
+                                                        onChange={(e) => setShippingAddress({ ...shippingAddress, state: e.target.value })}
+                                                    />
+                                                    <Input
+                                                        placeholder="Postcode"
+                                                        value={shippingAddress.postcode}
+                                                        onChange={(e) => setShippingAddress({ ...shippingAddress, postcode: e.target.value })}
+                                                    />
+                                                </div>
+                                            </div>
                                         </div>
-                                        {installDetail.mixSim1 && (
-                                            <LabelRow label="SIM 1 Type">
+
+                                        <div>
+                                            <h4 className="font-semibold text-slate-700 mb-2">Billing Account</h4>
+                                            <div className="space-y-1.5">
+                                                <Input
+                                                    placeholder="Billing Name"
+                                                    value={billingAddress.name}
+                                                    onChange={(e) => setBillingAddress({ ...billingAddress, name: e.target.value })}
+                                                />
+                                                <Input
+                                                    placeholder="Street Address 1"
+                                                    value={billingAddress.address1}
+                                                    onChange={(e) => setBillingAddress({ ...billingAddress, address1: e.target.value })}
+                                                />
+                                                <div className="grid grid-cols-3 gap-1.5">
+                                                    <Input
+                                                        placeholder="City"
+                                                        value={billingAddress.city}
+                                                        onChange={(e) => setBillingAddress({ ...billingAddress, city: e.target.value })}
+                                                    />
+                                                    <Input
+                                                        placeholder="State"
+                                                        value={billingAddress.state}
+                                                        onChange={(e) => setBillingAddress({ ...billingAddress, state: e.target.value })}
+                                                    />
+                                                    <Input
+                                                        placeholder="Postcode"
+                                                        value={billingAddress.postcode}
+                                                        onChange={(e) => setBillingAddress({ ...billingAddress, postcode: e.target.value })}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        {/* SECTION 2: Standard Hardware & Line Items (Per Vehicle) */}
+                        <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
+                            <div className="flex items-center justify-between pb-3 mb-4 border-b">
+                                <div>
+                                    <h2 className="font-semibold text-slate-800 text-sm flex items-center gap-2">
+                                        Standard Hardware & Bill of Materials (Per Vehicle)
+                                    </h2>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Every vehicle in this bulk job will receive this configuration and hardware kit.
+                                    </p>
+                                </div>
+                                <div className="text-right">
+                                    <span className="text-xs text-slate-400 block">Kit Cost / Vehicle</span>
+                                    <span className="text-sm font-bold text-slate-800 font-mono">${packageTotalPerVehicle.toFixed(2)}</span>
+                                </div>
+                            </div>
+
+                            {/* FM INSTALLATION DETAILS SECTION (Matched to /fm-preinstall/new) */}
+                            <div className="mb-5 border rounded-lg overflow-hidden bg-white shadow-xs">
+                                <div className="flex justify-between items-center px-3.5 py-2.5 bg-slate-100 border-b">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="font-bold text-xs uppercase tracking-wider text-slate-800">
+                                            FM INSTALLATION DETAILS (Per Vehicle Specification)
+                                        </span>
+                                        {installDetail.serviceCode && (
+                                            <span className="font-mono text-[11px] font-bold px-2 py-0.5 bg-cyan-100 text-cyan-800 border border-cyan-300 rounded">
+                                                SVC: {installDetail.serviceCode}
+                                            </span>
+                                        )}
+                                        {installDetail.mixCode && (
+                                            <span className="font-mono text-[11px] px-2 py-0.5 bg-yellow-100 text-amber-800 border border-yellow-300 rounded">
+                                                MIX: {installDetail.mixCode}
+                                            </span>
+                                        )}
+                                    </div>
+                                    <div className="flex items-center gap-2">
+                                        <Button
+                                            type="button"
+                                            size="sm"
+                                            variant="outline"
+                                            onClick={() => setShowInstallDetailsModal(true)}
+                                            className="h-6 text-[11px] px-2.5 bg-white hover:bg-slate-50 text-indigo-700 border-indigo-200"
+                                        >
+                                            <ExternalLink className="w-3 h-3 mr-1" />
+                                            Open Full FM Panel
+                                        </Button>
+                                    </div>
+                                </div>
+
+                                <div className="p-3.5">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+                                        {/* ══ LEFT COLUMN: Core Telematics Unit & Service Codes ══════ */}
+                                        <div className="space-y-1.5 bg-slate-50/70 p-3 rounded-lg border border-slate-200">
+                                            <div className="text-xs font-semibold text-slate-700 pb-1 mb-1 border-b border-slate-200 flex items-center justify-between">
+                                                <span>Core Telematics & Service Codes</span>
+                                                <span className="text-[10px] text-slate-400 font-normal">Base unit & network segments</span>
+                                            </div>
+
+                                            <LabelRow label="Install Type">
                                                 <select
                                                     className="w-full border rounded p-1 bg-white text-xs"
-                                                    value={installDetail.sim1Type ?? ''}
-                                                    onChange={(e) => updateInstallDetail({ sim1Type: e.target.value })}
+                                                    value={type}
+                                                    onChange={(e) => {
+                                                        setType(e.target.value);
+                                                        updateInstallDetail({ installType: e.target.value });
+                                                    }}
                                                 >
-                                                    <option value="">Select</option>
-                                                    {sim1List.map((s: any) => (
-                                                        <option key={s.id} value={s.code}>{s.label}</option>
+                                                    {INSTALL_TYPES.map((t) => (
+                                                        <option key={t.value} value={t.value}>{t.label}</option>
                                                     ))}
                                                 </select>
                                             </LabelRow>
-                                        )}
-                                    </div>
 
-                                    {/* ── VISION FITTED ── */}
-                                    <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
-                                        <div className="font-semibold text-xs text-slate-700 mb-1.5">Vision Fitted</div>
-                                        
-                                        {/* Vision Radios */}
-                                        <div className="flex flex-wrap gap-3 mb-2 text-xs">
-                                            {visionList.length > 0 && (
-                                                <Radio
-                                                    value=""
-                                                    label="No Vision"
-                                                    checked={!installDetail.visionType}
-                                                    onChange={() => handleVisionChange('')}
+                                            <LabelRow label="FM Unit Type">
+                                                <div className="flex gap-1 items-center">
+                                                    <select
+                                                        className="flex-1 border rounded p-1 bg-white text-xs"
+                                                        value={installDetail.fmUnitType ?? ''}
+                                                        onChange={(e) => handleUnitChange(e.target.value)}
+                                                    >
+                                                        <option value="">Select</option>
+                                                        {sortedBaseUnits.map((b: any) => (
+                                                            <option key={b.id} value={b.code}>{b.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <IndexBadge>{fmutIndex}</IndexBadge>
+                                                </div>
+                                            </LabelRow>
+
+                                            <LabelRow label="FM Unit Code">
+                                                <div className="flex gap-1 items-center">
+                                                    <select
+                                                        className="flex-1 border rounded p-1 bg-white text-xs"
+                                                        value={installDetail.fmUnitCode ?? ''}
+                                                        onChange={(e) => updateInstallDetail({ fmUnitCode: e.target.value })}
+                                                    >
+                                                        <option value="">Select</option>
+                                                        {sortedUnitCodes.map((c: any) => (
+                                                            <option key={c.id} value={c.code}>{c.label}</option>
+                                                        ))}
+                                                    </select>
+                                                    <IndexBadge>{unitCodeIndex}</IndexBadge>
+                                                    <IndexBadge>{fmutIndex}</IndexBadge>
+                                                </div>
+                                            </LabelRow>
+
+                                            <LabelRow label="4G Modem">
+                                                <select
+                                                    className="w-full border rounded p-1 bg-white text-xs"
+                                                    value={installDetail.modem4G === false ? 'NO' : 'YES'}
+                                                    onChange={(e) => updateInstallDetail({ modem4G: e.target.value === 'YES' })}
+                                                >
+                                                    <option value="YES">Yes</option>
+                                                    <option value="NO">No</option>
+                                                </select>
+                                            </LabelRow>
+
+                                            <LabelRow label="Service Code">
+                                                <div className="flex gap-1 items-center">
+                                                    <Input
+                                                        className="flex-1 bg-cyan-100/70 font-bold tracking-wide text-xs border-cyan-300 text-cyan-900"
+                                                        value={installDetail.serviceCode ?? ''}
+                                                        readOnly
+                                                    />
+                                                    <IndexBadge>{(installDetail.serviceCode ?? '').length || ''}</IndexBadge>
+                                                </div>
+                                            </LabelRow>
+
+                                            <LabelRow label="MIX Code">
+                                                <Input
+                                                    className="font-mono bg-yellow-50 text-xs border-yellow-300 text-amber-900"
+                                                    value={installDetail.mixCode ?? ''}
+                                                    readOnly
                                                 />
-                                            )}
-                                            {visionList.map((v: any) => (
-                                                <Radio
-                                                    key={`${v.code}-${v.label}`}
-                                                    value={v.code}
-                                                    label={v.label}
-                                                    checked={installDetail.visionType === v.code}
-                                                    onChange={(val: string) => handleVisionChange(val)}
+                                            </LabelRow>
+
+                                            <LabelRow label="Mix Org ID">
+                                                <Input
+                                                    className="bg-orange-50 text-xs border-orange-200"
+                                                    placeholder="e.g. 5049"
+                                                    value={installDetail.mixOrgId ?? ''}
+                                                    onChange={(e) => updateInstallDetail({ mixOrgId: e.target.value })}
                                                 />
-                                            ))}
+                                            </LabelRow>
                                         </div>
 
-                                        {/* AAI Camera Type (when vision active) */}
-                                        {hasVision && (
-                                            <div className="mb-2">
-                                                <LabelRow label="AAI Camera Type">
-                                                    <div className="flex gap-1 items-center">
-                                                        <IndexBadge>
-                                                            {cameraList.find((c: any) => c.code === installDetail.cameraType)?.mixIndex ?? ''}
-                                                        </IndexBadge>
+                                        {/* ══ RIGHT COLUMN: Monitor, Vision & Options ══════ */}
+                                        <div className="space-y-3">
+                                            {/* ── MONITOR DETAILS ── */}
+                                            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
+                                                <div className="font-semibold text-xs text-slate-700 mb-1.5">Monitor Details</div>
+                                                <div className="mb-2">
+                                                    <Checkbox
+                                                        label="Mix Sim1"
+                                                        checked={installDetail.mixSim1 ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ mixSim1: v, ...(!v && { sim1Type: undefined }) })}
+                                                    />
+                                                </div>
+                                                {installDetail.mixSim1 && (
+                                                    <LabelRow label="SIM 1 Type">
                                                         <select
-                                                            className="flex-1 border rounded p-1 bg-white text-xs"
-                                                            value={installDetail.cameraType ?? ''}
-                                                            onChange={(e) => handleCameraTypeChange(e.target.value)}
+                                                            className="w-full border rounded p-1 bg-white text-xs"
+                                                            value={installDetail.sim1Type ?? ''}
+                                                            onChange={(e) => updateInstallDetail({ sim1Type: e.target.value })}
                                                         >
                                                             <option value="">Select</option>
-                                                            {cameraList.map((c: any) => (
-                                                                <option key={c.id} value={c.code}>{c.label}</option>
+                                                            {sim1List.map((s: any) => (
+                                                                <option key={s.id} value={s.code}>{s.label}</option>
                                                             ))}
                                                         </select>
-                                                    </div>
-                                                </LabelRow>
+                                                    </LabelRow>
+                                                )}
                                             </div>
-                                        )}
 
-                                        {/* Mix Sim2 + Camera Count Controls */}
-                                        <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
-                                            <div className="flex items-center gap-3">
-                                                <Checkbox
-                                                    label="Mix Sim2"
-                                                    checked={installDetail.mixSim2 ?? false}
-                                                    onChange={(val: boolean) => updateInstallDetail({ mixSim2: val })}
-                                                />
-                                                <div className="flex items-center gap-1.5">
-                                                    <input
-                                                        type="checkbox"
-                                                        id="bulk-chk-4gvis"
-                                                        checked={installDetail.mixSim2 ?? false}
-                                                        onChange={(e) => updateInstallDetail({ mixSim2: e.target.checked })}
-                                                        className="accent-green-600 w-3.5 h-3.5"
+                                            {/* ── VISION FITTED ── */}
+                                            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
+                                                <div className="font-semibold text-xs text-slate-700 mb-1.5">Vision Fitted</div>
+
+                                                {/* Vision Radios */}
+                                                <div className="flex flex-wrap gap-3 mb-2 text-xs">
+                                                    {visionList.length > 0 && (
+                                                        <Radio
+                                                            value=""
+                                                            label="No Vision"
+                                                            checked={!installDetail.visionType}
+                                                            onChange={() => handleVisionChange('')}
+                                                        />
+                                                    )}
+                                                    {visionList.map((v: any) => (
+                                                        <Radio
+                                                            key={`${v.code}-${v.label}`}
+                                                            value={v.code}
+                                                            label={v.label}
+                                                            checked={installDetail.visionType === v.code}
+                                                            onChange={(val: string) => handleVisionChange(val)}
+                                                        />
+                                                    ))}
+                                                </div>
+
+                                                {/* AAI Camera Type (when vision active) */}
+                                                {hasVision && (
+                                                    <div className="mb-2">
+                                                        <LabelRow label="AAI Camera Type">
+                                                            <div className="flex gap-1 items-center">
+                                                                <IndexBadge>
+                                                                    {cameraList.find((c: any) => c.code === installDetail.cameraType)?.mixIndex ?? ''}
+                                                                </IndexBadge>
+                                                                <select
+                                                                    className="flex-1 border rounded p-1 bg-white text-xs"
+                                                                    value={installDetail.cameraType ?? ''}
+                                                                    onChange={(e) => handleCameraTypeChange(e.target.value)}
+                                                                >
+                                                                    <option value="">Select</option>
+                                                                    {cameraList.map((c: any) => (
+                                                                        <option key={c.id} value={c.code}>{c.label}</option>
+                                                                    ))}
+                                                                </select>
+                                                            </div>
+                                                        </LabelRow>
+                                                    </div>
+                                                )}
+
+                                                {/* Mix Sim2 + Camera Count Controls */}
+                                                <div className="flex items-center justify-between flex-wrap gap-2 mb-1.5">
+                                                    <div className="flex items-center gap-3">
+                                                        <Checkbox
+                                                            label="Mix Sim2"
+                                                            checked={installDetail.mixSim2 ?? false}
+                                                            onChange={(val: boolean) => updateInstallDetail({ mixSim2: val })}
+                                                        />
+                                                        <div className="flex items-center gap-1.5">
+                                                            <input
+                                                                type="checkbox"
+                                                                id="bulk-chk-4gvis"
+                                                                checked={installDetail.mixSim2 ?? false}
+                                                                onChange={(e) => updateInstallDetail({ mixSim2: e.target.checked })}
+                                                                className="accent-green-600 w-3.5 h-3.5"
+                                                            />
+                                                            <label
+                                                                htmlFor="bulk-chk-4gvis"
+                                                                className={`px-2 py-0.5 text-[10px] font-bold rounded cursor-pointer ${installDetail.mixSim2 ? 'bg-green-500 text-white' : 'bg-fuchsia-500 text-white'
+                                                                    }`}
+                                                            >
+                                                                4G Vis
+                                                            </label>
+                                                        </div>
+                                                    </div>
+
+                                                    {hasVision && !omitCount && (
+                                                        <div className="flex items-center gap-1.5 text-xs">
+                                                            <span className="text-slate-500">Cameras</span>
+                                                            <select
+                                                                className="border rounded p-1 bg-white text-xs"
+                                                                value={cameraCount}
+                                                                onChange={(e) => updateInstallDetail({ cameraCount: Number(e.target.value) })}
+                                                            >
+                                                                {[2, 3, 4].map((n) => (
+                                                                    <option key={n} value={n}>{n} Channels</option>
+                                                                ))}
+                                                            </select>
+                                                        </div>
+                                                    )}
+                                                </div>
+
+                                                {/* SIM 2 Type (when Sim2 active) */}
+                                                {installDetail.mixSim2 && (
+                                                    <LabelRow label="SIM 2 Type">
+                                                        <select
+                                                            className="w-full border rounded p-1 bg-white text-xs"
+                                                            value={installDetail.sim2Type ?? ''}
+                                                            onChange={(e) => updateInstallDetail({ sim2Type: e.target.value })}
+                                                        >
+                                                            <option value="">Select</option>
+                                                            {sim2List.map((s: any) => (
+                                                                <option key={s.id} value={s.code}>{s.label}</option>
+                                                            ))}
+                                                        </select>
+                                                    </LabelRow>
+                                                )}
+                                            </div>
+
+                                            {/* ── OPTIONS ── */}
+                                            <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
+                                                <div className="font-semibold text-xs text-slate-700 mb-1.5">Options</div>
+                                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+                                                    <Checkbox
+                                                        label="AI Option"
+                                                        checked={installDetail.aiOption ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ aiOption: v })}
                                                     />
-                                                    <label
-                                                        htmlFor="bulk-chk-4gvis"
-                                                        className={`px-2 py-0.5 text-[10px] font-bold rounded cursor-pointer ${
-                                                            installDetail.mixSim2 ? 'bg-green-500 text-white' : 'bg-fuchsia-500 text-white'
-                                                        }`}
-                                                    >
-                                                        4G Vis
-                                                    </label>
+                                                    <div className="flex items-center gap-1">
+                                                        <Checkbox
+                                                            label="TMA"
+                                                            checked={installDetail.tmaOption ?? false}
+                                                            onChange={(v: boolean) => updateInstallDetail({ tmaOption: v })}
+                                                        />
+                                                        <span className="text-[10px] text-slate-400">&gt;4k</span>
+                                                    </div>
+                                                    <div className="flex items-center gap-1">
+                                                        <Checkbox
+                                                            label="RIM"
+                                                            checked={installDetail.rimOption ?? false}
+                                                            onChange={(v: boolean) => updateInstallDetail({ rimOption: v })}
+                                                        />
+                                                        <span className="text-[10px] text-slate-400">&gt;4k</span>
+                                                    </div>
+                                                    <Checkbox
+                                                        label="NRC"
+                                                        checked={installDetail.nrc ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ nrc: v })}
+                                                    />
+                                                    <Checkbox
+                                                        label="Wi-Fi"
+                                                        checked={installDetail.wiFi ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ wiFi: v })}
+                                                    />
+                                                    <Checkbox
+                                                        label="Safe Guard"
+                                                        checked={installDetail.safeGuard ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ safeGuard: v })}
+                                                    />
+                                                    <Checkbox
+                                                        label="Int SIM"
+                                                        checked={installDetail.intSim ?? false}
+                                                        onChange={(v: boolean) => updateInstallDetail({ intSim: v })}
+                                                    />
                                                 </div>
                                             </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
 
-                                            {hasVision && !omitCount && (
-                                                <div className="flex items-center gap-1.5 text-xs">
-                                                    <span className="text-slate-500">Cameras</span>
+                            {/* Line Items Table */}
+                            <div className="border rounded-lg overflow-hidden">
+                                <div className="bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 flex items-center justify-between">
+                                    <span>Hardware Package Components</span>
+                                    <Button size="sm" variant="outline" onClick={addPackageItem} className="h-7 text-xs flex items-center gap-1">
+                                        <Plus className="w-3.5 h-3.5" />
+                                        Add Component
+                                    </Button>
+                                </div>
+
+                                <div className="divide-y text-xs">
+                                    {packageItems.length === 0 ? (
+                                        <div className="p-4 text-center text-slate-400">No hardware components selected. Click "Add Component" above.</div>
+                                    ) : (
+                                        packageItems.map((item, idx) => (
+                                            <div key={idx} className="p-2.5 flex items-center gap-3 bg-white hover:bg-slate-50">
+                                                <div className="flex-1">
                                                     <select
-                                                        className="border rounded p-1 bg-white text-xs"
-                                                        value={cameraCount}
-                                                        onChange={(e) => updateInstallDetail({ cameraCount: Number(e.target.value) })}
+                                                        className="w-full border rounded p-1.5 text-xs bg-white"
+                                                        value={item.productId}
+                                                        onChange={(e) => {
+                                                            const chosen = availableProducts.find((p) => p.id === e.target.value);
+                                                            if (chosen) {
+                                                                updatePackageItem(idx, {
+                                                                    productId: chosen.id,
+                                                                    partNumber: chosen.productCode,
+                                                                    description: chosen.name,
+                                                                    unitPrice: Number(chosen.retailPrice || 0),
+                                                                });
+                                                            }
+                                                        }}
                                                     >
-                                                        {[2, 3, 4].map((n) => (
-                                                            <option key={n} value={n}>{n} Channels</option>
+                                                        {availableProducts.map((p) => (
+                                                            <option key={p.id} value={p.id}>
+                                                                {p.productCode} — {p.name || 'Hardware Part'} (${p.retailPrice || '0.00'})
+                                                            </option>
                                                         ))}
                                                     </select>
                                                 </div>
-                                            )}
-                                        </div>
 
-                                        {/* SIM 2 Type (when Sim2 active) */}
-                                        {installDetail.mixSim2 && (
-                                            <LabelRow label="SIM 2 Type">
-                                                <select
-                                                    className="w-full border rounded p-1 bg-white text-xs"
-                                                    value={installDetail.sim2Type ?? ''}
-                                                    onChange={(e) => updateInstallDetail({ sim2Type: e.target.value })}
+                                                <div className="w-20">
+                                                    <Input
+                                                        type="number"
+                                                        min="1"
+                                                        placeholder="Qty"
+                                                        value={item.quantity}
+                                                        onChange={(e) => updatePackageItem(idx, { quantity: Number(e.target.value) })}
+                                                    />
+                                                </div>
+
+                                                <div className="w-24">
+                                                    <Input
+                                                        type="number"
+                                                        placeholder="Unit Price"
+                                                        value={item.unitPrice}
+                                                        onChange={(e) => updatePackageItem(idx, { unitPrice: Number(e.target.value) })}
+                                                    />
+                                                </div>
+
+                                                <div className="w-20 font-mono font-semibold text-slate-800 text-right">
+                                                    ${Number(item.lineTotal || 0).toFixed(2)}
+                                                </div>
+
+                                                <button
+                                                    type="button"
+                                                    onClick={() => removePackageItem(idx)}
+                                                    className="text-slate-400 hover:text-rose-500 p-1"
                                                 >
-                                                    <option value="">Select</option>
-                                                    {sim2List.map((s: any) => (
-                                                        <option key={s.id} value={s.code}>{s.label}</option>
-                                                    ))}
-                                                </select>
-                                            </LabelRow>
-                                        )}
-                                    </div>
+                                                    <Trash2 className="w-4 h-4" />
+                                                </button>
+                                            </div>
+                                        ))
+                                    )}
+                                </div>
+                            </div>
+                        </div>
 
-                                    {/* ── OPTIONS ── */}
-                                    <div className="border border-slate-200 rounded-lg p-2.5 bg-slate-50/70">
-                                        <div className="font-semibold text-xs text-slate-700 mb-1.5">Options</div>
-                                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                                            <Checkbox
-                                                label="AI Option"
-                                                checked={installDetail.aiOption ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ aiOption: v })}
-                                            />
-                                            <div className="flex items-center gap-1">
-                                                <Checkbox
-                                                    label="TMA"
-                                                    checked={installDetail.tmaOption ?? false}
-                                                    onChange={(v: boolean) => updateInstallDetail({ tmaOption: v })}
-                                                />
-                                                <span className="text-[10px] text-slate-400">&gt;4k</span>
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <Checkbox
-                                                    label="RIM"
-                                                    checked={installDetail.rimOption ?? false}
-                                                    onChange={(v: boolean) => updateInstallDetail({ rimOption: v })}
-                                                />
-                                                <span className="text-[10px] text-slate-400">&gt;4k</span>
-                                            </div>
-                                            <Checkbox
-                                                label="NRC"
-                                                checked={installDetail.nrc ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ nrc: v })}
-                                            />
-                                            <Checkbox
-                                                label="Wi-Fi"
-                                                checked={installDetail.wiFi ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ wiFi: v })}
-                                            />
-                                            <Checkbox
-                                                label="Safe Guard"
-                                                checked={installDetail.safeGuard ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ safeGuard: v })}
-                                            />
-                                            <Checkbox
-                                                label="Int SIM"
-                                                checked={installDetail.intSim ?? false}
-                                                onChange={(v: boolean) => updateInstallDetail({ intSim: v })}
-                                            />
-                                        </div>
+                        {/* SECTION 3: Multiple Vehicles Grid */}
+                        <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 mb-4 border-b">
+                                <div>
+                                    <div className="flex items-center gap-2">
+                                        <h2 className="font-semibold text-slate-800 text-sm">
+                                            Vehicle Fleet Entry ({vehicles.length} Vehicles)
+                                        </h2>
+                                    </div>
+                                    <p className="text-xs text-slate-500 mt-0.5">
+                                        Each row corresponds to one vehicle preinstall record created in the batch.
+                                    </p>
+                                </div>
+
+                                {/* Quick Generator & Action Toolbar */}
+                                <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-xs text-slate-400 font-medium mr-1">Quick Add:</span>
+                                    <button
+                                        type="button"
+                                        onClick={() => addVehiclesCount(1)}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
+                                    >
+                                        +1
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => addVehiclesCount(5)}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
+                                    >
+                                        +5
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => addVehiclesCount(10)}
+                                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
+                                    >
+                                        +10
+                                    </button>
+                                    <button
+                                        type="button"
+                                        onClick={() => addVehiclesCount(20)}
+                                        className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded text-xs text-indigo-700 font-bold"
+                                    >
+                                        +20 Vehicles
+                                    </button>
+
+                                    <div className="h-4 w-px bg-slate-200 mx-1" />
+
+                                    <button
+                                        type="button"
+                                        onClick={() => autoSequenceFleetNumbers()}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border rounded text-xs text-slate-700 flex items-center gap-1"
+                                        title="Automatically sequence Fleet # (e.g. FL-101, FL-102...)"
+                                    >
+                                        <Layers className="w-3.5 h-3.5 text-slate-500" />
+                                        Auto-Sequence
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={copyMakeModelDown}
+                                        className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border rounded text-xs text-slate-700 flex items-center gap-1"
+                                        title="Copy Make & Model from row 1 to all vehicles"
+                                    >
+                                        <Copy className="w-3.5 h-3.5 text-slate-500" />
+                                        Copy Make/Model
+                                    </button>
+
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPasteModal(true)}
+                                        className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-xs text-emerald-800 font-medium flex items-center gap-1"
+                                    >
+                                        <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
+                                        Paste / Import Excel
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Vehicle Table */}
+                            <div className="border rounded-lg overflow-x-auto max-h-[500px]">
+                                <table className="w-full text-xs text-left border-collapse">
+                                    <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 border-b">
+                                        <tr>
+                                            <th className="p-2 w-10 text-center">#</th>
+                                            <th className="p-2 min-w-[110px]">Fleet # <span className="text-rose-500">*</span></th>
+                                            <th className="p-2 min-w-[110px]">Rego <span className="text-rose-500">*</span></th>
+                                            <th className="p-2 min-w-[140px]">VIN</th>
+                                            <th className="p-2 min-w-[110px]">Make</th>
+                                            <th className="p-2 min-w-[110px]">Model</th>
+                                            <th className="p-2 min-w-[80px]">Year</th>
+                                            <th className="p-2 min-w-[100px]">Asset #</th>
+                                            <th className="p-2 min-w-[120px]">Serial Override</th>
+                                            <th className="p-2 min-w-[120px]">IMEI Override</th>
+                                            <th className="p-2 w-10 text-center"></th>
+                                        </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                        {vehicles.map((v, idx) => (
+                                            <tr key={v.id} className="hover:bg-slate-50">
+                                                <td className="p-2 text-center text-slate-400 font-mono text-[11px]">
+                                                    {idx + 1}
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs font-semibold text-slate-800 focus:outline-indigo-500"
+                                                        placeholder="FL-101"
+                                                        value={v.fleetNumber}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'fleetNumber', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs font-mono uppercase text-slate-800 focus:outline-indigo-500"
+                                                        placeholder="ABC-123"
+                                                        value={v.regoNumber}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'regoNumber', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-600 focus:outline-indigo-500"
+                                                        placeholder="VIN..."
+                                                        value={v.vinNumber}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'vinNumber', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs text-slate-800 focus:outline-indigo-500"
+                                                        placeholder="Isuzu"
+                                                        value={v.vehicleMake}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'vehicleMake', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs text-slate-800 focus:outline-indigo-500"
+                                                        placeholder="FTR"
+                                                        value={v.vehicleModel}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'vehicleModel', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs text-slate-600 focus:outline-indigo-500"
+                                                        placeholder="2024"
+                                                        value={v.yearVariant}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'yearVariant', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs text-slate-600 focus:outline-indigo-500"
+                                                        placeholder="Asset ID"
+                                                        value={v.assetNumber}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'assetNumber', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-500 focus:outline-indigo-500"
+                                                        placeholder="Optional"
+                                                        value={v.unitSerial}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'unitSerial', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5">
+                                                    <input
+                                                        className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-500 focus:outline-indigo-500"
+                                                        placeholder="Optional"
+                                                        value={v.unitIMEI}
+                                                        onChange={(e) => updateVehicleRow(v.id, 'unitIMEI', e.target.value)}
+                                                    />
+                                                </td>
+                                                <td className="p-1.5 text-center">
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => removeVehicle(v.id)}
+                                                        className="text-slate-300 hover:text-rose-500 p-1"
+                                                        title="Remove vehicle row"
+                                                    >
+                                                        <Trash2 className="w-3.5 h-3.5" />
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+
+                            {/* Quick summary below table */}
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-3 pt-3 border-t text-xs text-slate-500">
+                                <div>
+                                    Total Vehicles to Roll Out: <strong className="text-slate-800 text-sm">{vehicles.length}</strong>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <span>Total Fleet Hardware Value:</span>
+                                    <span className="font-bold text-slate-800 font-mono text-sm">
+                                        ${grandTotalFleetValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* SECTION 4: Final Confirmation & Action Bar */}
+                        <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl p-5 shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
+                            <div>
+                                <h3 className="font-bold text-base flex items-center gap-2">
+                                    <Truck className="w-5 h-5 text-indigo-400" />
+                                    Ready to create bulk job for {vehicles.length} vehicles
+                                </h3>
+                                <p className="text-xs text-slate-300 mt-1 max-w-xl">
+                                    This will generate {vehicles.length} individual FM Preinstall sheets (linked with serials/registrations) and 1 consolidated master Installation Job in the Job Book for scheduling.
+                                </p>
+                            </div>
+
+                            <div className="flex items-center gap-3 w-full md:w-auto justify-end">
+                                <Button
+                                    variant="outline"
+                                    onClick={() => router.push('/fm-preinstall')}
+                                    className="bg-white/10 hover:bg-white/20 text-white border-white/20"
+                                >
+                                    Cancel
+                                </Button>
+                                <Button
+                                    onClick={handleSaveBulk}
+                                    disabled={saving}
+                                    className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold shadow-lg px-5"
+                                >
+                                    {saving ? `Creating Batch (${saveProgress}%)...` : `Generate ${vehicles.length} Preinstalls`}
+                                </Button>
+                            </div>
+                        </div>
+
+                    </div>
+
+                    {/* Paste from Excel / CSV Modal */}
+                    {showPasteModal && (
+                        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-5 space-y-4">
+                                <div className="flex items-center justify-between border-b pb-3">
+                                    <div className="flex items-center gap-2">
+                                        <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
+                                        <h3 className="font-bold text-slate-800 text-sm">Paste Fleet Vehicles from Excel / CSV</h3>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        onClick={() => setShowPasteModal(false)}
+                                        className="text-slate-400 hover:text-slate-600 text-lg font-bold"
+                                    >
+                                        ✕
+                                    </button>
+                                </div>
+
+                                <p className="text-xs text-slate-600">
+                                    Copy columns from your fleet spreadsheet and paste below. The expected column order is:
+                                    <br />
+                                    <code className="text-indigo-600 font-mono bg-slate-100 px-1 py-0.5 rounded mt-1 inline-block">
+                                        Fleet # | Rego | VIN | Make | Model | Year | Asset # | Serial | IMEI
+                                    </code>
+                                </p>
+
+                                <textarea
+                                    className="w-full h-48 border rounded-lg p-3 text-xs font-mono focus:outline-indigo-500 bg-slate-50"
+                                    placeholder={`FL-101\tABC-123\tVIN123456789\tIsuzu\tFTR\t2024\nFL-102\tXYZ-789\tVIN987654321\tKenworth\tT680\t2024`}
+                                    value={pasteData}
+                                    onChange={(e) => setPasteData(e.target.value)}
+                                />
+
+                                <div className="flex items-center justify-between pt-2">
+                                    <span className="text-xs text-slate-400">
+                                        {pasteData.trim() ? `${pasteData.trim().split(/\r?\n/).length} lines detected` : 'Empty'}
+                                    </span>
+                                    <div className="flex gap-2">
+                                        <Button variant="outline" size="sm" onClick={() => setShowPasteModal(false)}>
+                                            Cancel
+                                        </Button>
+                                        <Button
+                                            size="sm"
+                                            onClick={handleParsePastedData}
+                                            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                                        >
+                                            Import Vehicles
+                                        </Button>
                                     </div>
                                 </div>
                             </div>
                         </div>
-                    </div>
+                    )}
 
-                    {/* Line Items Table */}
-                    <div className="border rounded-lg overflow-hidden">
-                        <div className="bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-700 flex items-center justify-between">
-                            <span>Hardware Package Components</span>
-                            <Button size="sm" variant="outline" onClick={addPackageItem} className="h-7 text-xs flex items-center gap-1">
-                                <Plus className="w-3.5 h-3.5" />
-                                Add Component
-                            </Button>
-                        </div>
-
-                        <div className="divide-y text-xs">
-                            {packageItems.length === 0 ? (
-                                <div className="p-4 text-center text-slate-400">No hardware components selected. Click "Add Component" above.</div>
-                            ) : (
-                                packageItems.map((item, idx) => (
-                                    <div key={idx} className="p-2.5 flex items-center gap-3 bg-white hover:bg-slate-50">
-                                        <div className="flex-1">
-                                            <select
-                                                className="w-full border rounded p-1.5 text-xs bg-white"
-                                                value={item.productId}
-                                                onChange={(e) => {
-                                                    const chosen = availableProducts.find((p) => p.id === e.target.value);
-                                                    if (chosen) {
-                                                        updatePackageItem(idx, {
-                                                            productId: chosen.id,
-                                                            partNumber: chosen.productCode,
-                                                            description: chosen.name,
-                                                            unitPrice: Number(chosen.retailPrice || 0),
-                                                        });
-                                                    }
-                                                }}
-                                            >
-                                                {availableProducts.map((p) => (
-                                                    <option key={p.id} value={p.id}>
-                                                        {p.productCode} — {p.name || 'Hardware Part'} (${p.retailPrice || '0.00'})
-                                                    </option>
-                                                ))}
-                                            </select>
-                                        </div>
-
-                                        <div className="w-20">
-                                            <Input
-                                                type="number"
-                                                min="1"
-                                                placeholder="Qty"
-                                                value={item.quantity}
-                                                onChange={(e) => updatePackageItem(idx, { quantity: Number(e.target.value) })}
-                                            />
-                                        </div>
-
-                                        <div className="w-24">
-                                            <Input
-                                                type="number"
-                                                placeholder="Unit Price"
-                                                value={item.unitPrice}
-                                                onChange={(e) => updatePackageItem(idx, { unitPrice: Number(e.target.value) })}
-                                            />
-                                        </div>
-
-                                        <div className="w-20 font-mono font-semibold text-slate-800 text-right">
-                                            ${Number(item.lineTotal || 0).toFixed(2)}
-                                        </div>
-
-                                        <button
-                                            type="button"
-                                            onClick={() => removePackageItem(idx)}
-                                            className="text-slate-400 hover:text-rose-500 p-1"
-                                        >
-                                            <Trash2 className="w-4 h-4" />
-                                        </button>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-
-                {/* SECTION 3: Multiple Vehicles Grid */}
-                <div className="bg-white border rounded-xl p-4 sm:p-5 shadow-sm">
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 pb-3 mb-4 border-b">
-                        <div>
-                            <div className="flex items-center gap-2">
-                                <h2 className="font-semibold text-slate-800 text-sm">
-                                    Vehicle Fleet Entry ({vehicles.length} Vehicles)
-                                </h2>
-                            </div>
-                            <p className="text-xs text-slate-500 mt-0.5">
-                                Each row corresponds to one vehicle preinstall record created in the batch.
-                            </p>
-                        </div>
-
-                        {/* Quick Generator & Action Toolbar */}
-                        <div className="flex items-center gap-2 flex-wrap">
-                            <span className="text-xs text-slate-400 font-medium mr-1">Quick Add:</span>
-                            <button
-                                type="button"
-                                onClick={() => addVehiclesCount(1)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
-                            >
-                                +1
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => addVehiclesCount(5)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
-                            >
-                                +5
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => addVehiclesCount(10)}
-                                className="px-2 py-1 bg-slate-100 hover:bg-slate-200 border rounded text-xs text-slate-700 font-medium"
-                            >
-                                +10
-                            </button>
-                            <button
-                                type="button"
-                                onClick={() => addVehiclesCount(20)}
-                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded text-xs text-indigo-700 font-bold"
-                            >
-                                +20 Vehicles
-                            </button>
-
-                            <div className="h-4 w-px bg-slate-200 mx-1" />
-
-                            <button
-                                type="button"
-                                onClick={() => autoSequenceFleetNumbers()}
-                                className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border rounded text-xs text-slate-700 flex items-center gap-1"
-                                title="Automatically sequence Fleet # (e.g. FL-101, FL-102...)"
-                            >
-                                <Layers className="w-3.5 h-3.5 text-slate-500" />
-                                Auto-Sequence
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={copyMakeModelDown}
-                                className="px-2 py-1 bg-slate-50 hover:bg-slate-100 border rounded text-xs text-slate-700 flex items-center gap-1"
-                                title="Copy Make & Model from row 1 to all vehicles"
-                            >
-                                <Copy className="w-3.5 h-3.5 text-slate-500" />
-                                Copy Make/Model
-                            </button>
-
-                            <button
-                                type="button"
-                                onClick={() => setShowPasteModal(true)}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded text-xs text-emerald-800 font-medium flex items-center gap-1"
-                            >
-                                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-600" />
-                                Paste / Import Excel
-                            </button>
-                        </div>
-                    </div>
-
-                    {/* Vehicle Table */}
-                    <div className="border rounded-lg overflow-x-auto max-h-[500px]">
-                        <table className="w-full text-xs text-left border-collapse">
-                            <thead className="bg-slate-100 text-slate-700 sticky top-0 z-10 border-b">
-                                <tr>
-                                    <th className="p-2 w-10 text-center">#</th>
-                                    <th className="p-2 min-w-[110px]">Fleet # <span className="text-rose-500">*</span></th>
-                                    <th className="p-2 min-w-[110px]">Rego <span className="text-rose-500">*</span></th>
-                                    <th className="p-2 min-w-[140px]">VIN</th>
-                                    <th className="p-2 min-w-[110px]">Make</th>
-                                    <th className="p-2 min-w-[110px]">Model</th>
-                                    <th className="p-2 min-w-[80px]">Year</th>
-                                    <th className="p-2 min-w-[100px]">Asset #</th>
-                                    <th className="p-2 min-w-[120px]">Serial Override</th>
-                                    <th className="p-2 min-w-[120px]">IMEI Override</th>
-                                    <th className="p-2 w-10 text-center"></th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {vehicles.map((v, idx) => (
-                                    <tr key={v.id} className="hover:bg-slate-50">
-                                        <td className="p-2 text-center text-slate-400 font-mono text-[11px]">
-                                            {idx + 1}
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs font-semibold text-slate-800 focus:outline-indigo-500"
-                                                placeholder="FL-101"
-                                                value={v.fleetNumber}
-                                                onChange={(e) => updateVehicleRow(v.id, 'fleetNumber', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs font-mono uppercase text-slate-800 focus:outline-indigo-500"
-                                                placeholder="ABC-123"
-                                                value={v.regoNumber}
-                                                onChange={(e) => updateVehicleRow(v.id, 'regoNumber', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-600 focus:outline-indigo-500"
-                                                placeholder="VIN..."
-                                                value={v.vinNumber}
-                                                onChange={(e) => updateVehicleRow(v.id, 'vinNumber', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs text-slate-800 focus:outline-indigo-500"
-                                                placeholder="Isuzu"
-                                                value={v.vehicleMake}
-                                                onChange={(e) => updateVehicleRow(v.id, 'vehicleMake', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs text-slate-800 focus:outline-indigo-500"
-                                                placeholder="FTR"
-                                                value={v.vehicleModel}
-                                                onChange={(e) => updateVehicleRow(v.id, 'vehicleModel', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs text-slate-600 focus:outline-indigo-500"
-                                                placeholder="2024"
-                                                value={v.yearVariant}
-                                                onChange={(e) => updateVehicleRow(v.id, 'yearVariant', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs text-slate-600 focus:outline-indigo-500"
-                                                placeholder="Asset ID"
-                                                value={v.assetNumber}
-                                                onChange={(e) => updateVehicleRow(v.id, 'assetNumber', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-500 focus:outline-indigo-500"
-                                                placeholder="Optional"
-                                                value={v.unitSerial}
-                                                onChange={(e) => updateVehicleRow(v.id, 'unitSerial', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5">
-                                            <input
-                                                className="w-full border rounded px-2 py-1 text-xs font-mono text-slate-500 focus:outline-indigo-500"
-                                                placeholder="Optional"
-                                                value={v.unitIMEI}
-                                                onChange={(e) => updateVehicleRow(v.id, 'unitIMEI', e.target.value)}
-                                            />
-                                        </td>
-                                        <td className="p-1.5 text-center">
-                                            <button
-                                                type="button"
-                                                onClick={() => removeVehicle(v.id)}
-                                                className="text-slate-300 hover:text-rose-500 p-1"
-                                                title="Remove vehicle row"
-                                            >
-                                                <Trash2 className="w-3.5 h-3.5" />
-                                            </button>
-                                        </td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-
-                    {/* Quick summary below table */}
-                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mt-3 pt-3 border-t text-xs text-slate-500">
-                        <div>
-                            Total Vehicles to Roll Out: <strong className="text-slate-800 text-sm">{vehicles.length}</strong>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <span>Total Fleet Hardware Value:</span>
-                            <span className="font-bold text-slate-800 font-mono text-sm">
-                                ${grandTotalFleetValue.toLocaleString('en-AU', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                            </span>
-                        </div>
-                    </div>
-                </div>
-
-                {/* SECTION 4: Final Confirmation & Action Bar */}
-                <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white rounded-xl p-5 shadow-md flex flex-col md:flex-row items-center justify-between gap-4">
-                    <div>
-                        <h3 className="font-bold text-base flex items-center gap-2">
-                            <Truck className="w-5 h-5 text-indigo-400" />
-                            Ready to create bulk job for {vehicles.length} vehicles
-                        </h3>
-                        <p className="text-xs text-slate-300 mt-1 max-w-xl">
-                            This will generate {vehicles.length} individual FM Preinstall sheets (linked with serials/registrations) and 1 consolidated master Installation Job in the Job Book for scheduling.
-                        </p>
-                    </div>
-
-                    <div className="flex items-center gap-3 w-full md:w-auto justify-end">
-                        <Button
-                            variant="outline"
-                            onClick={() => router.push('/fm-preinstall')}
-                            className="bg-white/10 hover:bg-white/20 text-white border-white/20"
-                        >
-                            Cancel
-                        </Button>
-                        <Button
-                            onClick={handleSaveBulk}
-                            disabled={saving}
-                            className="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold shadow-lg px-5"
-                        >
-                            {saving ? `Creating Batch (${saveProgress}%)...` : `Generate ${vehicles.length} Preinstalls`}
-                        </Button>
-                    </div>
-                </div>
-
-            </div>
-
-            {/* Paste from Excel / CSV Modal */}
-            {showPasteModal && (
-                <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-2xl w-full p-5 space-y-4">
-                        <div className="flex items-center justify-between border-b pb-3">
-                            <div className="flex items-center gap-2">
-                                <FileSpreadsheet className="w-5 h-5 text-emerald-600" />
-                                <h3 className="font-bold text-slate-800 text-sm">Paste Fleet Vehicles from Excel / CSV</h3>
-                            </div>
-                            <button
-                                type="button"
-                                onClick={() => setShowPasteModal(false)}
-                                className="text-slate-400 hover:text-slate-600 text-lg font-bold"
-                            >
-                                ✕
-                            </button>
-                        </div>
-
-                        <p className="text-xs text-slate-600">
-                            Copy columns from your fleet spreadsheet and paste below. The expected column order is:
-                            <br />
-                            <code className="text-indigo-600 font-mono bg-slate-100 px-1 py-0.5 rounded mt-1 inline-block">
-                                Fleet # | Rego | VIN | Make | Model | Year | Asset # | Serial | IMEI
-                            </code>
-                        </p>
-
-                        <textarea
-                            className="w-full h-48 border rounded-lg p-3 text-xs font-mono focus:outline-indigo-500 bg-slate-50"
-                            placeholder={`FL-101\tABC-123\tVIN123456789\tIsuzu\tFTR\t2024\nFL-102\tXYZ-789\tVIN987654321\tKenworth\tT680\t2024`}
-                            value={pasteData}
-                            onChange={(e) => setPasteData(e.target.value)}
-                        />
-
-                        <div className="flex items-center justify-between pt-2">
-                            <span className="text-xs text-slate-400">
-                                {pasteData.trim() ? `${pasteData.trim().split(/\r?\n/).length} lines detected` : 'Empty'}
-                            </span>
-                            <div className="flex gap-2">
-                                <Button variant="outline" size="sm" onClick={() => setShowPasteModal(false)}>
-                                    Cancel
-                                </Button>
-                                <Button
-                                    size="sm"
-                                    onClick={handleParsePastedData}
-                                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
-                                >
-                                    Import Vehicles
-                                </Button>
+                    {/* Modal for full FMInstallDetailsPanel */}
+                    {showInstallDetailsModal && (
+                        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                            <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-200">
+                                <FMInstallDetailsPanel
+                                    item={{ id: 'bulk-template', targetRecord: 'BULK', installDetail }}
+                                    onClose={() => setShowInstallDetailsModal(false)}
+                                    onSave={(data: any) => {
+                                        setInstallDetail(data);
+                                        if (data.installType && data.installType !== type) {
+                                            setType(data.installType);
+                                        }
+                                        setShowInstallDetailsModal(false);
+                                        showToast({ type: 'success', title: 'FM Installation Details Updated' });
+                                    }}
+                                    onSyncType={(newType: string) => setType(newType)}
+                                    fleetName={fmFleetName || selectedCustomer?.name || ''}
+                                    fmCustomerId={fmCustomerId || customerId || ''}
+                                />
                             </div>
                         </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Modal for full FMInstallDetailsPanel */}
-            {showInstallDetailsModal && (
-                <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-                    <div className="bg-white rounded-xl shadow-2xl max-w-4xl w-full max-h-[92vh] overflow-hidden flex flex-col border border-slate-200">
-                        <FMInstallDetailsPanel
-                            item={{ id: 'bulk-template', targetRecord: 'BULK', installDetail }}
-                            onClose={() => setShowInstallDetailsModal(false)}
-                            onSave={(data: any) => {
-                                setInstallDetail(data);
-                                if (data.installType && data.installType !== type) {
-                                    setType(data.installType);
-                                }
-                                setShowInstallDetailsModal(false);
-                                showToast({ type: 'success', title: 'FM Installation Details Updated' });
-                            }}
-                            onSyncType={(newType: string) => setType(newType)}
-                            fleetName={fmFleetName || selectedCustomer?.name || ''}
-                            fmCustomerId={fmCustomerId || customerId || ''}
-                        />
-                    </div>
-                </div>
-            )}
+                    )}
                 </>
             )}
         </AdminShell>

@@ -56,7 +56,7 @@ export function SalesOrderItemsSection({
       title="Item Entry"
       defaultOpen={defaultOpen}
       rightAction={
-        (!disabled && form.invoiceType !== "SALESORDER") && (
+        (!disabled && form?.invoiceType !== "SALESORDER") && (
           <Button
             size="sm"
             type="button"

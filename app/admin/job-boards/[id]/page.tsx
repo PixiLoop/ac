@@ -1,8 +1,10 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import BoardView from '../../../../components/job-boards/BoardView'
+import BoardToolbar from '../../../../components/job-boards/BoardToolbar'
+import BoardCalendarView from '../../../../components/job-boards/BoardCalendarView'
 import { AdminShell } from '../../../../components/layout/AdminShell'
 import { api } from '../../../../lib/api-client'
 import { Button } from '../../../../components/ui/button'
@@ -14,6 +16,8 @@ export default function JobBoardDetailPage() {
   const [board, setBoard] = useState<any>(null)
   const [bgObjectUrl, setBgObjectUrl] = useState<string | null>(null)
   const [bgFailed, setBgFailed] = useState(false)
+  const [viewMode, setViewMode] = useState<'board' | 'calendar'>('board')
+  const [filterText, setFilterText] = useState('')
 
   const loadBoard = async () => {
     const res = await api.get(`/job-boards/${id}`)
@@ -35,7 +39,6 @@ export default function JobBoardDetailPage() {
 
     ;(async () => {
       try {
-        // Always load via auth proxy path for this board (stable after refresh)
         const path =
           board.backgroundImage?.includes('/background/file')
             ? board.backgroundImage
@@ -61,9 +64,24 @@ export default function JobBoardDetailPage() {
     }
   }, [board?.id, board?.backgroundImage])
 
-  if (!board) return <div className="p-6">Loading...</div>
+  const filteredBoard = useMemo(() => {
+    if (!board) return null
+    const q = filterText.trim().toLowerCase()
+    if (!q) return board
+    return {
+      ...board,
+      lists: (board.lists || []).map((list: any) => ({
+        ...list,
+        cards: (list.cards || []).filter((card: any) => {
+          const hay = `${card.title || ''} ${card.description || ''} ${list.name || ''}`.toLowerCase()
+          return hay.includes(q)
+        }),
+      })),
+    }
+  }, [board, filterText])
 
-  // Color is the base layer; background image sits on top when loaded
+  if (!board || !filteredBoard) return <div className="p-6">Loading...</div>
+
   const bgStyle: React.CSSProperties = {
     backgroundColor: board.color || '#f1f5f9',
     ...(bgObjectUrl
@@ -92,10 +110,32 @@ export default function JobBoardDetailPage() {
         )}
       </div>
       <div
-        className="h-[calc(100vh-160px)] overflow-x-auto rounded-xl"
+        className="h-[calc(100vh-160px)] min-h-[420px] overflow-hidden rounded-xl flex flex-col"
         style={bgStyle}
       >
-        <BoardView board={board} setBoard={setBoard} reload={loadBoard} />
+        <BoardToolbar
+          board={board}
+          viewMode={viewMode}
+          onViewModeChange={setViewMode}
+          filterText={filterText}
+          onFilterTextChange={setFilterText}
+        />
+        <div className="flex-1 min-h-0">
+          {viewMode === 'calendar' ? (
+            <BoardCalendarView
+              board={filteredBoard}
+              filterText={filterText}
+              onClose={() => setViewMode('board')}
+            />
+          ) : (
+            <BoardView
+              board={board}
+              setBoard={setBoard}
+              reload={loadBoard}
+              filterText={filterText}
+            />
+          )}
+        </div>
       </div>
     </AdminShell>
   )

@@ -34,8 +34,41 @@ export function CardContent({ children, className }: { children: React.ReactNode
   return <div className={cn("p-4", className)}>{children}</div>;
 }
 
-export function Checkbox({ checked = false, onCheckedChange }: { checked?: boolean; onCheckedChange?: () => void }) {
-  return <input type="checkbox" checked={checked} onChange={() => onCheckedChange?.()} className="h-3.5 w-3.5 rounded border-slate-300" />;
+export function Checkbox({
+  checked = false,
+  onCheckedChange,
+  onChange,
+  disabled,
+  id,
+  name,
+  className,
+}: {
+  checked?: boolean;
+  onCheckedChange?: (checked: boolean) => void;
+  onChange?: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  disabled?: boolean;
+  id?: string;
+  name?: string;
+  className?: string;
+}) {
+  return (
+    <input
+      type="checkbox"
+      id={id}
+      name={name}
+      checked={!!checked}
+      disabled={disabled}
+      onChange={(e) => {
+        const val = e.target.checked;
+        onCheckedChange?.(val);
+        onChange?.(e);
+      }}
+      className={cn(
+        "h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer accent-sky-600",
+        className
+      )}
+    />
+  );
 }
 
 export function Table({ children }: { children: React.ReactNode }) {

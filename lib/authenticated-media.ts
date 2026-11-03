@@ -35,6 +35,15 @@ export function needsAuthMediaFetch(url: string) {
 export async function fetchAuthenticatedObjectUrl(path?: string | null): Promise<string | null> {
   if (!path) return null
   if (path.startsWith('data:') || path.startsWith('blob:')) return path
+
+  // Public http(s) URLs that are not private Azure / API file proxies — use directly
+  if (
+    (path.startsWith('http://') || path.startsWith('https://')) &&
+    !needsAuthMediaFetch(path)
+  ) {
+    return path
+  }
+
   const absolute = resolveMediaUrl(path)
 
   try {
@@ -42,9 +51,7 @@ export async function fetchAuthenticatedObjectUrl(path?: string | null): Promise
     const res = await fetch(absolute, {
       headers: token ? { Authorization: `Bearer ${token}` } : {},
     })
-    if (!res.ok) {
-      return absolute
-    }
+    if (!res.ok) return null
     const contentType = (res.headers.get('content-type') || '').toLowerCase()
     const blob = await res.blob()
     if (
@@ -52,7 +59,7 @@ export async function fetchAuthenticatedObjectUrl(path?: string | null): Promise
       contentType.includes('text/') ||
       blob.size < 32
     ) {
-      return absolute
+      return null
     }
     const imageBlob =
       contentType.startsWith('image/') || blob.type.startsWith('image/')
@@ -60,6 +67,6 @@ export async function fetchAuthenticatedObjectUrl(path?: string | null): Promise
         : new Blob([blob], { type: contentType || 'image/jpeg' })
     return URL.createObjectURL(imageBlob)
   } catch {
-    return absolute
+    return null
   }
 }

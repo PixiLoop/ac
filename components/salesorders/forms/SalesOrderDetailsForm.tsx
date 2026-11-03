@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Input } from '../../../components/ui/input';
 import { Select } from '../../../components/ui/select';
 import { SearchSelect } from '../../../components/ui/SearchSelect';
@@ -16,9 +16,16 @@ function isWithOtherGoodsMethod(code?: string, label?: string) {
   return normalized.includes('WOG') || normalized.includes('WITHOTHERGOODS');
 }
 
-export function SalesOrderDetailsForm({ value, update, readOnly = false, selectedCustomer = null }: any) {
+export function SalesOrderDetailsForm({
+  value,
+  update,
+  readOnly = false,
+  selectedCustomer = null,
+  orderRequired = false,
+}: any) {
   const [dispatchMethodOptions, setDispatchMethodOptions] = useState<{ label: string; value: string }[]>([]);
   const [dispatches, setDispatches] = useState<any[]>([]);
+  const poRequired = !!(orderRequired || selectedCustomer?.orderRequired);
 
   useEffect(() => {
     fetchDispatchMethodOptions().then(setDispatchMethodOptions);
@@ -51,8 +58,15 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
   const methodLabel = (code: string) =>
     dispatchMethodOptions.find(o => o.value === code)?.label ?? code;
 
+  // Only auto-fill freight when dispatch method (or its charge list) changes —
+  // never overwrite manual freight edits on every keystroke.
+  const lastAutoFreightKey = useRef<string>('');
   useEffect(() => {
     if (!update || value.orderType === 'WITH_OTHER_GOODS') return;
+
+    const key = `${value.customerId || ''}|${value.dispatchMethod || ''}|${dispatches.length}`;
+    if (key === lastAutoFreightKey.current) return;
+    lastAutoFreightKey.current = key;
 
     let newFreight = 0;
     if (value.customerId && value.dispatchMethod) {
@@ -82,7 +96,7 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
       /> :
         <CustomerSearchSelect
           value={selectedCustomer}
-          onSelect={c => update('customerId', c.id)}
+          onSelect={c => update('customerId', c?.id ?? '')}
           disabled={readOnly}
           label="Customer"
         />}
@@ -149,10 +163,23 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
         label="Dispatch Method"
         value={value.dispatchMethod}
         options={(() => {
-          const options = dispatches.map((d: any) => ({
+          const fromCustomer = dispatches.map((d: any) => ({
             label: `${methodLabel(d.method)}${d.accountName ? ' — ' + d.accountName : d.accountNo ? ' — ' + d.accountNo : ''}`,
             value: d.method,
           }));
+          // Fall back to master dispatch methods if this customer has none configured
+          const options =
+            fromCustomer.length > 0
+              ? fromCustomer
+              : dispatchMethodOptions.map(o => ({ label: o.label, value: o.value }));
+
+          if (value.dispatchMethod && !options.some((o: { value: string }) => o.value === value.dispatchMethod)) {
+            options.unshift({
+              label: methodLabel(value.dispatchMethod),
+              value: value.dispatchMethod,
+            });
+          }
+
           if (value.orderType !== 'WITH_OTHER_GOODS') return options;
           if (options.some((o: { value: string }) => isWithOtherGoodsMethod(o.value))) return options;
           const catalogMethod = dispatchMethodOptions.find(o => isWithOtherGoodsMethod(o.value, o.label));
@@ -174,7 +201,7 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
 
       <Select
         label="Payment Terms"
-        value={value.paymentTerms}
+        value={value.paymentTerms ?? value.terms ?? ''}
         options={[
           { label: '14 days', value: 'DAYS_14' },
           { label: '30 days', value: 'DAYS_30' },
@@ -183,7 +210,10 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
           { label: 'COD', value: 'COD' },
           { label: 'PAY NOW', value: 'PAY_NOW' },
         ]}
-        onChange={v => update('paymentTerms', v)}
+        onChange={v => {
+          update('paymentTerms', v);
+          update('terms', v);
+        }}
         disabled={readOnly}
       />
 
@@ -198,9 +228,12 @@ export function SalesOrderDetailsForm({ value, update, readOnly = false, selecte
 
       <Input
         label="Customer PO (Order Number)"
+        required={poRequired}
         value={value.customerPO}
         onChange={e => update('customerPO', e.target.value)}
         disabled={readOnly}
+        hint={poRequired ? 'Required for this customer before creating an invoice' : undefined}
+        error={poRequired && !String(value.customerPO ?? '').trim()}
       />
     </div>
   );

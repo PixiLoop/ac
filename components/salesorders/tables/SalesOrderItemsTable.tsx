@@ -152,7 +152,12 @@ export function SalesOrderItemsTable({
         params: { category },
       })
       .then(res => {
-        const list = res.data?.data ?? res.data ?? []
+        const payload = res.data?.data ?? res.data
+        const list = Array.isArray(payload)
+          ? payload
+          : Array.isArray(payload?.items)
+            ? payload.items
+            : []
 
         const options = [
           { label: 'Select item', value: '' },
@@ -166,6 +171,7 @@ export function SalesOrderItemsTable({
       })
       .catch(err => {
         console.error('Failed to load products', err)
+        setItemOptions([{ label: 'Select item', value: '' }])
       })
   }, [])
 
@@ -618,7 +624,7 @@ export function SalesOrderItemsTable({
               </div>
             </div>
 
-            {item.itemId && (
+            {/* {item.itemId && (
               <div className="flex flex-wrap items-center gap-2 px-2 pb-1.5 text-xs">
                 {item.priceOverridden ? (
                   <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
@@ -647,7 +653,7 @@ export function SalesOrderItemsTable({
                   </span>
                 )}
               </div>
-            )}
+            )} */}
           </div>
         );
       })}

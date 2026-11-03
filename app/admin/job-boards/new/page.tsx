@@ -64,7 +64,7 @@ export default function CreateBoardPage() {
         })
         const url = res.data?.data?.backgroundImage ?? res.data?.backgroundImage
         setBackgroundImage(url || '')
-        setBackgroundPreview(url || localUrl)
+        setBackgroundPreview(localUrl)
         showToast({ type: 'success', title: 'Background uploaded' })
       } catch {
         showToast({ type: 'error', title: 'Failed to upload background' })

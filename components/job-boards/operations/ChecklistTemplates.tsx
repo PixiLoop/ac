@@ -8,14 +8,13 @@ import {
   Plus,
   Layers,
   Eye,
-  Calendar,
   Cpu,
   Copy,
   Trash2,
-  Sparkles,
-  Sliders,
   CheckCircle2,
   FileCheck2,
+  Pencil,
+  X,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
 
@@ -24,7 +23,6 @@ export const ChecklistTemplates: React.FC = () => {
     checklistTemplates,
     selectedTemplateId,
     setSelectedTemplateId,
-    createChecklistTemplate,
     deleteChecklistTemplate,
   } = useOperations();
 
@@ -33,17 +31,34 @@ export const ChecklistTemplates: React.FC = () => {
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
   const [reuseFrom, setReuseFrom] = useState<ChecklistTemplate | null>(null);
   const [templateToDelete, setTemplateToDelete] = useState<ChecklistTemplate | null>(null);
-  const [categories, setCategories] = useState([])
+  const [previewTemplate, setPreviewTemplate] = useState<ChecklistTemplate | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [showBulkDeleteConfirm, setShowBulkDeleteConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const selectedTemplate = checklistTemplates.find((t) => t.id === selectedTemplateId);
 
 
   useEffect(() => {
-    const fmSegmentsTemplate = checklistTemplates.filter(template => template.FMServiceSegment !== null)
-    const uniqueCat = Array.from(new Set(fmSegmentsTemplate.map(item => item.FMServiceSegment.type)));
-    setCategories(['All', ...uniqueCat])
-  }, [checklistTemplates])
-  
+    const uniqueCat = Array.from(
+      new Set(
+        checklistTemplates
+          .map((t) => t.FMServiceSegment?.type)
+          .filter((type): type is string => !!type),
+      ),
+    );
+    setCategories(['All', ...uniqueCat]);
+  }, [checklistTemplates]);
+
+  useEffect(() => {
+    const valid = new Set(checklistTemplates.map((t) => t.id));
+    setSelectedIds((prev) => {
+      const next = new Set(Array.from(prev).filter((id) => valid.has(id)));
+      return next.size === prev.size ? prev : next;
+    });
+  }, [checklistTemplates]);
+
   if (selectedTemplate) {
     return (
       <ChecklistTemplateDetail
@@ -65,15 +80,61 @@ export const ChecklistTemplates: React.FC = () => {
     return true;
   });
 
+  const filteredIds = filteredTemplates.map((t) => t.id);
+  const allFilteredSelected =
+    filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id));
 
-  // Confirm delete
+  const toggleOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const toggleAllFiltered = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredIds.forEach((id) => next.delete(id));
+      } else {
+        filteredIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
   const handleConfirmDelete = async () => {
     if (!templateToDelete) return;
     try {
       await deleteChecklistTemplate(templateToDelete.id);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(templateToDelete.id);
+        return next;
+      });
       setTemplateToDelete(null);
     } catch (err) {
       console.error('Failed to delete template', err);
+    }
+  };
+
+  const handleConfirmBulkDelete = async () => {
+    const ids = Array.from(selectedIds);
+    if (!ids.length) return;
+    setBulkDeleting(true);
+    try {
+      for (const id of ids) {
+        await deleteChecklistTemplate(id);
+      }
+      setSelectedIds(new Set());
+      setShowBulkDeleteConfirm(false);
+    } catch (err) {
+      console.error('Failed to bulk delete templates', err);
+    } finally {
+      setBulkDeleting(false);
     }
   };
 
@@ -81,8 +142,9 @@ export const ChecklistTemplates: React.FC = () => {
   const totalTemplatesCount = checklistTemplates.length;
   const activeTemplatesCount = checklistTemplates.filter((t) => t.status === 'ACTIVE').length;
   const totalStepsCount = checklistTemplates.reduce(
-    (acc, t) => acc + t.sections.reduce((sAcc, s) => sAcc + s.items.length, 0),
-    0
+    (acc, t) =>
+      acc + (t.sections ?? []).reduce((sAcc, s) => sAcc + (s.items?.length ?? 0), 0),
+    0,
   );
   const modelsCoveredCount = new Set(checklistTemplates.map((t) => t.FMServiceSegment?.label)).size;
 
@@ -100,8 +162,17 @@ export const ChecklistTemplates: React.FC = () => {
           </p>
         </div>
 
-        {/* Create Template Button */}
         <div className="flex items-center gap-3">
+          {selectedIds.size > 0 && (
+            <button
+              type="button"
+              onClick={() => setShowBulkDeleteConfirm(true)}
+              className="inline-flex items-center gap-2 px-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold shadow-xs transition-all"
+            >
+              <Trash2 className="w-4 h-4" />
+              Delete selected ({selectedIds.size})
+            </button>
+          )}
           <button
             onClick={() => {
               setReuseFrom(null);
@@ -210,6 +281,19 @@ export const ChecklistTemplates: React.FC = () => {
             <table className="w-full text-left text-xs text-slate-600 border-collapse">
               <thead className="bg-slate-50/80 text-slate-700 font-bold uppercase tracking-wider text-[11px] border-b border-slate-200">
                 <tr>
+                  <th className="py-3 pl-4 pr-2 align-middle w-10">
+                    <input
+                      type="checkbox"
+                      className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                      checked={allFilteredSelected}
+                      ref={(el) => {
+                        if (el) el.indeterminate = someFilteredSelected && !allFilteredSelected;
+                      }}
+                      onChange={toggleAllFiltered}
+                      title="Select all visible"
+                      aria-label="Select all visible templates"
+                    />
+                  </th>
                   <th className="py-3 px-4 align-middle">Template Name</th>
                   <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Model</th>
                   <th className="py-3 px-4 align-middle whitespace-nowrap">Hardware Type</th>
@@ -222,21 +306,33 @@ export const ChecklistTemplates: React.FC = () => {
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredTemplates.map((tmpl) => {
-                  const totalItems = tmpl.sections.reduce(
-                    (acc, s) => acc + s.items.length,
+                  const sections = tmpl.sections ?? [];
+                  const totalItems = sections.reduce(
+                    (acc, s) => acc + (s.items?.length ?? 0),
                     0
                   );
-                  const requiredItems = tmpl.sections.reduce(
-                    (acc, s) => acc + s.items.filter((i) => i.isRequired).length,
+                  const requiredItems = sections.reduce(
+                    (acc, s) => acc + (s.items ?? []).filter((i) => i.isRequired).length,
                     0
                   );
+                  const isChecked = selectedIds.has(tmpl.id);
 
                   return (
                     <tr
                       key={tmpl.id}
-                      onClick={() => setSelectedTemplateId(tmpl.id)}
-                      className="hover:bg-slate-50/70 cursor-pointer transition-colors group"
+                      className={`hover:bg-slate-50/70 transition-colors group ${
+                        isChecked ? 'bg-blue-50/40' : ''
+                      }`}
                     >
+                      <td className="py-3 pl-4 pr-2 align-middle">
+                        <input
+                          type="checkbox"
+                          className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                          checked={isChecked}
+                          onChange={() => toggleOne(tmpl.id)}
+                          aria-label={`Select ${tmpl.name}`}
+                        />
+                      </td>
                       {/* Template Name */}
                       <td className="py-3 px-4 align-middle">
                         <div className="flex items-center gap-2.5 min-w-0">
@@ -268,7 +364,7 @@ export const ChecklistTemplates: React.FC = () => {
 
                       {/* Sections Count */}
                       <td className="py-3 px-4 align-middle text-center font-semibold text-slate-700">
-                        {tmpl.sections.length}
+                        {sections.length}
                       </td>
 
                       {/* Items Count */}
@@ -309,43 +405,41 @@ export const ChecklistTemplates: React.FC = () => {
 
                       {/* Actions */}
                       <td className="py-3 px-4 align-middle text-center">
-                        <div
-                          className="inline-flex items-center justify-center gap-1.5 flex-nowrap"
-                          onClick={(e) => e.stopPropagation()}
-                        >
+                        <div className="inline-flex items-center justify-center gap-1 flex-nowrap">
                           <button
-                            onClick={() => setSelectedTemplateId(tmpl.id)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors leading-none"
-                            title="View / Edit Template"
+                            type="button"
+                            onClick={() => setPreviewTemplate(tmpl)}
+                            className="inline-flex items-center justify-center h-8 w-8 text-sky-700 bg-sky-50 hover:bg-sky-100 rounded-lg transition-colors"
+                            title="Preview"
                           >
                             <Eye className="w-3.5 h-3.5" />
-                            Edit
                           </button>
                           <button
+                            type="button"
+                            onClick={() => setSelectedTemplateId(tmpl.id)}
+                            className="inline-flex items-center justify-center h-8 w-8 text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition-colors"
+                            title="Edit"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => {
                               setReuseFrom(tmpl);
                               setShowCreateModal(true);
                             }}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-ink bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors leading-none"
-                            title="Reuse as a new customisable copy"
+                            className="inline-flex items-center justify-center h-8 w-8 text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
+                            title="Reuse"
                           >
                             <Copy className="w-3.5 h-3.5" />
-                            Reuse
                           </button>
-                          {/* <button
-                            onClick={(e) => handleDuplicateTemplate(tmpl, e)}
-                            className="inline-flex items-center justify-center p-1.5 text-slate-500 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
-                            title="Quick duplicate"
-                          >
-                            <Copy className="w-3.5 h-3.5" />
-                          </button> */}
                           <button
+                            type="button"
                             onClick={() => setTemplateToDelete(tmpl)}
-                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-rose-600 hover:bg-rose-50 rounded-lg transition-colors leading-none"
-                            title="Delete Template"
+                            className="inline-flex items-center justify-center h-8 w-8 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                            title="Delete"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
-                            Delete
                           </button>
                         </div>
                       </td>
@@ -372,7 +466,111 @@ export const ChecklistTemplates: React.FC = () => {
         }}
       />
 
-      {/* Delete Confirmation Modal */}
+      {previewTemplate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden border border-slate-200 shadow-xl flex flex-col">
+            <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-slate-100">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
+                  <span className="text-[11px] px-2 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                    {previewTemplate.FMServiceSegment?.label ?? '—'}
+                  </span>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 font-medium">
+                    {previewTemplate.FMServiceSegment?.type ?? '—'}
+                  </span>
+                  <span
+                    className={`text-[11px] font-semibold px-2 py-0.5 rounded-full border ${
+                      previewTemplate.status === 'ACTIVE'
+                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                        : previewTemplate.status === 'DRAFT'
+                          ? 'bg-amber-50 text-amber-700 border-amber-200'
+                          : 'bg-slate-100 text-slate-600 border-slate-200'
+                    }`}
+                  >
+                    {previewTemplate.status}
+                  </span>
+                </div>
+                <h3 className="text-base font-bold text-slate-900 truncate">{previewTemplate.name}</h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">Read-only preview</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPreviewTemplate(null)}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100"
+                title="Close"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="overflow-y-auto px-5 py-4 space-y-4">
+              {(previewTemplate.sections ?? []).length === 0 ? (
+                <p className="text-xs text-slate-500 text-center py-8">No sections defined on this template.</p>
+              ) : (
+                (previewTemplate.sections ?? []).map((section) => (
+                  <div key={section.id} className="rounded-xl border border-slate-200 overflow-hidden">
+                    <div className="bg-slate-50 px-3 py-2 border-b border-slate-200">
+                      <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                        {section.title}
+                      </h4>
+                    </div>
+                    <ul className="divide-y divide-slate-100">
+                      {(section.items ?? []).length === 0 ? (
+                        <li className="px-3 py-2 text-xs text-slate-400">No items</li>
+                      ) : (
+                        (section.items ?? []).map((item) => (
+                          <li key={item.id} className="px-3 py-2.5">
+                            <div className="flex items-start justify-between gap-2">
+                              <div className="min-w-0">
+                                <p className="text-xs font-semibold text-slate-800">{item.title}</p>
+                                {item.description ? (
+                                  <p className="text-[11px] text-slate-500 mt-0.5">{item.description}</p>
+                                ) : null}
+                              </div>
+                              {item.isRequired ? (
+                                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-rose-700 bg-rose-50 border border-rose-200 px-1.5 py-0.5 rounded">
+                                  Required
+                                </span>
+                              ) : (
+                                <span className="shrink-0 text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-slate-50 border border-slate-200 px-1.5 py-0.5 rounded">
+                                  Optional
+                                </span>
+                              )}
+                            </div>
+                          </li>
+                        ))
+                      )}
+                    </ul>
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="flex justify-end gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/60">
+              <button
+                type="button"
+                onClick={() => setPreviewTemplate(null)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl"
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  const id = previewTemplate.id;
+                  setPreviewTemplate(null);
+                  setSelectedTemplateId(id);
+                }}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+                Edit Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {templateToDelete && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
           <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 border border-slate-200 shadow-xl">
@@ -404,6 +602,47 @@ export const ChecklistTemplates: React.FC = () => {
                 className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs"
               >
                 Delete Template
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in">
+          <div className="bg-white rounded-2xl p-6 max-w-md w-full space-y-4 border border-slate-200 shadow-xl">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-100 text-rose-600 rounded-xl">
+                <Trash2 className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-base font-bold text-slate-900">Delete selected templates</h3>
+                <p className="text-xs text-slate-500">This action cannot be undone.</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Delete <span className="font-bold text-slate-900">{selectedIds.size}</span> checklist
+              template{selectedIds.size === 1 ? '' : 's'}? Existing jobs keep their checklist
+              instances; new jobs will no longer auto-attach these templates.
+            </p>
+
+            <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={() => setShowBulkDeleteConfirm(false)}
+                className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100 rounded-xl disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={bulkDeleting}
+                onClick={() => void handleConfirmBulkDelete()}
+                className="px-4 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs disabled:opacity-50"
+              >
+                {bulkDeleting ? 'Deleting…' : `Delete ${selectedIds.size}`}
               </button>
             </div>
           </div>

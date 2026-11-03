@@ -423,15 +423,14 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                             <select
                                 value={techStatus}
                                 onChange={(e) => handleTechStatusChange(e.target.value as any)}
-                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border focus:outline-none cursor-pointer transition-colors shadow-2xs ${
-                                    techStatus === 'Available'
+                                className={`text-[11px] font-bold px-2.5 py-0.5 rounded-full border focus:outline-none cursor-pointer transition-colors shadow-2xs ${techStatus === 'Available'
                                         ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
                                         : techStatus === 'On Job'
                                             ? 'bg-amber-50 text-amber-700 border-amber-300'
                                             : techStatus === 'On Break'
                                                 ? 'bg-slate-100 text-slate-700 border-slate-300'
                                                 : 'bg-red-50 text-red-700 border-red-300'
-                                }`}
+                                    }`}
                             >
                                 <option value="Available" className="bg-white text-slate-800">● Available</option>
                                 <option value="On Job" className="bg-white text-slate-800">● On Job</option>
@@ -481,22 +480,20 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                     <button
                         type="button"
                         onClick={() => setSelectedRole('all')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                            selectedRole === 'all'
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer ${selectedRole === 'all'
                                 ? 'bg-slate-900 text-white shadow-xs'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                            }`}
                     >
                         All Field Jobs ({sourceJobs.length})
                     </button>
                     <button
                         type="button"
                         onClick={() => setSelectedRole('technician')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                            selectedRole === 'technician'
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${selectedRole === 'technician'
                                 ? 'bg-blue-600 text-white shadow-xs'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                            }`}
                     >
                         <Wrench className="w-3 h-3" />
                         Technicians ({sourceJobs.filter((j) => (j.assignedTo || 'technician') === 'technician').length})
@@ -504,11 +501,10 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                     <button
                         type="button"
                         onClick={() => setSelectedRole('contractor')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                            selectedRole === 'contractor'
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${selectedRole === 'contractor'
                                 ? 'bg-indigo-600 text-white shadow-xs'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                            }`}
                     >
                         <Truck className="w-3 h-3" />
                         Contractors ({sourceJobs.filter((j) => j.assignedTo === 'contractor').length})
@@ -516,11 +512,10 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                     <button
                         type="button"
                         onClick={() => setSelectedRole('subcontractor')}
-                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                            selectedRole === 'subcontractor'
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${selectedRole === 'subcontractor'
                                 ? 'bg-purple-600 text-white shadow-xs'
                                 : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                            }`}
                     >
                         <ShieldCheck className="w-3 h-3" />
                         Subcontractors ({sourceJobs.filter((j) => j.assignedTo === 'subcontractor').length})
@@ -749,41 +744,37 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                     <div className="flex items-center gap-1.5 sm:gap-2">
                         <button
                             onClick={() => setActiveTab('today')}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                activeTab === 'today'
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'today'
                                     ? 'bg-blue-600 text-white shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-                            }`}
+                                }`}
                         >
                             Today’s Jobs ({todayJobs.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('upcoming')}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                activeTab === 'upcoming'
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'upcoming'
                                     ? 'bg-blue-600 text-white shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-                            }`}
+                                }`}
                         >
                             Upcoming ({upcomingJobs.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('completed')}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                activeTab === 'completed'
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'completed'
                                     ? 'bg-blue-600 text-white shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-                            }`}
+                                }`}
                         >
                             Completed ({completedJobs.length})
                         </button>
                         <button
                             onClick={() => setActiveTab('all')}
-                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                                activeTab === 'all'
+                            className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all ${activeTab === 'all'
                                     ? 'bg-blue-600 text-white shadow-xs'
                                     : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
-                            }`}
+                                }`}
                         >
                             All My Jobs ({technicianJobs.length})
                         </button>
@@ -835,15 +826,14 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                                 >
                                     {/* Status Color Strip */}
                                     <div
-                                        className={`absolute top-0 left-0 right-0 h-1 ${
-                                            job.status === 'Completed'
+                                        className={`absolute top-0 left-0 right-0 h-1 ${job.status === 'Completed'
                                                 ? 'bg-emerald-500'
                                                 : job.status === 'Installed'
                                                     ? 'bg-teal-500'
                                                     : isStarted
                                                         ? 'bg-blue-500'
                                                         : 'bg-amber-500'
-                                        }`}
+                                            }`}
                                     />
 
                                     <div>
@@ -872,15 +862,14 @@ export const TechnicianDashboard: React.FC<TechnicianDashboardProps> = ({ roleMo
                                             </div>
 
                                             <span
-                                                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${
-                                                    job.status === 'Completed'
+                                                className={`text-[11px] font-bold px-2 py-0.5 rounded-full ${job.status === 'Completed'
                                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                                         : job.status === 'Installed'
                                                             ? 'bg-teal-50 text-teal-700 border border-teal-200'
                                                             : isStarted
                                                                 ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                                                 : 'bg-amber-50 text-amber-700 border border-amber-200'
-                                                }`}
+                                                    }`}
                                             >
                                                 {isStarted && job.status !== 'Completed' && job.status !== 'Installed'
                                                     ? 'In Progress'

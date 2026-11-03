@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { HardwareItem, HardwareModel } from '../types/installation';
+import React, { useEffect, useState, useCallback } from 'react';
+import { HardwareItem, HardwareModel, FMServiceSegment } from '../types/installation';
 import { StatusBadge, ScheduleBadge } from './shared/StatusBadge';
 import { ChecklistProgress } from './shared/ChecklistProgress';
 import { ScheduleJobDialog } from './ScheduleJobDialog';
@@ -31,9 +31,11 @@ import {
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useOperations } from '../../../providers/OperationsContext';
-import { api } from '../../../lib/job-book-client';
+import { api, formatJobBookError } from '../../../lib/job-book-client';
 import { useToast } from '../../ui/toast';
+import { SearchSelect } from '../../ui/SearchSelect';
 import { AuthenticatedPhoto } from './shared/AuthenticatedPhoto';
+import { formatInstallJobId } from './shared/formatInstallJobId';
 
 export const InstallationDetail: React.FC = () => {
   const router = useRouter();
@@ -53,11 +55,16 @@ export const InstallationDetail: React.FC = () => {
     checkTechnicianConflict,
     changeJobStatus,
     technicians,
+    fmSegments,
   } = useOperations();
 
   const [showScheduleDialog, setShowScheduleDialog] = useState<boolean>(false);
   const [showStatusDialog, setShowStatusDialog] = useState<boolean>(false);
-  const [selectedHwToAdd, setSelectedHwToAdd] = useState<HardwareModel>('GPS Unit');
+  const [availableHardwareToAdd, setAvailableHardwareToAdd] = useState<FMServiceSegment[]>([]);
+  const [loadingHardware, setLoadingHardware] = useState<boolean>(true);
+  const [hardwareError, setHardwareError] = useState<string | null>(null);
+  const [selectedHwToAdd, setSelectedHwToAdd] = useState<string>('');
+  const [isAddingHardware, setIsAddingHardware] = useState<boolean>(false);
   const [showAddHwModal, setShowAddHwModal] = useState<boolean>(false);
   const [commentDraftByItem, setCommentDraftByItem] = useState<Record<string, string>>({});
   const [commentComposerItemId, setCommentComposerItemId] = useState<string | null>(null);
@@ -101,6 +108,54 @@ export const InstallationDetail: React.FC = () => {
     };
   }, [selectedJob?.id, selectedJob?.technicianId, selectedJob?.technicianName, technicians]);
 
+  const fetchAvailableHardware = useCallback(async () => {
+    setLoadingHardware(true);
+    setHardwareError(null);
+    try {
+      const res = await api.fmSegments.list();
+      if (res.error || res.status >= 400) {
+        if (fmSegments && fmSegments.length > 0) {
+          const valid = fmSegments.filter((s) => s.isActive && s.label !== 'null' && s.code !== 'NULL');
+          setAvailableHardwareToAdd(valid);
+          if (valid.length > 0) {
+            setSelectedHwToAdd((prev) => (valid.some((v) => v.id === prev) ? prev : valid[0].id));
+          }
+          setLoadingHardware(false);
+          return;
+        }
+        setHardwareError(formatJobBookError(res.error, 'Failed to fetch hardware segments from FMServiceSegment table'));
+        setLoadingHardware(false);
+        return;
+      }
+
+      const raw = Array.isArray(res.data) ? res.data : (res.data as any)?.data || [];
+      const segments: FMServiceSegment[] = (Array.isArray(raw) ? raw : [])
+        .filter((s: any) => s && s.isActive !== false && s.label !== 'null' && s.code !== 'NULL')
+        .sort((a: any, b: any) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0));
+
+      setAvailableHardwareToAdd(segments);
+      if (segments.length > 0) {
+        setSelectedHwToAdd((prev) => (segments.some((v) => v.id === prev) ? prev : segments[0].id));
+      }
+    } catch (err: any) {
+      if (fmSegments && fmSegments.length > 0) {
+        const valid = fmSegments.filter((s) => s.isActive && s.label !== 'null' && s.code !== 'NULL');
+        setAvailableHardwareToAdd(valid);
+        if (valid.length > 0) {
+          setSelectedHwToAdd((prev) => (valid.some((v) => v.id === prev) ? prev : valid[0].id));
+        }
+      } else {
+        setHardwareError(err?.message || 'Failed to load hardware segments from database');
+      }
+    } finally {
+      setLoadingHardware(false);
+    }
+  }, [fmSegments]);
+
+  useEffect(() => {
+    fetchAvailableHardware();
+  }, [fetchAvailableHardware]);
+
   if (!selectedJob) {
     return (
       <div className="flex flex-col items-center justify-center p-12 text-center bg-white rounded-xl border">
@@ -137,12 +192,12 @@ export const InstallationDetail: React.FC = () => {
   // Check if technician has a scheduling conflict
   const conflict = selectedJob.technicianId && selectedJob.installationDate && selectedJob.startTime && selectedJob.endTime
     ? checkTechnicianConflict(
-        selectedJob.technicianId,
-        selectedJob.installationDate,
-        selectedJob.startTime,
-        selectedJob.endTime,
-        selectedJob.id
-      )
+      selectedJob.technicianId,
+      selectedJob.installationDate,
+      selectedJob.startTime,
+      selectedJob.endTime,
+      selectedJob.id
+    )
     : { hasConflict: false };
 
   const toggleSectionCollapse = (secId: string) => {
@@ -248,24 +303,94 @@ export const InstallationDetail: React.FC = () => {
     showToast({ type: 'success', title: 'Photo removed', replace: true });
   };
 
-  const handleAddHardware = async () => {
-    const newItem: HardwareItem = {
-      id: `hw-${Date.now()}`,
-      model: selectedHwToAdd,
-      name: `${selectedHwToAdd} Standard Fleet Component`,
-      serialNumber: `SN-${Date.now().toString().slice(-6)}`,
-      category:
-        selectedHwToAdd === 'MIX4000' || selectedHwToAdd === 'FM3306'
-          ? 'Telematics Unit'
-          : selectedHwToAdd === 'HD Camera' || selectedHwToAdd === 'Standard Camera'
-          ? 'Camera & Video'
-          : selectedHwToAdd === 'SIM'
-          ? 'Connectivity'
-          : 'Sensors',
-    };
+  const getCategoryForSegment = (seg?: FMServiceSegment | null): HardwareItem['category'] => {
+    const type = (seg?.type || '').toUpperCase();
+    const code = (seg?.code || '').toUpperCase();
+    const label = (seg?.label || '').toUpperCase();
 
-    await addHardwareToJob(selectedJob.id, newItem);
-    setShowAddHwModal(false);
+    if (
+      type === 'VISION' ||
+      type === 'CAMERA' ||
+      code.includes('CAM') ||
+      code.includes('CAMERA') ||
+      label.includes('CAMERA') ||
+      label.includes('C6D') ||
+      label.includes('ADPLUS') ||
+      label.includes('CATHEXIS')
+    ) {
+      return 'Camera & Video';
+    }
+    if (type === 'SIM1' || type === 'SIM2' || code.includes('SIM') || label.includes('SIM')) {
+      return 'Connectivity';
+    }
+    if (type === 'BASE_UNIT' || code.includes('BASE') || label.includes('BASE')) {
+      return 'Core Unit';
+    }
+    if (
+      type === 'UNIT_CODE' ||
+      code.includes('MIX') ||
+      code.includes('FM') ||
+      code.includes('FMC') ||
+      code.includes('REMORA') ||
+      code.includes('YABBY') ||
+      code.includes('OYSTER')
+    ) {
+      return 'Telematics Unit';
+    }
+    if (type === 'OPTION' || code.includes('GPS') || label.includes('GPS') || code.includes('SENSOR')) {
+      return 'Sensors';
+    }
+    return 'Telematics Unit';
+  };
+
+
+  const handleAddHardware = async () => {
+    if (!selectedJob) return;
+    const selectedSegment =
+      availableHardwareToAdd.find((s) => s.id === selectedHwToAdd) ||
+      availableHardwareToAdd.find((s) => s.code === selectedHwToAdd || s.label === selectedHwToAdd) ||
+      availableHardwareToAdd[0];
+
+    if (!selectedSegment) {
+      showToast({
+        type: 'error',
+        title: 'Please select a valid hardware model from FMServiceSegment',
+        replace: true,
+      });
+      return;
+    }
+
+    setIsAddingHardware(true);
+    try {
+      const modelCode = selectedSegment.code || selectedSegment.label || 'MIX4000';
+      const labelText = selectedSegment.label || selectedSegment.code || modelCode;
+
+      const newItem: HardwareItem = {
+        id: `hw-${Date.now()}`,
+        model: modelCode as HardwareModel,
+        name: `${labelText} Standard Fleet Component`,
+        serialNumber: `SN-${Date.now().toString().slice(-6)}`,
+        category: getCategoryForSegment(selectedSegment),
+        segmentId: selectedSegment.id,
+        code: selectedSegment.code,
+      };
+
+      await addHardwareToJob(selectedJob.id, newItem);
+      setShowAddHwModal(false);
+      showToast({
+        type: 'success',
+        title: `${labelText} added & checklist attached`,
+        replace: true,
+      });
+    } catch (err: any) {
+      showToast({
+        type: 'error',
+        title: err?.message || 'Failed to add hardware',
+        replace: true,
+      });
+    } finally {
+      setIsAddingHardware(false);
+    }
   };
 
   const handleGenerateChecklist = async () => {
@@ -290,16 +415,6 @@ export const InstallationDetail: React.FC = () => {
       setRegeneratingChecklist(false);
     }
   };
-
-  const availableHardwareToAdd: HardwareModel[] = [
-    'MIX4000',
-    'FM3306',
-    'HD Camera',
-    'Standard Camera',
-    'SIM',
-    'GPS Unit',
-    'Base Unit',
-  ];
 
   return (
     <div className="w-full max-w-none space-y-6 pb-12 animate-in fade-in duration-200">
@@ -351,7 +466,7 @@ export const InstallationDetail: React.FC = () => {
           <div>
             <div className="flex flex-wrap items-center gap-3 mb-2">
               <span className="font-mono text-2xl font-black text-slate-900 tracking-tight">
-                {selectedJob.id}
+                {formatInstallJobId(selectedJob.id)}
               </span>
               <span className="text-xs font-mono px-2 py-0.5 rounded bg-slate-100 text-slate-600 border border-slate-200">
                 {selectedJob.jobNumber}
@@ -583,8 +698,14 @@ export const InstallationDetail: React.FC = () => {
               </div>
             )}
 
-            {/* Combined Checklist Sections */}
-            <div className="space-y-4">
+            {/* Combined Checklist Sections — scroll when more than one section */}
+            <div
+              className={
+                selectedJob.checklistSections.length > 1
+                  ? 'space-y-4 max-h-[min(70vh,640px)] overflow-y-auto pr-1 scrollbar-hover-thin'
+                  : 'space-y-4'
+              }
+            >
               {selectedJob.checklistSections.map((section) => {
                 const isCollapsed = !!collapsedSections[section.id];
                 const sectionCompleted = section.items.filter((i) => i.completed).length;
@@ -627,25 +748,29 @@ export const InstallationDetail: React.FC = () => {
                       </div>
                     </div>
 
-                    {/* Section Items */}
+                    {/* Section Items — scroll when section has more than one item */}
                     {!isCollapsed && (
-                      <div className="divide-y divide-slate-100">
+                      <div
+                        className={
+                          section.items.length > 1
+                            ? 'divide-y divide-slate-100 max-h-[320px] overflow-y-auto scrollbar-hover-thin'
+                            : 'divide-y divide-slate-100'
+                        }
+                      >
                         {section.items.map((item) => (
                           <div
                             key={item.id}
-                            className={`p-4 hover:bg-slate-50/60 transition-colors flex items-start gap-3 ${
-                              item.completed ? 'bg-emerald-50/20' : ''
-                            }`}
+                            className={`p-4 hover:bg-slate-50/60 transition-colors flex items-start gap-3 ${item.completed ? 'bg-emerald-50/20' : ''
+                              }`}
                           >
                             {/* Interactive Checkbox */}
                             <button
                               type="button"
                               onClick={() => handleToggleItem(section.id, item.id, item.completed)}
-                              className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all ${
-                                item.completed
-                                  ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
-                                  : 'border-slate-300 hover:border-blue-500 bg-white'
-                              }`}
+                              className={`mt-0.5 w-5 h-5 rounded-md flex items-center justify-center shrink-0 border transition-all ${item.completed
+                                ? 'bg-emerald-600 border-emerald-600 text-white shadow-xs'
+                                : 'border-slate-300 hover:border-blue-500 bg-white'
+                                }`}
                             >
                               {item.completed && <CheckCircle2 className="w-4 h-4" />}
                             </button>
@@ -654,11 +779,10 @@ export const InstallationDetail: React.FC = () => {
                             <div className="flex-1 space-y-1">
                               <div className="flex flex-wrap items-center gap-2">
                                 <span
-                                  className={`text-sm font-medium ${
-                                    item.completed
-                                      ? 'text-slate-700 line-through decoration-slate-400'
-                                      : 'text-slate-900 font-semibold'
-                                  }`}
+                                  className={`text-sm font-medium ${item.completed
+                                    ? 'text-slate-700 line-through decoration-slate-400'
+                                    : 'text-slate-900 font-semibold'
+                                    }`}
                                 >
                                   {item.title}
                                 </span>
@@ -713,13 +837,13 @@ export const InstallationDetail: React.FC = () => {
                                             <p className="text-[10px] text-slate-500 mt-1">
                                               {comment.authorName || 'Installer'}
                                               {comment.createdAt &&
-                                              new Date(comment.createdAt).getTime() > 0
+                                                new Date(comment.createdAt).getTime() > 0
                                                 ? ` · ${new Date(comment.createdAt).toLocaleString([], {
-                                                    day: '2-digit',
-                                                    month: 'short',
-                                                    hour: '2-digit',
-                                                    minute: '2-digit',
-                                                  })}`
+                                                  day: '2-digit',
+                                                  month: 'short',
+                                                  hour: '2-digit',
+                                                  minute: '2-digit',
+                                                })}`
                                                 : ''}
                                             </p>
                                           </div>
@@ -838,11 +962,10 @@ export const InstallationDetail: React.FC = () => {
 
                                 <div className="flex flex-wrap items-center gap-2">
                                   <label
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
-                                      uploadingPhotoKey === `${section.id}:${item.id}`
-                                        ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
-                                        : 'border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
-                                    }`}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${uploadingPhotoKey === `${section.id}:${item.id}`
+                                      ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
+                                      : 'border-slate-200 text-slate-700 hover:bg-slate-50 hover:border-slate-300'
+                                      }`}
                                   >
                                     {uploadingPhotoKey === `${section.id}:${item.id}` ? (
                                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
@@ -864,11 +987,10 @@ export const InstallationDetail: React.FC = () => {
                                   </label>
 
                                   <label
-                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${
-                                      uploadingPhotoKey === `${section.id}:${item.id}`
-                                        ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
-                                        : 'border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100'
-                                    }`}
+                                    className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-lg border text-[11px] font-semibold cursor-pointer transition-colors ${uploadingPhotoKey === `${section.id}:${item.id}`
+                                      ? 'opacity-50 pointer-events-none border-slate-200 text-slate-400'
+                                      : 'border-blue-200 text-blue-700 bg-blue-50 hover:bg-blue-100'
+                                      }`}
                                   >
                                     <Camera className="w-3.5 h-3.5" />
                                     Take photo
@@ -1002,53 +1124,51 @@ export const InstallationDetail: React.FC = () => {
                   /^Scheduled with technician /i.test(noteText);
 
                 return (
-                <div key={event.id} className="relative group">
-                  {/* Timeline dot — latest in blue */}
-                  <span
-                    className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow-xs ${
-                      idx === 0
+                  <div key={event.id} className="relative group">
+                    {/* Timeline dot — latest in blue */}
+                    <span
+                      className={`absolute -left-6 top-1 w-4 h-4 rounded-full border-2 border-white shadow-xs ${idx === 0
                         ? 'bg-blue-600 ring-4 ring-blue-100'
                         : 'bg-slate-400'
-                    }`}
-                  />
+                        }`}
+                    />
 
-                  <div className="min-w-0">
-                    <div className="flex items-start justify-between gap-2">
-                      <span className={`text-xs font-bold ${idx === 0 ? 'text-blue-700' : 'text-slate-900'}`}>
-                        {event.status}
-                      </span>
-                      <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
-                        {new Date(event.timestamp).toLocaleDateString([], {
-                          month: 'short',
-                          day: 'numeric',
-                        })}{' '}
-                        {new Date(event.timestamp).toLocaleTimeString([], {
-                          hour: '2-digit',
-                          minute: '2-digit',
-                        })}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-500 font-medium">
-                      By: {event.updatedBy}
-                    </p>
-                    {noteText ? (
-                      <div
-                        className={`mt-1 p-2 rounded-lg border text-xs break-words ${
-                          isSystemNote
+                    <div className="min-w-0">
+                      <div className="flex items-start justify-between gap-2">
+                        <span className={`text-xs font-bold ${idx === 0 ? 'text-blue-700' : 'text-slate-900'}`}>
+                          {event.status}
+                        </span>
+                        <span className="text-[10px] text-slate-400 shrink-0 whitespace-nowrap">
+                          {new Date(event.timestamp).toLocaleDateString([], {
+                            month: 'short',
+                            day: 'numeric',
+                          })}{' '}
+                          {new Date(event.timestamp).toLocaleTimeString([], {
+                            hour: '2-digit',
+                            minute: '2-digit',
+                          })}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 font-medium">
+                        By: {event.updatedBy}
+                      </p>
+                      {noteText ? (
+                        <div
+                          className={`mt-1 p-2 rounded-lg border text-xs break-words ${isSystemNote
                             ? 'bg-slate-50 text-slate-600 border-slate-200/80'
                             : 'bg-blue-50 text-blue-900 border-blue-200'
-                        }`}
-                      >
-                        {!isSystemNote && (
-                          <span className="block text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-0.5">
-                            Comment
-                          </span>
-                        )}
-                        {noteText}
-                      </div>
-                    ) : null}
+                            }`}
+                        >
+                          {!isSystemNote && (
+                            <span className="block text-[10px] font-bold uppercase tracking-wide text-blue-600 mb-0.5">
+                              Comment
+                            </span>
+                          )}
+                          {noteText}
+                        </div>
+                      ) : null}
+                    </div>
                   </div>
-                </div>
                 );
               })}
             </div>
@@ -1066,33 +1186,56 @@ export const InstallationDetail: React.FC = () => {
             </p>
 
             <div>
-              <label className="block text-xs font-bold uppercase text-slate-700 mb-1">
-                Hardware Model
-              </label>
-              <select
-                value={selectedHwToAdd}
-                onChange={(e) => setSelectedHwToAdd(e.target.value as HardwareModel)}
-                className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-sm"
-              >
-                {availableHardwareToAdd.map((m) => (
-                  <option key={m} value={m}>
-                    {m}
-                  </option>
-                ))}
-              </select>
+              {loadingHardware ? (
+                <div className="flex items-center gap-2 py-2.5 px-3 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500">
+                  <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
+                  <span>Loading hardware from FMServiceSegment...</span>
+                </div>
+              ) : hardwareError ? (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 space-y-1.5">
+                  <p className="font-medium">{hardwareError}</p>
+                  <button
+                    type="button"
+                    onClick={() => fetchAvailableHardware()}
+                    className="font-semibold underline hover:text-rose-900 text-xs inline-flex items-center gap-1"
+                  >
+                    Retry loading
+                  </button>
+                </div>
+              ) : availableHardwareToAdd.length === 0 ? (
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-800">
+                  No active hardware models found in FMServiceSegment.
+                </div>
+              ) : (
+                <SearchSelect
+                  placeholder="Search hardware model…"
+                  value={selectedHwToAdd}
+                  onChange={setSelectedHwToAdd}
+                  options={availableHardwareToAdd.map((m) => {
+                    const label = m.label || m.code || '';
+                    const details = m.code && m.code !== m.label ? ` (${m.code})` : '';
+                    return { value: m.id, label: `${label}${details}` };
+                  })}
+                />
+              )}
             </div>
 
             <div className="flex justify-end gap-2 pt-2 border-t">
               <button
+                type="button"
                 onClick={() => setShowAddHwModal(false)}
-                className="px-3 py-1.5 text-xs font-medium text-slate-600"
+                disabled={isAddingHardware}
+                className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-800 transition-colors"
               >
                 Cancel
               </button>
               <button
+                type="button"
                 onClick={handleAddHardware}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700"
+                disabled={loadingHardware || !!hardwareError || availableHardwareToAdd.length === 0 || isAddingHardware}
+                className="px-4 py-1.5 text-xs font-semibold text-white bg-blue-600 rounded-xl hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors inline-flex items-center gap-1.5"
               >
+                {isAddingHardware && <Loader2 className="w-3.5 h-3.5 animate-spin" />}
                 Add & Attach Checklist
               </button>
             </div>

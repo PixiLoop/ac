@@ -255,6 +255,7 @@ export const CreateChecklistTemplateModal: React.FC<CreateChecklistTemplateModal
                 hardwareId: hardwareId,
                 status: (STATUS_TO_ENUM[saveStatus] || saveStatus) as any,
                 sections: formattedSections,
+                fmSegmentId: null
             });
 
             setIsSubmitting(false);

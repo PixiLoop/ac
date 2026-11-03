@@ -227,7 +227,7 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
               updatedAt: new Date().toISOString(),
             })
           );
-        } catch (e) {}
+        } catch (e) { }
       }
     },
     [signoffStorageKey]
@@ -385,7 +385,7 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
       for (const sec of job.checklistSections || []) {
         const item = sec.items.find((i) => i.id === photoToDelete.checklistItemId);
         if (item) {
-          deleteChecklistPhoto(job.id, sec.id, item.id, photoId).catch(() => {});
+          deleteChecklistPhoto(job.id, sec.id, item.id, photoId).catch(() => { });
           break;
         }
       }
@@ -472,15 +472,14 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                 {job.jobNumber}
               </span>
               <span
-                className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${
-                  job.status === 'Completed'
+                className={`text-xs font-bold px-2.5 py-0.5 rounded-full ${job.status === 'Completed'
                     ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
                     : job.status === 'Installed'
-                    ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
-                    : job.status === 'Waiting Install'
-                    ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
-                    : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                }`}
+                      ? 'bg-teal-500/20 text-teal-300 border border-teal-500/30'
+                      : job.status === 'Waiting Install'
+                        ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30'
+                        : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                  }`}
               >
                 {job.status}
               </span>
@@ -588,33 +587,30 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
         <div className="flex border-b border-slate-200 bg-white px-4 sm:px-6">
           <button
             onClick={() => setActiveTab('checklists')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === 'checklists'
+            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${activeTab === 'checklists'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <CheckCircle2 className="w-4 h-4" />
             Checklist Execution {stats.total > 0 ? `(${stats.completed}/${stats.total})` : '(N/A)'}
           </button>
           <button
             onClick={() => setActiveTab('hardware')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === 'hardware'
+            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${activeTab === 'hardware'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <Wrench className="w-4 h-4" />
             Hardware Components ({job.hardware.length})
           </button>
           <button
             onClick={() => setActiveTab('signoff')}
-            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${
-              activeTab === 'signoff'
+            className={`py-3 px-4 text-xs font-bold border-b-2 transition-colors flex items-center gap-2 cursor-pointer ${activeTab === 'signoff'
                 ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
-            }`}
+              }`}
           >
             <FileText className="w-4 h-4" />
             Photos & Sign-off ({photos.length})
@@ -656,11 +652,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                         return (
                           <div
                             key={it.id}
-                            className={`p-3 rounded-xl transition-all flex flex-col gap-2 ${
-                              it.completed
+                            className={`p-3 rounded-xl transition-all flex flex-col gap-2 ${it.completed
                                 ? 'bg-emerald-50/40 hover:bg-emerald-50/70'
                                 : 'hover:bg-slate-50'
-                            }`}
+                              }`}
                           >
                             <div className="flex items-start gap-3">
                               <button
@@ -671,7 +666,7 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                                 <input
                                   type="checkbox"
                                   checked={it.completed}
-                                  onChange={() => {}}
+                                  onChange={() => { }}
                                   className="w-4 h-4 rounded text-blue-600 border-slate-300 focus:ring-blue-500 cursor-pointer pointer-events-none"
                                 />
                               </button>
@@ -680,11 +675,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                                 onClick={() => handleToggleItem(sec.id, it.id, it.completed)}
                               >
                                 <p
-                                  className={`font-semibold ${
-                                    it.completed
+                                  className={`font-semibold ${it.completed
                                       ? 'text-slate-900 line-through text-slate-400'
                                       : 'text-slate-800'
-                                  }`}
+                                    }`}
                                 >
                                   {it.title}
                                   {it.isRequired && (
@@ -802,11 +796,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                 onDragOver={handleDragOver}
                 onDragLeave={handleDragLeave}
                 onDrop={handleDrop}
-                className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${
-                  isDragging
+                className={`bg-white rounded-2xl border p-4 sm:p-5 shadow-xs transition-all ${isDragging
                     ? 'border-blue-500 ring-2 ring-blue-500/20 bg-blue-50/30'
                     : 'border-slate-200/90'
-                }`}
+                  }`}
               >
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
                   <div>
@@ -866,11 +859,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                   <button
                     type="button"
                     onClick={() => setSelectedCategoryFilter('All')}
-                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                      selectedCategoryFilter === 'All'
+                    className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${selectedCategoryFilter === 'All'
                         ? 'bg-slate-900 text-white'
                         : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
+                      }`}
                   >
                     All ({photos.length})
                   </button>
@@ -881,11 +873,10 @@ export const TechnicianWorkOrderModal: React.FC<TechnicianWorkOrderModalProps> =
                         key={cat}
                         type="button"
                         onClick={() => setSelectedCategoryFilter(cat)}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${
-                          selectedCategoryFilter === cat
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold whitespace-nowrap transition-colors cursor-pointer ${selectedCategoryFilter === cat
                             ? 'bg-blue-600 text-white'
                             : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                        }`}
+                          }`}
                       >
                         {cat} {count > 0 && `(${count})`}
                       </button>

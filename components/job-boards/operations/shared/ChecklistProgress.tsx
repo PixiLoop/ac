@@ -35,23 +35,23 @@ export const ChecklistProgress: React.FC<ChecklistProgressProps> = ({
 
   if (compact) {
     return (
-      <div className={`space-y-1.5 ${className}`}>
-        <div className="flex items-center justify-between text-xs text-slate-600">
-          <span className="font-medium text-slate-700">Checklist</span>
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-900">
+      <div className={`space-y-1.5 whitespace-nowrap text-nowrap ${className}`}>
+        <div className="flex items-center justify-between text-xs text-slate-600 whitespace-nowrap text-nowrap">
+          <span className="font-medium text-slate-700 whitespace-nowrap text-nowrap">Checklist</span>
+          <div className="flex items-center gap-2 whitespace-nowrap text-nowrap">
+            <span className="font-semibold text-slate-900 whitespace-nowrap text-nowrap">
               {stats.completed} / {stats.total}
             </span>
             {showStatusLabel && (
-              <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border ${getStatusBadge()}`}>
+              <span className={`text-[10px] font-semibold px-1.5 py-0.2 rounded border whitespace-nowrap text-nowrap ${getStatusBadge()}`}>
                 {stats.status}
               </span>
             )}
           </div>
         </div>
-        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200">
+        <div className="w-full h-1.5 bg-slate-100 rounded-full overflow-hidden border border-slate-200 whitespace-nowrap text-nowrap">
           <div
-            className={`h-full transition-all duration-300 ${getBarColor()}`}
+            className={`h-full transition-all duration-300 whitespace-nowrap text-nowrap ${getBarColor()}`}
             style={{ width: `${stats.percent}%` }}
           />
         </div>
@@ -60,31 +60,31 @@ export const ChecklistProgress: React.FC<ChecklistProgressProps> = ({
   }
 
   return (
-    <div className={`p-4 bg-slate-50/80 rounded-xl border border-slate-200/80 shadow-xs ${className}`}>
-      <div className="flex items-center justify-between mb-2">
+    <div className={`p-4 bg-slate-50/80 rounded-xl border border-slate-200/80 shadow-xs whitespace-nowrap text-nowrap ${className}`}>
+      <div className="flex items-center justify-between mb-2 whitespace-nowrap text-nowrap">
         <div>
-          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">
+          <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap text-nowrap">
             Checklist Progress
           </span>
-          <div className="flex items-baseline gap-2 mt-0.5">
-            <span className="text-2xl font-bold text-slate-900 tracking-tight">
-              {stats.completed} <span className="text-base font-normal text-slate-400">/ {stats.total}</span>
+          <div className="flex items-baseline gap-2 mt-0.5 whitespace-nowrap text-nowrap">
+            <span className="text-2xl font-bold text-slate-900 tracking-tight whitespace-nowrap text-nowrap">
+              {stats.completed} <span className="text-base font-normal text-slate-400 whitespace-nowrap text-nowrap">/ {stats.total}</span>
             </span>
-            <span className="text-sm font-semibold text-slate-600">
+            <span className="text-sm font-semibold text-slate-600 whitespace-nowrap text-nowrap">
               ({stats.percent}% completed)
             </span>
           </div>
         </div>
-        <div className="text-right">
-          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border ${getStatusBadge()}`}>
+        <div className="text-right whitespace-nowrap text-nowrap">
+          <span className={`inline-flex px-2.5 py-1 rounded-full text-xs font-semibold border whitespace-nowrap text-nowrap ${getStatusBadge()}`}>
             {stats.status}
           </span>
           {stats.requiredIncomplete > 0 ? (
-            <p className="text-[11px] text-amber-600 font-medium mt-1">
+            <p className="text-[11px] text-amber-600 font-medium mt-1 whitespace-nowrap text-nowrap">
               {stats.requiredIncomplete} required remaining
             </p>
           ) : stats.total > 0 ? (
-            <p className="text-[11px] text-emerald-600 font-medium mt-1">
+            <p className="text-[11px] text-emerald-600 font-medium mt-1 whitespace-nowrap text-nowrap">
               ✓ All required items checked
             </p>
           ) : null}
@@ -92,9 +92,9 @@ export const ChecklistProgress: React.FC<ChecklistProgressProps> = ({
       </div>
 
       {/* Progress Bar */}
-      <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden p-0.5">
+      <div className="w-full h-2.5 bg-slate-200/70 rounded-full overflow-hidden p-0.5 whitespace-nowrap text-nowrap">
         <div
-          className={`h-full rounded-full transition-all duration-500 shadow-xs ${getBarColor()}`}
+          className={`h-full rounded-full transition-all duration-500 shadow-xs whitespace-nowrap text-nowrap ${getBarColor()}`}
           style={{ width: `${stats.percent}%` }}
         />
       </div>

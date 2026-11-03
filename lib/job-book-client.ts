@@ -451,7 +451,8 @@ export const api = {
 
     fmSegments: {
         list: async (params: Record<string, string> = {}) => {
-            return request<{ data: any; total: number }>(`/fm-segments`);
+            const qs = new URLSearchParams(params).toString();
+            return request<any[]>(`/fm-segments${qs ? `?${qs}` : ''}`);
         },
     },
 };

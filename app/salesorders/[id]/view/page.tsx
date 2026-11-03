@@ -202,7 +202,12 @@ export default function ViewSalesOrderPage() {
 
   const handleCreateInvoice = async () => {
     if (orderRequired && !String(form.customerPO ?? '').trim()) {
-      showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+      showToast({
+        type: 'error',
+        title: 'Customer PO required',
+        message: 'Customer PO (Order Number) is required for this customer. Click Edit, enter the PO, Save, then create the invoice.',
+      });
+      router.push(`/salesorders/${id}`);
       return;
     }
     setCreatingInvoice(true);
@@ -274,6 +279,7 @@ export default function ViewSalesOrderPage() {
               value={form}
               readOnly
               defaultOpen
+              orderRequired={orderRequired}
             />
 
           </div>

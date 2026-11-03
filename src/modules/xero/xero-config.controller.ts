@@ -1,5 +1,5 @@
 import { Controller, Get, Post, Body, Req, Res, Param, UseGuards  } from '@nestjs/common';
-import type { Request, Response } from 'express';
+import { Request, Response } from 'express';
 import { XeroConfigService } from './xero-config.service';
 import { XeroOAuthService } from './xero-oauth.service';
 import { UpsertXeroConfigDto } from './dto/xero-config.dto';

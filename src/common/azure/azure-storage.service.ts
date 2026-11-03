@@ -27,7 +27,10 @@ export class AzureStorageService {
   constructor() {
     const conn = process.env.AZURE_STORAGE_CONNECTION_STRING?.trim();
     const accountKey = process.env.AZURE_STORAGE_ACCOUNT_KEY?.trim();
-    let accountName = process.env.AZURE_STORAGE_ACCOUNT_NAME?.trim() || 'aimsaircostorage';
+    let accountName =
+      process.env.AZURE_STORAGE_ACCOUNT_NAME?.trim() ||
+      process.env.AZURE_STORAGE_ACCOUNT?.trim() ||
+      'aimsaircostorage';
 
     if (conn) {
       try {

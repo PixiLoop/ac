@@ -832,7 +832,8 @@ export class InstallationsService {
       },
     });
 
-    await this.attachChecklistsForModels(id, [dbModel]);
+    const candidateCode = hardware?.code || hardware?.model;
+    await this.attachChecklistsForModels(id, [candidateCode, hardware?.model, dbModel].filter(Boolean));
     return this.getJob(id);
   }
 

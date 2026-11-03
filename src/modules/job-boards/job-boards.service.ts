@@ -22,27 +22,34 @@ export class JobBoardsService {
     return boards.map(b => this.withProxyUrls(b))
   }
 
-  /** Extract media blob path from a stored Azure URL (or return as-is if already a path). */
+  /** Extract media blob path from Azure URL, /uploads/media/…, or raw blob path. */
   private mediaBlobName(url?: string | null): string | null {
     if (!url) return null
+    if (url.includes('/job-boards/') && url.includes('/background/file')) return null
+    if (url.includes('/cover/file') || url.includes('/attachments/')) return null
     if (!url.includes('://')) {
-      return url.replace(/^\/?media\//, '')
+      let path = url.replace(/^\/+/, '')
+      if (path.startsWith('uploads/media/')) path = path.slice('uploads/media/'.length)
+      else if (path.startsWith('media/')) path = path.slice('media/'.length)
+      return path || null
     }
     try {
       const parsed = new URL(url.split('?')[0])
-      const parts = parsed.pathname.replace(/^\//, '').split('/')
-      if (parts[0] !== 'media' || parts.length < 2) return null
-      return decodeURIComponent(parts.slice(1).join('/'))
+      const parts = parsed.pathname.replace(/^\//, '').split('/').map(decodeURIComponent)
+      const mediaIdx = parts.indexOf('media')
+      if (mediaIdx < 0 || mediaIdx >= parts.length - 1) return null
+      return parts.slice(mediaIdx + 1).join('/')
     } catch {
       return null
     }
   }
 
-  /** True Azure blob URL — never persist API proxy paths into DB. */
+  /** Persistable storage URL — never API proxy paths or data URLs. */
   private isPersistableBackgroundUrl(url?: string | null): boolean {
     if (!url) return false
     if (url.includes('/job-boards/') && url.includes('/background/file')) return false
     if (url.startsWith('data:')) return false
+    if (url.startsWith('/uploads/')) return true
     return url.includes('.blob.core.windows.net/') || /^https?:\/\//i.test(url)
   }
 
@@ -55,8 +62,9 @@ export class JobBoardsService {
   ): T & { hasBackgroundImage?: boolean } {
     if (!board) return board
 
-    const hasBackgroundImage = !!board.backgroundImage && !!this.mediaBlobName(board.backgroundImage)
-    const backgroundImage = board.backgroundImage
+    const bgBlob = this.mediaBlobName(board.backgroundImage)
+    const hasBackgroundImage = !!bgBlob
+    const backgroundImage = bgBlob
       ? `/job-boards/${board.id}/background/file`
       : board.backgroundImage
 
@@ -68,9 +76,12 @@ export class JobBoardsService {
       ...list,
       cards: (list.cards || []).map((card: any) => ({
         ...card,
-        coverImageUrl: card.coverImageUrl
-          ? `/job-boards/cards/${card.id}/cover/file`
-          : card.coverImageUrl,
+        coverImageUrl:
+          card.coverImageUrl && /^color:/i.test(String(card.coverImageUrl))
+            ? card.coverImageUrl
+            : card.coverImageUrl
+              ? `/job-boards/cards/${card.id}/cover/file`
+              : card.coverImageUrl,
         attachments: (card.attachments || []).map((a: any) => ({
           ...a,
           fileUrl: `/job-boards/attachments/${a.id}/file`,
@@ -112,6 +123,87 @@ export class JobBoardsService {
     const blobName = this.mediaBlobName(attachment.fileUrl)
     if (!blobName) throw new NotFoundException('Invalid attachment path')
     return this.azure.download('media', blobName)
+  }
+
+  async renameAttachment(attachmentId: string, fileName: string) {
+    const trimmed = String(fileName || '').trim()
+    if (!trimmed) throw new NotFoundException('File name required')
+    const attachment = await this.prisma.cardAttachment.findUnique({
+      where: { id: attachmentId },
+    })
+    if (!attachment) throw new NotFoundException('Attachment not found')
+    return this.prisma.cardAttachment.update({
+      where: { id: attachmentId },
+      data: { fileName: trimmed },
+    })
+  }
+
+  async replaceAttachment(attachmentId: string, file: Express.Multer.File) {
+    if (!file?.buffer?.length) throw new NotFoundException('No file uploaded')
+    const attachment = await this.prisma.cardAttachment.findUnique({
+      where: { id: attachmentId },
+    })
+    if (!attachment) throw new NotFoundException('Attachment not found')
+
+    const oldBlob = this.mediaBlobName(attachment.fileUrl)
+    if (oldBlob) {
+      try {
+        await this.azure.delete('media', oldBlob)
+      } catch {
+        /* ignore */
+      }
+    }
+
+    const ext = extname(file.originalname) || '.jpg'
+    const blobName = `job-boards/${attachment.cardId}/${randomUUID()}${ext}`
+    const fileUrl = await this.azure.upload(
+      'media',
+      blobName,
+      file.buffer,
+      file.mimetype || 'image/jpeg',
+    )
+
+    const updated = await this.prisma.cardAttachment.update({
+      where: { id: attachmentId },
+      data: {
+        fileName: file.originalname || attachment.fileName,
+        fileUrl,
+      },
+    })
+
+    const card = await this.prisma.jobCard.findUnique({
+      where: { id: attachment.cardId },
+      select: { id: true, coverImageUrl: true },
+    })
+    if (card?.coverImageUrl && attachment.fileUrl && card.coverImageUrl === attachment.fileUrl) {
+      await this.prisma.jobCard.update({
+        where: { id: card.id },
+        data: { coverImageUrl: fileUrl },
+      })
+    }
+
+    return {
+      ...updated,
+      fileUrl: `/job-boards/attachments/${updated.id}/file`,
+    }
+  }
+
+  async setCoverFromAttachment(attachmentId: string) {
+    const attachment = await this.prisma.cardAttachment.findUnique({
+      where: { id: attachmentId },
+    })
+    if (!attachment?.fileUrl) throw new NotFoundException('Attachment not found')
+
+    const card = await this.prisma.jobCard.update({
+      where: { id: attachment.cardId },
+      data: { coverImageUrl: attachment.fileUrl },
+    })
+
+    return {
+      ...card,
+      coverImageUrl: `/job-boards/cards/${card.id}/cover/file`,
+      attachmentId: attachment.id,
+    }
   }
 
   async deleteAttachment(attachmentId: string) {
@@ -194,7 +286,7 @@ export class JobBoardsService {
           include: {
             cards: {
               where: { deletedAt: null },
-              orderBy: { sortOrder: 'asc' },
+              orderBy: { sortOrder: 'desc' },
               include: {
                 attachments: true,
                 labels: true,
@@ -223,7 +315,7 @@ export class JobBoardsService {
             include: {
               cards: {
                 where: { deletedAt: null },
-                orderBy: { sortOrder: 'asc' },
+                orderBy: { sortOrder: 'desc' },
                 include: {
                   attachments: true,
                   labels: true,
@@ -284,11 +376,17 @@ export class JobBoardsService {
     const board = await this.prisma.jobBoard.findFirst({
       where: { id: boardId, userId, deletedAt: null },
     })
-    if (!board) throw new Error('Board not found')
+    if (!board) throw new NotFoundException('Board not found')
+    if (!file?.buffer?.length) throw new NotFoundException('No file uploaded')
 
-    const ext = extname(file.originalname)
+    const ext = extname(file.originalname) || '.jpg'
     const blobName = `job-boards/backgrounds/${boardId}/${randomUUID()}${ext}`
-    const fileUrl = await this.azure.upload('media', blobName, file.buffer, file.mimetype)
+    const fileUrl = await this.azure.upload(
+      'media',
+      blobName,
+      file.buffer,
+      file.mimetype || 'image/jpeg',
+    )
 
     await this.prisma.jobBoard.update({
       where: { id: boardId },
@@ -343,11 +441,40 @@ export class JobBoardsService {
         deletedAt: null,
         list: { boardId, deletedAt: null },
       },
-      select: { sourceRefId: true },
+      select: { id: true, sourceRefId: true, dueDate: true },
     })
-    const existingIds = new Set(existing.map(c => c.sourceRefId).filter(Boolean))
+    const existingByRef = new Map(
+      existing
+        .filter((c) => c.sourceRefId)
+        .map((c) => [c.sourceRefId as string, c]),
+    )
 
-    let items: Array<{ id: string; title: string; description?: string | null }> = []
+    let items: Array<{
+      id: string
+      title: string
+      description?: string | null
+      location?: string | null
+      dueDate?: Date | null
+    }> = []
+
+    const jbeLocation = (r: {
+      shippingAddress1?: string | null
+      shippingAddress2?: string | null
+      shippingAddress3?: string | null
+    }) => {
+      const line = [
+        r.shippingAddress1,
+        r.shippingAddress2,
+        r.shippingAddress3,
+        'Australia',
+      ]
+        .map(v => String(v || '').trim())
+        .filter(Boolean)
+        .join(', ')
+      return r.shippingAddress1 || r.shippingAddress2 || r.shippingAddress3
+        ? line
+        : null
+    }
 
     if (sourceType === 'JOB_BOOK_ENTRY') {
       const rows = await this.prisma.jobBookEntry.findMany({
@@ -355,6 +482,7 @@ export class JobBoardsService {
         orderBy: { createdAt: 'desc' },
         take: 100,
       })
+      // Completion Time on Job Book Entry = card Due date
       items = rows.map(r => ({
         id: r.id,
         title: [
@@ -371,6 +499,8 @@ export class JobBoardsService {
         ]
           .filter(Boolean)
           .join('\n'),
+        location: jbeLocation(r),
+        dueDate: r.completionTime || null,
       }))
     } else {
       const rows = await this.prisma.fMInstall.findMany({
@@ -397,21 +527,40 @@ export class JobBoardsService {
       }))
     }
 
-    const toCreate = items.filter(i => !existingIds.has(i.id))
+    // Refresh location; only backfill dueDate from Completion Time when card has none
+    // (do not overwrite dates the user set on the card)
+    for (const item of items) {
+      const existingCard = existingByRef.get(item.id)
+      if (!existingCard) continue
+      const data: { location?: string | null; dueDate?: Date | null } = {}
+      if (item.location) data.location = item.location
+      if (!existingCard.dueDate && item.dueDate) data.dueDate = item.dueDate
+      if (!Object.keys(data).length) continue
+      await this.prisma.jobCard.update({
+        where: { id: existingCard.id },
+        data,
+      })
+    }
+
+    const toCreate = items.filter(i => !existingByRef.has(i.id))
     if (toCreate.length === 0) return
 
     const last = await this.prisma.jobCard.findFirst({
       where: { listId: firstList.id, deletedAt: null },
       orderBy: { sortOrder: 'desc' },
     })
-    let nextOrder = last ? last.sortOrder + 1 : 1
+    const base = last ? last.sortOrder : 0
+    const n = toCreate.length
 
+    // Newest source rows first → highest sortOrder → top of list (orderBy desc)
     await this.prisma.jobCard.createMany({
-      data: toCreate.map(item => ({
+      data: toCreate.map((item, i) => ({
         listId: firstList.id,
         title: item.title || 'Untitled',
         description: item.description || null,
-        sortOrder: nextOrder++,
+        location: item.location || null,
+        dueDate: item.dueDate || null,
+        sortOrder: base + n - i,
         sourceType,
         sourceRefId: item.id,
       })),
@@ -472,6 +621,8 @@ export class JobBoardsService {
       data: {
         listId,
         title: dto.title,
+        ...(dto.description !== undefined && { description: dto.description }),
+        ...(dto.location !== undefined && { location: dto.location || null }),
         sortOrder: nextOrder,
       },
     })
@@ -494,14 +645,133 @@ export class JobBoardsService {
         })
       }
 
-      // Update order in destination list
-      for (let i = 0; i < orderedIds.length; i++) {
+      // Visual top → highest sortOrder (lists load with orderBy sortOrder desc)
+      const n = orderedIds.length
+      for (let i = 0; i < n; i++) {
         await tx.jobCard.update({
           where: { id: orderedIds[i] },
-          data: { sortOrder: i + 1 },
+          data: { sortOrder: n - i },
         })
       }
     })
+  }
+
+  async moveCard(
+    cardId: string,
+    dto: { listId: string; position?: number },
+    currentUserId: string,
+  ) {
+    const card = await this.prisma.jobCard.findUnique({
+      where: { id: cardId },
+      include: { list: true },
+    })
+    if (!card || card.deletedAt) throw new Error('Card not found')
+
+    const destList = await this.prisma.jobList.findFirst({
+      where: { id: dto.listId, deletedAt: null },
+    })
+    if (!destList) throw new Error('List not found')
+
+    const destCards = await this.prisma.jobCard.findMany({
+      where: { listId: dto.listId, deletedAt: null },
+      orderBy: { sortOrder: 'desc' },
+      select: { id: true },
+    })
+
+    const withoutSelf = destCards.map((c) => c.id).filter((id) => id !== cardId)
+    const maxPos = withoutSelf.length + 1
+    // position 1 = top of list (latest); default to top when omitted
+    const pos = Math.min(Math.max(Number(dto.position) || 1, 1), maxPos)
+    const orderedIds = [
+      ...withoutSelf.slice(0, pos - 1),
+      cardId,
+      ...withoutSelf.slice(pos - 1),
+    ]
+
+    await this.reorderCards({
+      cardId,
+      sourceListId: card.listId,
+      destinationListId: dto.listId,
+      orderedIds,
+    })
+
+    await this.logActivity(
+      cardId,
+      currentUserId,
+      'CARD_MOVED',
+      `moved this card to ${destList.name}`,
+    )
+
+    return this.getCard(cardId)
+  }
+
+  async copyCard(cardId: string, dto: { listId: string; title?: string }, currentUserId: string) {
+    const source = await this.prisma.jobCard.findUnique({
+      where: { id: cardId },
+      include: {
+        labels: true,
+        checklists: { include: { items: true } },
+        members: true,
+      },
+    })
+    if (!source || source.deletedAt) throw new Error('Card not found')
+
+    const destList = await this.prisma.jobList.findFirst({
+      where: { id: dto.listId, deletedAt: null },
+    })
+    if (!destList) throw new Error('List not found')
+
+    const last = await this.prisma.jobCard.findFirst({
+      where: { listId: dto.listId, deletedAt: null },
+      orderBy: { sortOrder: 'desc' },
+    })
+    const nextOrder = last ? last.sortOrder + 1 : 1
+
+    const created = await this.prisma.jobCard.create({
+      data: {
+        listId: dto.listId,
+        title: dto.title?.trim() || `${source.title} (copy)`,
+        description: source.description,
+        location: (source as any).location ?? null,
+        dueDate: source.dueDate,
+        recurring: (source as any).recurring ?? null,
+        dueReminder: (source as any).dueReminder ?? null,
+        coverImageUrl: source.coverImageUrl,
+        sortOrder: nextOrder,
+        labels: {
+          create: (source.labels || []).map((l) => ({
+            name: l.name,
+            color: l.color,
+          })),
+        },
+        checklists: {
+          create: (source.checklists || []).map((cl) => ({
+            title: cl.title,
+            items: {
+              create: (cl.items || []).map((item, idx) => ({
+                content: item.content,
+                isCompleted: false,
+                sortOrder: item.sortOrder ?? idx + 1,
+              })),
+            },
+          })),
+        },
+        members: {
+          create: (source.members || []).map((m) => ({
+            userId: m.userId,
+          })),
+        },
+      },
+    })
+
+    await this.logActivity(
+      created.id,
+      currentUserId,
+      'CARD_COPIED',
+      `copied from another card`,
+    )
+
+    return this.getCard(created.id)
   }
 
   async deleteCard(cardId: string) {
@@ -516,22 +786,70 @@ export class JobBoardsService {
     dto: any,
     currentUserId: string,
   ) {
-    const card = await this.prisma.jobCard.update({
+    const before = await this.prisma.jobCard.findUnique({
       where: { id },
-      data: {
-        ...(dto.title !== undefined && { title: dto.title }),
-        ...(dto.description !== undefined && { description: dto.description }),
-        ...(dto.dueDate !== undefined && { dueDate: dto.dueDate ? dto.dueDate : null }),
-        ...(dto.coverImageUrl !== undefined && { coverImageUrl: dto.coverImageUrl || null }),
-      },
+      select: { sourceType: true, sourceRefId: true },
     })
 
-    if (dto.dueDate) {
+    const dueDateValue =
+      dto.dueDate === undefined
+        ? undefined
+        : dto.dueDate
+          ? new Date(dto.dueDate)
+          : null
+
+    const data: any = {
+      ...(dto.title !== undefined && { title: dto.title }),
+      ...(dto.description !== undefined && { description: dto.description }),
+      ...(dto.location !== undefined && { location: dto.location || null }),
+      ...(dueDateValue !== undefined && { dueDate: dueDateValue }),
+      ...(dto.coverImageUrl !== undefined && { coverImageUrl: dto.coverImageUrl || null }),
+    }
+
+    // Optional columns — ignore if UAT migration not applied yet
+    if (dto.recurring !== undefined) data.recurring = dto.recurring || null
+    if (dto.dueReminder !== undefined) data.dueReminder = dto.dueReminder || null
+
+    let card: any
+    try {
+      card = await this.prisma.jobCard.update({
+        where: { id },
+        data,
+      })
+    } catch (err: any) {
+      // Retry without recurring/dueReminder if columns missing
+      if (data.recurring !== undefined || data.dueReminder !== undefined) {
+        delete data.recurring
+        delete data.dueReminder
+        card = await this.prisma.jobCard.update({
+          where: { id },
+          data,
+        })
+      } else {
+        throw err
+      }
+    }
+
+    // Keep Job Book Entry Completion Time aligned with Due date
+    if (
+      dueDateValue !== undefined &&
+      before?.sourceType === 'JOB_BOOK_ENTRY' &&
+      before.sourceRefId
+    ) {
+      await this.prisma.jobBookEntry
+        .update({
+          where: { id: before.sourceRefId },
+          data: { completionTime: dueDateValue },
+        })
+        .catch(() => undefined)
+    }
+
+    if (dto.dueDate !== undefined) {
       await this.logActivity(
         id,
         currentUserId,
-        'DUE_DATE_SET',
-        'set due date'
+        dueDateValue ? 'DUE_DATE_SET' : 'DUE_DATE_REMOVED',
+        dueDateValue ? 'set due date' : 'removed due date',
       )
     } else {
       await this.logActivity(
@@ -679,24 +997,41 @@ export class JobBoardsService {
       },
     })
 
+    const seenCardChecklistIds = new Set<string>()
     for (const card of cards) {
       for (const cl of card.checklists) {
+        if (seenCardChecklistIds.has(cl.id)) continue
+        seenCardChecklistIds.add(cl.id)
+
+        const itemCount = cl.items?.length || 0
+        if (itemCount === 0) continue
+
         if (q) {
           const hay = `${card.title} ${cl.title}`.toLowerCase()
           if (!hay.includes(q.toLowerCase())) continue
         }
+
+        const checklistName = (cl.title || 'Checklist').trim() || 'Checklist'
         cardsOut.push({
           id: cl.id,
           sourceType: 'CARD',
-          title: card.title,
-          subtitle: `${cl.title || 'Checklist'} · ${cl.items?.length || 0} items`,
-          itemCount: cl.items?.length || 0,
+          title: checklistName,
+          subtitle: `${card.title} · ${itemCount} items`,
+          itemCount,
         })
       }
     }
 
-    // Templates first so they are never sliced away by card noise
-    return [...templatesOut, ...cardsOut].slice(0, 60)
+    const seen = new Set<string>()
+    const merged: Row[] = []
+    for (const row of [...templatesOut, ...cardsOut]) {
+      const key = `${row.sourceType}:${row.id}`
+      if (seen.has(key)) continue
+      seen.add(key)
+      merged.push(row)
+    }
+
+    return merged.slice(0, 60)
   }
 
   async addChecklist(
@@ -804,10 +1139,92 @@ export class JobBoardsService {
     })
   }
 
-  async addLabel(cardId: string, name: string, color: string) {
-    return this.prisma.cardLabel.create({
-      data: { cardId, name, color },
+  /** Universal labels = distinct names used on any of this user's boards (+ library table if migrated). */
+  async listLabels(userId: string) {
+    const byName = new Map<string, { id: string; name: string; color: string }>()
+
+    const existingOnCards = await this.prisma.cardLabel.findMany({
+      where: {
+        card: {
+          deletedAt: null,
+          list: { deletedAt: null, board: { userId, deletedAt: null } },
+        },
+      },
+      select: { id: true, name: true, color: true },
+      orderBy: { name: 'asc' },
     })
+
+    for (const row of existingOnCards) {
+      const name = String(row.name || '').trim()
+      if (!name) continue
+      const key = name.toLowerCase()
+      if (!byName.has(key)) {
+        byName.set(key, { id: row.id, name, color: row.color || '#22c55e' })
+      }
+    }
+
+    try {
+      const library = await this.prisma.jobBoardLabel.findMany({
+        where: { userId },
+        orderBy: { name: 'asc' },
+      })
+      for (const row of library) {
+        const name = String(row.name || '').trim()
+        if (!name) continue
+        const key = name.toLowerCase()
+        if (!byName.has(key)) {
+          byName.set(key, { id: row.id, name, color: row.color || '#22c55e' })
+        }
+      }
+    } catch {
+      /* JobBoardLabel table may not be migrated yet */
+    }
+
+    return Array.from(byName.values()).sort((a, b) =>
+      a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+    )
+  }
+
+  async addLabel(cardId: string, name: string, color: string, userId?: string) {
+    const trimmed = String(name || '').trim()
+    if (!trimmed) throw new NotFoundException('Label name required')
+    const labelColor = color || '#22c55e'
+
+    const already = await this.prisma.cardLabel.findFirst({
+      where: {
+        cardId,
+        name: { equals: trimmed, mode: 'insensitive' },
+      },
+    })
+    if (already) return already
+
+    // Create on the card first — never block create on library table
+    const created = await this.prisma.cardLabel.create({
+      data: { cardId, name: trimmed, color: labelColor },
+    })
+
+    let ownerId = userId
+    if (!ownerId) {
+      const card = await this.prisma.jobCard.findFirst({
+        where: { id: cardId, deletedAt: null },
+        select: { list: { select: { board: { select: { userId: true } } } } },
+      })
+      ownerId = card?.list?.board?.userId || undefined
+    }
+
+    if (ownerId) {
+      try {
+        await this.prisma.jobBoardLabel.upsert({
+          where: { userId_name: { userId: ownerId, name: trimmed } },
+          create: { userId: ownerId, name: trimmed, color: labelColor },
+          update: { color: labelColor },
+        })
+      } catch {
+        /* optional library — ignore if migration not applied */
+      }
+    }
+
+    return created
   }
 
   async addAttachment(cardId: string, file: Express.Multer.File) {
@@ -892,9 +1309,12 @@ export class JobBoardsService {
 
     return {
       ...card,
-      coverImageUrl: card.coverImageUrl
-        ? `/job-boards/cards/${card.id}/cover/file`
-        : card.coverImageUrl,
+      coverImageUrl:
+        card.coverImageUrl && /^color:/i.test(String(card.coverImageUrl))
+          ? card.coverImageUrl
+          : card.coverImageUrl
+            ? `/job-boards/cards/${card.id}/cover/file`
+            : card.coverImageUrl,
       attachments: (card.attachments || []).map(a => ({
         ...a,
         fileUrl: `/job-boards/attachments/${a.id}/file`,

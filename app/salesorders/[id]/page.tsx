@@ -111,7 +111,11 @@ export default function EditSalesOrderPage() {
 
   const handleCreateInvoice = async () => {
     if (orderRequired && !String(form.customerPO ?? '').trim()) {
-      showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+      showToast({
+        type: 'error',
+        title: 'Customer PO required',
+        message: 'Customer PO (Order Number) is required for this customer. Enter it and Save before creating an invoice.',
+      });
       return;
     }
     setCreatingInvoice(true);
@@ -509,6 +513,7 @@ export default function EditSalesOrderPage() {
                       return;
                     }
                     setSelectedCustomer(data);
+                    setOrderRequired(!!data.orderRequired);
                     if (data.priceLevel) update('priceLevel', data.priceLevel);
                     if (data.paymentTerms) update('paymentTerms', data.paymentTerms);
                     if (data.salesFactor != null) update('salesFactor', data.salesFactor);
@@ -543,6 +548,7 @@ export default function EditSalesOrderPage() {
               }}
               defaultOpen
               selectedCustomer={selectedCustomer}
+              orderRequired={orderRequired}
             />
           </div>
 

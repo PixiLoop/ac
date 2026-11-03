@@ -2,6 +2,7 @@ import { Controller, Get, Post, Body, Param, Delete, UseInterceptors, UploadedFi
 import { JobBoardsService } from './job-boards.service'
 import { Patch, Req, UseGuards } from '@nestjs/common'
 import { FileInterceptor } from '@nestjs/platform-express'
+import { memoryStorage } from 'multer'
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard'
 import { PermissionsGuard } from '../../common/rbac/permissions.guard'
 import { Permissions } from '../../common/rbac/permissions.decorator'
@@ -34,6 +35,12 @@ export class JobBoardsController {
     return this.service.searchChecklistSources(q, boardId)
   }
 
+  @Get('labels')
+  @Permissions('jobboards.view')
+  listLabels(@Req() req: any) {
+    return this.service.listLabels(req.user.id)
+  }
+
   @Get('cards/:cardId/cover/file')
   @Permissions('jobboards.view')
   async getCardCoverFile(
@@ -60,6 +67,31 @@ export class JobBoardsController {
     res.end(buffer)
   }
 
+  @Patch('attachments/:attachmentId')
+  @Permissions('jobboards.manage')
+  renameAttachment(
+    @Param('attachmentId') attachmentId: string,
+    @Body() body: { fileName?: string },
+  ) {
+    return this.service.renameAttachment(attachmentId, body?.fileName || '')
+  }
+
+  @Post('attachments/:attachmentId/replace')
+  @Permissions('jobboards.manage')
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
+  replaceAttachment(
+    @Param('attachmentId') attachmentId: string,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.service.replaceAttachment(attachmentId, file)
+  }
+
+  @Post('attachments/:attachmentId/cover')
+  @Permissions('jobboards.manage')
+  setCoverFromAttachment(@Param('attachmentId') attachmentId: string) {
+    return this.service.setCoverFromAttachment(attachmentId)
+  }
+
   @Delete('attachments/:attachmentId')
   @Permissions('jobboards.manage')
   deleteAttachment(@Param('attachmentId') attachmentId: string) {
@@ -82,7 +114,7 @@ export class JobBoardsController {
 
   @Post(':id/background')
   @Permissions('jobboards.edit')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   uploadBackground(
     @Param('id') id: string,
     @UploadedFile() file: Express.Multer.File,
@@ -155,6 +187,26 @@ export class JobBoardsController {
     },
   ) {
     return this.service.reorderCards(body)
+  }
+
+  @Post('cards/:id/move')
+  @Permissions('jobboards.manage')
+  moveCard(
+    @Param('id') id: string,
+    @Body() body: { listId: string; position?: number },
+    @Req() req: any,
+  ) {
+    return this.service.moveCard(id, body, req.user.id)
+  }
+
+  @Post('cards/:id/copy')
+  @Permissions('jobboards.manage')
+  copyCard(
+    @Param('id') id: string,
+    @Body() body: { listId: string; title?: string },
+    @Req() req: any,
+  ) {
+    return this.service.copyCard(id, body, req.user.id)
   }
 
   @Get('cards/:id')
@@ -251,13 +303,14 @@ export class JobBoardsController {
   addLabel(
     @Param('cardId') cardId: string,
     @Body() body: { name: string; color: string },
+    @Req() req: any,
   ) {
-    return this.service.addLabel(cardId, body.name, body.color)
+    return this.service.addLabel(cardId, body.name, body.color, req.user.id)
   }
 
   @Post('cards/:cardId/attachments')
   @Permissions('jobboards.manage')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   addAttachment(
     @Param('cardId') cardId: string,
     @UploadedFile() file: Express.Multer.File,
@@ -267,7 +320,7 @@ export class JobBoardsController {
 
   @Post('cards/:cardId/cover')
   @Permissions('jobboards.manage')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { storage: memoryStorage() }))
   setCover(
     @Param('cardId') cardId: string,
     @UploadedFile() file: Express.Multer.File,

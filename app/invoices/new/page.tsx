@@ -99,7 +99,11 @@ export default function NewInvoicePage() {
                 }
 
                 if (so.customer?.orderRequired && !String(so.customerPO ?? '').trim()) {
-                    showToast({ type: 'error', title: 'Order number is required.', message: 'Order number is required.' });
+                    showToast({
+                        type: 'error',
+                        title: 'Customer PO required',
+                        message: 'Customer PO (Order Number) is required for this customer. Enter it on the sales order and Save first.',
+                    });
                     router.push(`/salesorders/${fromSOId}`);
                     return;
                 }

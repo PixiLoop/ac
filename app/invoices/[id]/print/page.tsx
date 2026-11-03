@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams, useSearchParams } from 'next/navigation';
 import { api } from '../../../../lib/api-client';
 import { PrintTemplate, PrintTemplateVariant } from '../../../../components/print/PrintTemplate';
+import { printLineDescription } from '../../../../lib/print-line-description';
 
 const STATUS_COLORS: Record<string, { bg: string; color: string }> = {
   PAID:           { bg: '#dcfce7', color: '#166534' },
@@ -125,7 +126,7 @@ export default function PrintInvoicePage() {
         rows={items.map((item: any) => {
           const qty = Number(item.quantity ?? item.qty ?? 0);
           return [
-            item.description,
+            printLineDescription(item),
             qty,
             fmt(Number(item.unitPrice)),
             item.discountPct ? `${item.discountPct}%` : '—',

@@ -109,6 +109,7 @@ type Item = {
   isFmHardware: boolean;
   fmUnitType?: string;
   fmUnitCode?: string;
+  fmMixCode?: string;
   aiOption?: boolean;
   tmaOption?: boolean;
   rimOption?: boolean;
@@ -211,6 +212,9 @@ export default function InventoryItemViewPage() {
             <Badge variant={item.isActive ? undefined : 'secondary'} className={item.isActive ? 'border-emerald-200 bg-emerald-50 text-emerald-700' : ''}>
               {item.isActive ? 'Active' : 'Inactive'}
             </Badge>
+            {item.isFmHardware && (
+              <Badge className="border-sky-300 bg-sky-50 text-sky-700">FM Hardware</Badge>
+            )}
             {item.billOfGoods && (
               <Badge className="border-orange-200 bg-orange-50 text-orange-700">Bill of Goods</Badge>
             )}
@@ -274,9 +278,10 @@ export default function InventoryItemViewPage() {
                 <Field label="Order Rank" value={item.orderRank} />
                 <Field label="Similar Item" value={item.replacedBy} />
               </div>
-              <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-4">
+              <div className="mt-4 grid gap-4 sm:grid-cols-2 md:grid-cols-5">
                 <Field label="Airco Group" value={item.aircoMarkupGroup} />
                 <Field label="X Group" value={item.xGroup} />
+                <BoolField label="FM Hardware" value={item.isFmHardware} />
                 <BoolField label="Bill of Goods" value={item.billOfGoods} />
                 <BoolField label="Taxable" value={item.isTaxable} />
               </div>
@@ -365,6 +370,7 @@ export default function InventoryItemViewPage() {
                   <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-4">
                     <Field label="FM Unit Type" value={item.fmUnitType} />
                     <Field label="FM Unit Code" value={item.fmUnitCode} />
+                    <Field label="FM MIX Code" value={item.fmMixCode} />
                     <Field label="FM Rule Code" value={item.fmRuleCode} />
                   </div>
                   <div className="grid gap-3 sm:grid-cols-2 md:grid-cols-4">
@@ -495,7 +501,7 @@ export default function InventoryItemViewPage() {
 
           {/* ── Supplier Order tab ────────────────────────────────────────── */}
           <TabsContent value="supplier-order">
-            <PurchaseOrderList productId={id}/>
+            <PurchaseOrderList productId={id} />
           </TabsContent>
         </Tabs>
       </div>

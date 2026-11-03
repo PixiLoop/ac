@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { api } from '../../../../lib/api-client';
 import { PrintTemplate } from '../../../../components/print/PrintTemplate';
+import { printLineDescription } from '../../../../lib/print-line-description';
 
 export default function PrintSalesOrderPage() {
   const { id } = useParams<{ id: string }>();
@@ -84,7 +85,7 @@ export default function PrintSalesOrderPage() {
           { label: 'Line Total', align: 'right', width: 110 },
         ]}
         rows={items.map((item: any) => [
-          item.description,
+          printLineDescription(item),
           item.quantity,
           fmt(Number(item.unitPrice)),
           item.discountPct ? `${item.discountPct}%` : '—',

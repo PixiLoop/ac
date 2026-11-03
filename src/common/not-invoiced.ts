@@ -34,7 +34,7 @@ export async function notInvoicedBySalesOrderLine(prisma: PrismaService, salesOr
     const total = (byProduct.get(line.productId) ?? 0) + Number(line.quantity);
     byProduct.set(line.productId, total);
   }
-  for (const [productId, qty] of Array.from(byProduct)) {
+  for (const [productId, qty] of byProduct) {
     byProduct.set(productId, Math.max(0, qty - (invoiced.get(productId) ?? 0)));
   }
   return { byLine, byProduct };

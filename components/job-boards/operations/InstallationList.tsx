@@ -386,10 +386,10 @@ export const InstallationList: React.FC = () => {
           m === 'MIX4000' || m === 'FM3306'
             ? 'Telematics Unit'
             : m === 'HD Camera' || m === 'Standard Camera'
-            ? 'Camera & Video'
-            : m === 'SIM'
-            ? 'Connectivity'
-            : 'Sensors',
+              ? 'Camera & Video'
+              : m === 'SIM'
+                ? 'Connectivity'
+                : 'Sensors',
       })),
       isScheduled: false,
       status: 'Not Actioned',
@@ -428,22 +428,20 @@ export const InstallationList: React.FC = () => {
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200">
             <button
               onClick={() => setInstallationsViewMode('list')}
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                installationsViewMode === 'list'
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${installationsViewMode === 'list'
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               <List className="w-4 h-4" />
               List
             </button>
             <button
               onClick={() => setInstallationsViewMode('board')}
-              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${
-                installationsViewMode === 'board'
+              className={`p-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors ${installationsViewMode === 'board'
                   ? 'bg-white text-slate-900 shadow-2xs'
                   : 'text-slate-600 hover:text-slate-900'
-              }`}
+                }`}
             >
               <LayoutGrid className="w-4 h-4" />
               Board
@@ -471,19 +469,17 @@ export const InstallationList: React.FC = () => {
               <button
                 key={st}
                 onClick={() => setStatusFilter(st)}
-                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-                  isActive
+                className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${isActive
                     ? 'bg-blue-600 text-white shadow-xs'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
+                  }`}
               >
                 <span>{st}</span>
                 <span
-                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                    isActive
+                  className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${isActive
                       ? 'bg-blue-700 text-white'
                       : 'bg-slate-200 text-slate-700'
-                  }`}
+                    }`}
                 >
                   {count}
                 </span>
@@ -504,20 +500,18 @@ export const InstallationList: React.FC = () => {
             {/* All Jobs */}
             <button
               onClick={() => setSourceFilter('All')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-                sourceFilter === 'All'
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${sourceFilter === 'All'
                   ? 'bg-slate-900 text-white shadow-xs'
                   : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/80'
-              }`}
+                }`}
             >
               <Layers className="w-3.5 h-3.5" />
               <span>All Jobs</span>
               <span
-                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                  sourceFilter === 'All'
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${sourceFilter === 'All'
                     ? 'bg-slate-700 text-white'
                     : 'bg-slate-200 text-slate-700'
-                }`}
+                  }`}
               >
                 {sourceCounts['All']}
               </span>
@@ -526,20 +520,18 @@ export const InstallationList: React.FC = () => {
             {/* Whiteboard Jobs */}
             <button
               onClick={() => setSourceFilter('Whiteboard')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-                sourceFilter === 'Whiteboard'
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${sourceFilter === 'Whiteboard'
                   ? 'bg-purple-600 text-white shadow-xs'
                   : 'bg-purple-50/70 text-purple-700 hover:bg-purple-100/70 border border-purple-200/80'
-              }`}
+                }`}
             >
               <Layout className="w-3.5 h-3.5 text-purple-500" />
               <span>Whiteboard Jobs</span>
               <span
-                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                  sourceFilter === 'Whiteboard'
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${sourceFilter === 'Whiteboard'
                     ? 'bg-purple-800 text-white'
                     : 'bg-purple-100 text-purple-800'
-                }`}
+                  }`}
               >
                 {sourceCounts['Whiteboard']}
               </span>
@@ -548,20 +540,18 @@ export const InstallationList: React.FC = () => {
             {/* FM Pre-Installation Jobs */}
             <button
               onClick={() => setSourceFilter('FM Pre-Installation')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-                sourceFilter === 'FM Pre-Installation'
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${sourceFilter === 'FM Pre-Installation'
                   ? 'bg-blue-600 text-white shadow-xs'
                   : 'bg-blue-50/70 text-blue-700 hover:bg-blue-100/70 border border-blue-200/80'
-              }`}
+                }`}
             >
               <Cpu className="w-3.5 h-3.5 text-blue-500" />
               <span>FM Pre-Installation Jobs</span>
               <span
-                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                  sourceFilter === 'FM Pre-Installation'
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${sourceFilter === 'FM Pre-Installation'
                     ? 'bg-blue-800 text-white'
                     : 'bg-blue-100 text-blue-800'
-                }`}
+                  }`}
               >
                 {sourceCounts['FM Pre-Installation']}
               </span>
@@ -570,20 +560,18 @@ export const InstallationList: React.FC = () => {
             {/* Sales Order Jobs */}
             <button
               onClick={() => setSourceFilter('Sales Order')}
-              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
-                sourceFilter === 'Sales Order'
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${sourceFilter === 'Sales Order'
                   ? 'bg-emerald-600 text-white shadow-xs'
                   : 'bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100/70 border border-emerald-200/80'
-              }`}
+                }`}
             >
               <ShoppingBag className="w-3.5 h-3.5 text-emerald-500" />
               <span>Sales Order Jobs</span>
               <span
-                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
-                  sourceFilter === 'Sales Order'
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${sourceFilter === 'Sales Order'
                     ? 'bg-emerald-800 text-white'
                     : 'bg-emerald-100 text-emerald-800'
-                }`}
+                  }`}
               >
                 {sourceCounts['Sales Order']}
               </span>
@@ -662,9 +650,8 @@ export const InstallationList: React.FC = () => {
                       applySuggestion(s);
                     }}
                     onMouseEnter={() => setHighlightIdx(idx)}
-                    className={`w-full text-left px-3 py-2 text-xs flex items-start gap-2 border-b border-slate-50 last:border-0 ${
-                      idx === highlightIdx ? 'bg-blue-50' : 'hover:bg-slate-50'
-                    }`}
+                    className={`w-full text-left px-3 py-2 text-xs flex items-start gap-2 border-b border-slate-50 last:border-0 ${idx === highlightIdx ? 'bg-blue-50' : 'hover:bg-slate-50'
+                      }`}
                   >
                     <span className="shrink-0 mt-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500 bg-slate-100 px-1.5 py-0.5 rounded">
                       {s.kind}
@@ -906,11 +893,10 @@ export const InstallationList: React.FC = () => {
                     onDragOver={(e) => handleColumnDragOver(e, columnStatus)}
                     onDragLeave={handleColumnDragLeave}
                     onDrop={(e) => handleColumnDrop(e, columnStatus)}
-                    className={`rounded-xl p-1.5 border transition-all flex flex-col max-h-[78vh] min-w-0 ${
-                      isOver
+                    className={`rounded-xl p-1.5 border transition-all flex flex-col max-h-[78vh] min-w-0 ${isOver
                         ? 'bg-blue-50/90 border-blue-400 ring-2 ring-blue-300 shadow-md'
                         : 'bg-slate-100/60 border-slate-200/90 hover:border-slate-300'
-                    }`}
+                      }`}
                   >
                     <div className="flex items-center justify-between gap-1 px-1 pb-1.5 mb-1.5 border-b border-slate-200/80">
                       <span className="text-[11px] font-bold text-slate-800 truncate leading-tight">
@@ -930,11 +916,10 @@ export const InstallationList: React.FC = () => {
                     <div className="overflow-y-auto space-y-1.5 pr-0.5 flex-1 min-h-[120px] scrollbar-hover-thin">
                       {columnJobs.length === 0 ? (
                         <div
-                          className={`px-2 py-5 text-center text-[11px] rounded-lg border border-dashed transition-colors ${
-                            isOver
+                          className={`px-2 py-5 text-center text-[11px] rounded-lg border border-dashed transition-colors ${isOver
                               ? 'border-blue-300 bg-white/60 text-blue-600 font-medium'
                               : 'border-slate-200/80 text-slate-400'
-                          }`}
+                            }`}
                         >
                           {isOver ? 'Release to set status' : 'Drop jobs here'}
                         </div>
@@ -1102,11 +1087,10 @@ export const InstallationList: React.FC = () => {
                         type="button"
                         key={model}
                         onClick={() => toggleHardwareSelect(model)}
-                        className={`p-2 rounded-xl text-xs font-semibold border text-left transition-all flex items-center justify-between ${
-                          isSelected
+                        className={`p-2 rounded-xl text-xs font-semibold border text-left transition-all flex items-center justify-between ${isSelected
                             ? 'bg-blue-50 border-blue-500 text-blue-900'
                             : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                        }`}
+                          }`}
                       >
                         <span>{model}</span>
                         {isSelected && <CheckCircle2 className="w-3.5 h-3.5 text-blue-600" />}

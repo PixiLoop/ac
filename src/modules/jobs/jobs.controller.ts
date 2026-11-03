@@ -5,7 +5,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 @Controller('jobs')
 @UseGuards(JwtAuthGuard)
 export class JobsController {
-  constructor(private readonly jobsService: JobsService) {}
+  constructor(private readonly jobsService: JobsService) { }
 
   @Get('assigned')
   async getAssigned(

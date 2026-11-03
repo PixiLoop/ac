@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Loader2, Save, Search } from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Search } from 'lucide-react';
 import { jobBookEntryApi } from '../../../lib/job-book-entry-client';
 import { useToast } from '../../ui/toast';
 import { Button } from '../../ui/button';
@@ -205,6 +205,10 @@ export function JobBookEntryForm({
     }
   };
 
+  const goBackToList = () => {
+    router.push('/job-boards/job-book-entry');
+  };
+
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!String(form.customerNumber || '').trim()) {
@@ -213,7 +217,6 @@ export function JobBookEntryForm({
     }
     setSaving(true);
     try {
-      // Ensure labeled block is current before save
       const notes = extractServiceNotes(form.serviceDetails);
       const payload = {
         ...form,
@@ -243,7 +246,7 @@ export function JobBookEntryForm({
             : 'Entry created',
         replace: true,
       });
-      // Stay on entry so Job Number field shows the generated value
+
       if (saved?.id) {
         setForm((prev) => ({
           ...prev,
@@ -257,7 +260,7 @@ export function JobBookEntryForm({
           router.replace(`/job-boards/job-book-entry/${saved.id}`);
         }
       } else {
-        router.push('/job-boards/job-book-entry');
+        goBackToList();
       }
     } finally {
       setSaving(false);
@@ -279,15 +282,21 @@ export function JobBookEntryForm({
 
   return (
     <form onSubmit={onSubmit} className="space-y-3 pb-4">
-      <div>
-        <h1 className="text-lg font-bold text-slate-900">
-          {mode === 'edit' ? 'Edit Job Book Entry' : 'New Job Book Entry'}
-        </h1>
-        <p className="text-xs text-slate-500">
-          {form.entryNumber
-            ? `Entry ${form.entryNumber}`
-            : 'Customer details auto-fill when you look up a customer number.'}
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="text-lg font-bold text-slate-900">
+            {mode === 'edit' ? 'Edit Job Book Entry' : 'New Job Book Entry'}
+          </h1>
+          <p className="text-xs text-slate-500">
+            {form.entryNumber
+              ? `Entry ${form.entryNumber}`
+              : 'Customer details auto-fill when you look up a customer number.'}
+          </p>
+        </div>
+        <Button type="button" variant="outline" onClick={goBackToList} disabled={saving} className="shrink-0 gap-1.5">
+          <ArrowLeft className="w-3.5 h-3.5" />
+          Back to list
+        </Button>
       </div>
 
       {/* Header: customer + shipping + account */}
@@ -542,13 +551,9 @@ export function JobBookEntryForm({
         </div>
       </div>
 
-      {/* Bottom actions — same placement/color as other AIMS forms */}
+      {/* Bottom actions */}
       <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-200">
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => router.push('/job-boards/job-book-entry')}
-        >
+        <Button type="button" variant="outline" onClick={goBackToList} disabled={saving}>
           Back
         </Button>
         <Button type="submit" variant="primary" loading={saving} className="gap-1.5 min-w-[96px]">

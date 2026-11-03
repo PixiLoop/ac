@@ -334,10 +334,10 @@ export function FMInstallDetailsPanel({ item, onClose, onSave, fleetName, onSync
 
     // ── Vision radio change ──────────────────────────────────────────────────
     const handleVisionChange = async (val: string) => {
-        if (val && !supportsCamera(form.fmUnitType)) {
-            showToast({ type: 'error', title: CAMERA_BASE_REQUIRED, message: CAMERA_BASE_REQUIRED });
-            return;
-        }
+        // if (val && !supportsCamera(form.fmUnitType)) {
+        //     showToast({ type: 'error', title: CAMERA_BASE_REQUIRED, message: CAMERA_BASE_REQUIRED });
+        //     return;
+        // }
         const noVis = !val;
         let cameras: any[] = [];
         let defaultCam: any = undefined;

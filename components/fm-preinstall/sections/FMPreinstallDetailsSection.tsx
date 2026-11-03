@@ -405,13 +405,12 @@ export function FMPreinstallDetailsSection({
                         )}
                         {value.type === 'TRANSFER_UNIT' && (
                             <p className="text-xs text-slate-500 mt-1">
-                                Note: target must already be Decommissioned. Vehicle-specific fields (asset, fleet, rego, VIN, location) will need to be entered fresh for the new vehicle.
+                                Note: target must already be Decommissioned. Vehicle-specific fields (asset, fleet, rego, VIN, location) will need to be entered fresh for the new vehicle. Customer transfer on an already setup unit can invoice directly without workshop or site work.
                             </p>
                         )}
                     </div>
                 )}
 
-                {/* STATUS */}
                 <div>
                     <label>Status</label>
                     <select

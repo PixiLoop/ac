@@ -7,6 +7,7 @@ export function FMPreinstallItemsSection({
   setItems,
   onSelectItem,
   activeItemIndex,
+  pricingContext,
 }: any) {
   const addRow = () => {
     const last = items[items.length - 1];
@@ -40,6 +41,7 @@ export function FMPreinstallItemsSection({
           setItems={setItems}
           onSelectItem={onSelectItem}
           activeItemIndex={activeItemIndex}
+          pricingContext={pricingContext}
         />
       </div>
     </FormSection>

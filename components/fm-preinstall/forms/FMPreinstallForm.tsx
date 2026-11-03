@@ -10,6 +10,7 @@ import { FMInstallDetailsPanel } from '../../../components/fm-preinstall/section
 import { ShippingDetailsSection } from '../../../components/salesorders/sections/ShippingDetailsSection';
 import { AccountDetailsSection } from '../../../components/salesorders/sections/AccountDetailsSection';
 import { fmHardwarePrefill } from '../../../lib/fm-hardware-prefill';
+import { FMPreinstallBulkVehiclesSection } from '../../../components/fm-preinstall/sections/FMPreinstallBulkVehiclesSection';
 
 export function FMPreinstallForm({
   form,
@@ -27,16 +28,16 @@ export function FMPreinstallForm({
   installDetail,
   setInstallDetail,
   invalidFields = [],
+  preinstallId,
 }: any) {
-
   const { user } = useAuth();
   const [userOptions, setUserOptions] = useState<any[]>(Array.isArray(users) ? users : []);
-  const [showInstallPanel, setShowInstallPanel] = useState(false);
-  const [isInitialized, setIsInitialized] = useState(false);
+  const [showInstallPanel, setShowInstallPanel] = useState(true);
 
   useEffect(() => {
-    api.get('/users', { params: { take: 200, sortKey: 'user', sortDir: 'asc' } })
-      .then(res => {
+    api
+      .get('/users', { params: { take: 200, sortKey: 'user', sortDir: 'asc' } })
+      .then((res) => {
         const data =
           res.data?.data?.items ||
           res.data?.data?.data ||
@@ -49,14 +50,16 @@ export function FMPreinstallForm({
 
   useEffect(() => {
     if (!user?.id) return;
-    setUserOptions(prev => {
+    setUserOptions((prev) => {
       if (prev.some((u: any) => u.id === user.id)) return prev;
-      const label = user.displayName || `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() || user.email;
+      const label =
+        user.displayName ||
+        `${user.firstName ?? ''} ${user.lastName ?? ''}`.trim() ||
+        user.email;
       return [{ id: user.id, displayName: label }, ...prev];
     });
-  }, [user, userOptions]);
+  }, [user]);
 
-  // Default to the person filling in the form when nothing is saved yet.
   useEffect(() => {
     if (!user?.id) return;
     setForm((prev: any) => {
@@ -65,15 +68,15 @@ export function FMPreinstallForm({
     });
   }, [user?.id, setForm]);
 
-  //const update        = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
+  useEffect(() => {
+    if (invalidFields?.length) setShowInstallPanel(true);
+  }, [invalidFields]);
+
   const update = (k: string, v: any) => {
     setForm((p: any) => {
       const next = { ...p, [k]: v };
-
-      // Type ↔ installType sync
       if (k === 'type') {
         next.installType = v;
-        // installDetail sync
         setInstallDetail((prev: any) => ({ ...prev, installType: v }));
       }
       if (k === 'installType') {
@@ -82,42 +85,22 @@ export function FMPreinstallForm({
       if (['installLocation', 'installer', 'installDate', 'installType'].includes(k)) {
         setInstallDetail((prev: any) => ({ ...prev, [k]: v }));
       }
-
       return next;
     });
   };
 
   const updateCharges = (k: string, v: any) => setForm((p: any) => ({ ...p, [k]: v }));
 
-  // FIX 1: ShippingDetailsSection reads value.shippingName and calls update('shippingName',...)
-  // Our shipping state uses 'name' — so map shippingName <-> name
   const updateShipping = (k: string, v: any) => {
     const mapped = k === 'shippingName' ? 'name' : k;
     setShipping((prev: any) => ({ ...prev, [mapped]: v }));
   };
 
-  // FIX 1: AccountDetailsSection reads value.billingName and calls update('shippingName',...)
-  // (bug in component — it uses shippingName key for Name field)
-  // Our account state uses 'name' — map both shippingName and billingName -> name
   const updateAccount = (k: string, v: any) => {
-    const mapped = (k === 'shippingName' || k === 'billingName') ? 'name' : k;
+    const mapped = k === 'shippingName' || k === 'billingName' ? 'name' : k;
     setAccount((prev: any) => ({ ...prev, [mapped]: v }));
   };
 
-  const updateInstall = (k: string, v: any) =>
-    setInstallDetail((prev: any) => ({ ...prev, [k]: v }));
-
-  useEffect(() => {
-    setShowInstallPanel(false);
-    setActiveItem(null);
-    setIsInitialized(true);
-  }, []);
-
-  useEffect(() => {
-    if (invalidFields?.length) setShowInstallPanel(true);
-  }, [invalidFields]);
-
-  // Derived charges from items
   const parts = items.reduce((acc: number, i: any) => {
     const qty = Number(i.quantity ?? 1);
     const price = Number(i.unitPrice ?? 0);
@@ -130,126 +113,132 @@ export function FMPreinstallForm({
   const rounding = Number(form.chargeRounding ?? 0);
   const total = parseFloat((parts + sundries + labour + freight + gst + rounding).toFixed(2));
 
-  const isRightOpen = isInitialized && showInstallPanel;
-  if (!isInitialized) return null;
-
   return (
-    <div className="grid grid-cols-12 gap-4 h-[calc(100vh-140px)]">
+    <div className="space-y-4 pb-8">
+      <div className="grid grid-cols-1 xl:grid-cols-12 gap-4 items-start">
+        <div className="xl:col-span-5 min-w-0">
+          <FMPreinstallDetailsSection
+            value={{
+              ...form,
+              installLocation: form.installLocation ?? installDetail?.installLocation ?? '',
+              installer: form.installer ?? installDetail?.installer ?? '',
+              installDate: form.installDate ?? installDetail?.installDate ?? '',
+            }}
+            update={update}
+            setItems={setItems}
+            setShipping={setShipping}
+            setAccount={setAccount}
+            setInstallDetail={setInstallDetail}
+            disabled={isLocked}
+            invalidFields={invalidFields}
+          />
+        </div>
 
-      {/* LEFT PANEL */}
-      <div className={`${isRightOpen ? 'lg:col-span-6' : 'lg:col-span-12'} col-span-12 flex flex-col`}>
-        <div className="overflow-y-auto pr-2 space-y-4 h-full">
+        <div className="xl:col-span-4 min-w-0">
+          <ShippingDetailsSection
+            value={{ ...shipping, shippingName: shipping.name }}
+            update={updateShipping}
+            showMap={false}
+          />
+        </div>
 
-          {/* TOP SECTIONS */}
-          <div className="grid grid-cols-12 gap-4">
-            <div className="col-span-12 lg:col-span-5">
-              <FMPreinstallDetailsSection
-                value={{
-                  ...form,
-                  // installDetail
-                  installLocation: form.installLocation ?? installDetail?.installLocation ?? '',
-                  installer: form.installer ?? installDetail?.installer ?? '',
-                  installDate: form.installDate ?? installDetail?.installDate ?? '',
-                }}
-                update={update}
-                setItems={setItems}
-                setShipping={setShipping}
-                setAccount={setAccount}
-                setInstallDetail={setInstallDetail}
-                disabled={isLocked}
-                invalidFields={invalidFields}
-              />
-            </div>
+        <div className="xl:col-span-3 min-w-0">
+          <AccountDetailsSection
+            value={{ ...account, billingName: account.name }}
+            update={updateAccount}
+          />
+        </div>
+      </div>
 
-            {/* FIX 2: ShippingDetailsSection reads value.shippingName
-                Our shipping state stores it as 'name' — spread with correct key */}
-            <div className="col-span-12 lg:col-span-4">
-              <ShippingDetailsSection
-                value={{ ...shipping, shippingName: shipping.name }}
-                update={updateShipping}
-              />
-            </div>
+      <div className="flex justify-end">
+        <button
+          type="button"
+          className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded text-xs font-semibold"
+          onClick={() => {
+            setShowInstallPanel((v) => !v);
+            setActiveItem(null);
+          }}
+        >
+          {showInstallPanel ? 'Hide Install Details' : 'Install Details'}
+        </button>
+      </div>
 
-            {/* FIX 2: AccountDetailsSection reads value.billingName
-                Our account state stores it as 'name' — spread with correct key */}
-            <div className="col-span-12 lg:col-span-3">
-              <AccountDetailsSection
-                value={{ ...account, billingName: account.name }}
-                update={updateAccount}
-              />
-            </div>
-          </div>
+      {form?.isBulk && preinstallId ? (
+        <FMPreinstallBulkVehiclesSection
+          preinstallId={preinstallId}
+          readOnly={isLocked || form.status === 'INVOICED' || form.status === 'COMPLETED'}
+        />
+      ) : null}
 
-          {/* INSTALL DETAILS BUTTON */}
-          <div className="flex justify-end">
-            <button
-              className="bg-blue-600 text-white px-3 py-1 rounded text-xs"
-              onClick={() => { setShowInstallPanel(true); setActiveItem(null); }}
-            >
-              Install Type
-            </button>
-          </div>
-
-          {/* ITEM ENTRY */}
+      <div
+        className={`grid grid-cols-1 gap-4 items-start ${
+          showInstallPanel ? 'xl:grid-cols-12' : ''
+        }`}
+      >
+        <div className={`min-w-0 space-y-4 ${showInstallPanel ? 'xl:col-span-7' : ''}`}>
           <FMPreinstallItemsSection
             items={items}
             setItems={setItems}
+            pricingContext={form}
             onSelectItem={(item: any) => {
               if (!item) return;
               setActiveItem(item);
-              setShowInstallPanel(false);
               const prefill = fmHardwarePrefill(item.product);
               if (Object.keys(prefill).length) {
                 setInstallDetail((prev: any) => ({ ...prev, ...prefill }));
+                setShowInstallPanel(true);
               }
             }}
             activeItemIndex={activeItem?.index}
           />
 
-          {/* TEXT ENTRY + CHARGES */}
-          <div className="grid grid-cols-12 gap-4">
-
-            <div className="col-span-12 lg:col-span-7 border p-2">
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+            <div className="lg:col-span-7 border rounded-md bg-white p-3">
               <label className="text-xs font-medium text-slate-600">Text Entry</label>
               <textarea
-                className="w-full border mt-1 text-xs p-1 h-32 resize-none"
+                className="w-full border mt-1 text-xs p-2 h-32 resize-none rounded-md"
                 value={form.notes || ''}
-                onChange={e => update('notes', e.target.value)}
+                onChange={(e) => update('notes', e.target.value)}
               />
             </div>
 
-            <div className="col-span-12 lg:col-span-5 border p-2 text-xs">
-              <div className="font-semibold mb-1 text-slate-700">Charges</div>
+            <div className="lg:col-span-5 border rounded-md bg-white p-3 text-xs">
+              <div className="font-semibold mb-2 text-slate-700">Charges</div>
               <ChargeRow label="Parts" value={parts.toFixed(2)} readOnly />
-              <ChargeRow label="Sundries"
+              <ChargeRow
+                label="Sundries"
                 value={form.chargeSundries ?? ''}
-                onChange={v => updateCharges('chargeSundries', v)} />
-              <ChargeRow label="Labour"
+                onChange={(v) => updateCharges('chargeSundries', v)}
+              />
+              <ChargeRow
+                label="Labour"
                 value={form.chargeLabour ?? ''}
-                onChange={v => updateCharges('chargeLabour', v)} />
-              <ChargeRow label="Freight"
+                onChange={(v) => updateCharges('chargeLabour', v)}
+              />
+              <ChargeRow
+                label="Freight"
                 value={form.chargeFreight ?? ''}
-                onChange={v => updateCharges('chargeFreight', v)} />
+                onChange={(v) => updateCharges('chargeFreight', v)}
+              />
               <ChargeRow label="G.S.Tax" value={gst.toFixed(2)} readOnly />
-              <ChargeRow label="Rounding"
+              <ChargeRow
+                label="Rounding"
                 value={form.chargeRounding ?? ''}
-                onChange={v => updateCharges('chargeRounding', v)} />
-              <div className="border-t mt-1 pt-1">
+                onChange={(v) => updateCharges('chargeRounding', v)}
+              />
+              <div className="border-t mt-2 pt-2">
                 <ChargeRow label="Total Cost" value={total.toFixed(2)} readOnly bold />
               </div>
             </div>
-
           </div>
 
-          {/* USER + DISPATCH */}
-          <div className="flex items-center gap-4 border p-2 text-xs">
-
+          <div className="flex flex-col sm:flex-row sm:items-center gap-3 border rounded-md bg-white p-3 text-xs">
             <div className="flex items-center gap-2 shrink-0">
               <span className="font-medium text-slate-600">User</span>
               <select
-                className="border p-1 min-w-[160px]"
+                className="border rounded-md p-1.5 min-w-[160px]"
                 value={form.assignedUserId || ''}
-                onChange={e => update('assignedUserId', e.target.value)}
+                onChange={(e) => update('assignedUserId', e.target.value)}
                 disabled={isLocked}
               >
                 <option value="">Select</option>
@@ -261,51 +250,45 @@ export function FMPreinstallForm({
               </select>
             </div>
 
-            <div className="flex items-center gap-2 flex-1">
+            <div className="flex items-center gap-2 flex-1 min-w-0">
               <span className="font-medium text-slate-600 shrink-0">Dispatch</span>
-              <span className="border w-5 h-5 bg-yellow-200 inline-block shrink-0" />
               <input
-                className="border p-1 flex-1"
+                className="border rounded-md p-1.5 flex-1 min-w-0"
                 placeholder="Method"
                 value={form.dispatchMethod || ''}
-                onChange={e => update('dispatchMethod', e.target.value)}
+                onChange={(e) => update('dispatchMethod', e.target.value)}
               />
               <input
-                className="border p-1 flex-1"
+                className="border rounded-md p-1.5 flex-1 min-w-0"
                 placeholder="Reference"
                 value={form.dispatchRef || ''}
-                onChange={e => update('dispatchRef', e.target.value)}
+                onChange={(e) => update('dispatchRef', e.target.value)}
               />
             </div>
-
           </div>
-
         </div>
+
+        {showInstallPanel ? (
+          <div className="xl:col-span-5 min-w-0 xl:sticky xl:top-4 self-start max-h-[calc(100vh-8rem)] overflow-y-auto border rounded-md bg-white">
+            <FMInstallDetailsPanel
+              item={{ id: 'header', installDetail: { ...installDetail } }}
+              onClose={() => setShowInstallPanel(false)}
+              onSave={(data: any) => {
+                setInstallDetail(data);
+                setForm((p: any) => ({ ...p, installDetail: data }));
+              }}
+              onSyncType={(type: string) => {
+                setForm((p: any) => ({ ...p, type }));
+              }}
+              fleetName={form.fmFleetName ?? ''}
+              fmCustomerId={form.customerId ?? ''}
+              fmRecordId={form.fmCustomerId ?? ''}
+              fmMixOrgId={form.fmMixOrgId ?? ''}
+              invalidFields={invalidFields}
+            />
+          </div>
+        ) : null}
       </div>
-
-      {/* RIGHT PANEL */}
-      {showInstallPanel && (
-        <div className="col-span-12 lg:col-span-6 h-full">
-          <FMInstallDetailsPanel
-            item={{ id: 'header', installDetail: { ...installDetail } }}
-            onClose={() => setShowInstallPanel(false)}
-            onSave={(data: any) => {
-              setInstallDetail(data);
-              setForm((p: any) => ({ ...p, installDetail: data }));
-            }}
-            onSyncType={(type: string) => {
-              setForm((p: any) => ({ ...p, type }));
-            }}
-            updateInstall={updateInstall}
-            fleetName={form.fmFleetName ?? ''}
-            fmCustomerId={form.customerId ?? ''}
-            fmRecordId={form.fmCustomerId ?? ''}
-            fmMixOrgId={form.fmMixOrgId ?? ''}
-            invalidFields={invalidFields}
-          />
-        </div>
-      )}
-
     </div>
   );
 }
@@ -324,13 +307,15 @@ function ChargeRow({
   onChange?: (v: string) => void;
 }) {
   return (
-    <div className="flex items-center justify-between gap-2 mb-0.5">
-      <span className={`w-20 shrink-0 text-slate-600 ${bold ? 'font-semibold' : ''}`}>{label}</span>
+    <div className="flex items-center justify-between gap-2 mb-1">
+      <span className={`w-24 shrink-0 text-slate-600 ${bold ? 'font-semibold' : ''}`}>{label}</span>
       <input
-        className={`border p-0.5 text-right w-28 ${bold ? 'font-semibold bg-slate-50' : ''} ${readOnly ? 'bg-slate-100 text-slate-500' : ''}`}
+        className={`border rounded-md p-1 text-right w-32 ${bold ? 'font-semibold bg-slate-50' : ''} ${
+          readOnly ? 'bg-slate-100 text-slate-500' : ''
+        }`}
         value={value}
         readOnly={readOnly}
-        onChange={e => onChange?.(e.target.value)}
+        onChange={(e) => onChange?.(e.target.value)}
       />
     </div>
   );

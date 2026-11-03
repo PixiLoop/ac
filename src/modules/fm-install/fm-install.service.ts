@@ -505,13 +505,14 @@ export class FMInstallService {
   }
 
   async createFromPreinstall(preinstallId: string) {
-    const preinstall = await this.prisma.fMPreinstall.findFirst({
+    const preinstall: any = await (this.prisma as any).fMPreinstall.findFirst({
       where: { id: preinstallId, deletedAt: null },
       include: {
         customer: true,
         fmCustomer: true,
         installDetail: true,
         Depots: true,
+        bulkVehicles: { orderBy: { rowNo: 'asc' } },
       },
     });
 
@@ -523,7 +524,6 @@ export class FMInstallService {
       );
     }
 
-    // Idempotent — already accepted into FM Log
     if (preinstall.installId) {
       return this.prisma.fMInstall.findUnique({
         where: { id: preinstall.installId },
@@ -531,7 +531,45 @@ export class FMInstallService {
       });
     }
 
-    const d = preinstall.installDetail;
+    const d: any = preinstall.installDetail;
+    const bulkRows: any[] = Array.isArray(preinstall.bulkVehicles) ? preinstall.bulkVehicles : [];
+
+    if (preinstall.isBulk && bulkRows.length) {
+      const now = new Date();
+      const created: any[] = [];
+      for (const v of bulkRows) {
+        const install = await this.prisma.fMInstall.create({
+          data: {
+            preinstallId: preinstall.id,
+            preinstallRef: preinstall.preinstallNo,
+            aasCustomerNum: preinstall.customer?.customerNumber ?? null,
+            fmCustomerNum: preinstall.fmCustomer?.fmWebNumber ?? null,
+            mixAssetNum: v.assetNumber ?? null,
+            baseUnit: v.fmUnitCode ?? d?.fmUnitCode ?? null,
+            vehicleMake: v.vehicleMake ?? null,
+            vehicleModel: v.vehicleModel ?? null,
+            vehicleYear: v.yearVariant ?? null,
+            rego: v.regoNumber ?? null,
+            fiNumber: v.fleetNumber ?? null,
+            depot: v.depot ?? preinstall.Depots?.name ?? null,
+            site: v.site ?? null,
+            fmwService: v.serviceCode ?? d?.serviceCode ?? null,
+            installDate: v.installDate ?? d?.installDate ?? null,
+            entryDate: now,
+            status: 'INSTALL',
+            chargeFlag: false,
+          },
+        });
+        created.push(install);
+      }
+
+      await this.prisma.fMPreinstall.update({
+        where: { id: preinstallId },
+        data: { installId: created[0]?.id, status: 'COMPLETED' },
+      });
+
+      return { bulk: true, count: created.length, items: created };
+    }
 
     const missing: string[] = [];
     if (!d?.serviceCode) missing.push('Service Code');
@@ -544,7 +582,7 @@ export class FMInstallService {
 
     const resolveUserName = async (userId?: string | null) => {
       if (!userId) return null;
-      if (!/^c[a-z0-9]{20,}$/i.test(userId)) return userId; // already a display name
+      if (!/^c[a-z0-9]{20,}$/i.test(userId)) return userId;
       const user = await this.prisma.user.findUnique({
         where: { id: userId },
         select: { displayName: true, firstName: true, lastName: true, email: true },
@@ -557,7 +595,6 @@ export class FMInstallService {
       );
     };
 
-    // Install By ← preinstall installer; Author ← assigned user / createdBy
     const installBy = await resolveUserName(d?.installer ?? null);
     const author = await resolveUserName(
       preinstall.assignedUserId || preinstall.createdBy || null,
@@ -586,7 +623,7 @@ export class FMInstallService {
       vehicleYear: d?.yearVariant ?? null,
       rego: d?.regoNumber ?? null,
       fiNumber: d?.fleetNumber ?? null,
-      depot: (preinstall as any).Depots?.name ?? d?.installLocation ?? null,
+      depot: preinstall.Depots?.name ?? d?.installLocation ?? null,
       site: d?.installLocation ?? null,
       fmwService: d?.serviceCode ?? null,
       mixCode: d?.mixCode ?? null,
@@ -603,7 +640,7 @@ export class FMInstallService {
 
     if (shouldUpdateTarget) {
       const install = await this.prisma.fMInstall.update({
-        where: { id: preinstall.targetInstallId! },
+        where: { id: preinstall.targetInstallId },
         data: {
           ...mapped,
           ...(d?.id && {
@@ -615,13 +652,12 @@ export class FMInstallService {
 
       await this.prisma.fMPreinstall.update({
         where: { id: preinstallId },
-        data: { installId: install.id },
+        data: { installId: install.id, status: 'COMPLETED' },
       });
 
       return install;
     }
 
-    // NEW_INSTALL / TRANSFER_UNIT — create a fresh FM Install record
     const install = await this.prisma.fMInstall.create({
       data: {
         preinstallId: preinstall.id,
@@ -639,7 +675,7 @@ export class FMInstallService {
 
     await this.prisma.fMPreinstall.update({
       where: { id: preinstallId },
-      data: { installId: install.id },
+      data: { installId: install.id, status: 'COMPLETED' },
     });
 
     return install;

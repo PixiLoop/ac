@@ -26,7 +26,7 @@ export const StatusBadge: React.FC<{ status: InstallationStatus; className?: str
 
   return (
     <span
-      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border shadow-xs ${getColors()} ${className}`}
+      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold border shadow-xs whitespace-nowrap text-nowrap ${getColors()} ${className}`}
     >
       <span className="w-1.5 h-1.5 rounded-full bg-current opacity-80" />
       {status}

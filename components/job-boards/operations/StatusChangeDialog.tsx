@@ -20,6 +20,8 @@ const STATUS_FLOW: InstallationStatus[] = [
   'Completed',
 ];
 
+const PING_PONG = new Set<InstallationStatus>(['Workshop Setup', 'Waiting Install']);
+
 export const StatusChangeDialog: React.FC<StatusChangeDialogProps> = ({
   job,
   isOpen,
@@ -51,8 +53,11 @@ export const StatusChangeDialog: React.FC<StatusChangeDialogProps> = ({
 
   const handleConfirm = async (bypass: boolean = false) => {
     setErrorMsg(null);
-    if (STATUS_FLOW.indexOf(selectedStatus) < currentIdx) {
-      setErrorMsg('Status can only move forward in the install flow.');
+    const goingBack = STATUS_FLOW.indexOf(selectedStatus) < currentIdx;
+    const pingPongOk =
+      PING_PONG.has(job.status) && PING_PONG.has(selectedStatus);
+    if (goingBack && !pingPongOk && selectedStatus !== 'Not Actioned') {
+      setErrorMsg('Workshop ↔ Site Work can move either way before invoicing. Other statuses move forward only.');
       return;
     }
 
@@ -136,7 +141,7 @@ export const StatusChangeDialog: React.FC<StatusChangeDialogProps> = ({
 
             <div>
               <label className="block text-xs font-bold uppercase tracking-wider text-slate-700 mb-2">
-                Select New Status (forward flow)
+                Select New Status (Workshop ↔ Site can ping-pong)
               </label>
               <div className="grid grid-cols-2 gap-2">
                 {STATUS_FLOW.map((st, idx) => {
@@ -144,15 +149,17 @@ export const StatusChangeDialog: React.FC<StatusChangeDialogProps> = ({
                   const isRecommended = recommendedNext === st;
                   const isPast = idx < currentIdx;
                   const isCurrent = idx === currentIdx;
+                  const pingPongAllowed = PING_PONG.has(job.status) && PING_PONG.has(st);
+                  const disabled = isPast && !pingPongAllowed && st !== 'Not Actioned';
 
                   return (
                     <button
                       key={st}
                       type="button"
-                      disabled={isPast}
-                      onClick={() => !isPast && setSelectedStatus(st)}
+                      disabled={disabled}
+                      onClick={() => !disabled && setSelectedStatus(st)}
                       className={`px-3 py-2.5 rounded-xl text-xs font-semibold border text-left transition-all relative ${
-                        isPast
+                        disabled
                           ? 'border-slate-100 bg-slate-50 text-slate-400 cursor-not-allowed'
                           : isSelected
                             ? 'border-blue-500 bg-blue-50/70 text-blue-900 ring-2 ring-blue-500/20'
@@ -176,14 +183,9 @@ export const StatusChangeDialog: React.FC<StatusChangeDialogProps> = ({
               </div>
             </div>
 
-            {selectedStatus === 'Installed' && (
-              <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-start gap-2">
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" />
-                <span>
-                  Transitioning to <strong>Installed</strong> unlocks invoice creation for this fitting job.
-                </span>
-              </div>
-            )}
+            <div className="p-3 bg-sky-50 border border-sky-200 rounded-xl text-xs text-sky-900">
+              Job Book / Sales Orders can invoice without FM Install. Work steps are optional — invoice anytime before Completed.
+            </div>
 
             {selectedStatus === 'Completed' && (
               <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">

@@ -24,6 +24,7 @@ type Item = {
   name: string;
   status: string;
   isActive: boolean;
+  isFmHardware?: boolean;
   itemType: string | null;
   orderRank: string | null;
   vendorName: string | null;
@@ -70,7 +71,7 @@ export function InventoryList() {
     api.get('/inventory/categories', { params: { take: 500 } }).then((res) => {
       const list: { code: string; name: string }[] = res.data?.data?.items ?? res.data?.items ?? [];
       setCategoryOptions([
-        { label: 'All categories', value: '' },  
+        { label: 'All categories', value: '' },
         ...list.map((c) => ({ label: c.code, value: c.code })),
       ]); // — ${c.name}
     }).catch(() => { });
@@ -78,11 +79,11 @@ export function InventoryList() {
     api.get('/inventory/suppliers', { params: { take: 500 } }).then((res) => {  // ← add
       const list: { code: string; name: string }[] = res.data?.data?.items ?? res.data?.items ?? [];
       setSupplierOptions(list.map((s) => ({ label: `${s.code} — ${s.name}`, value: s.code })));
-    }).catch(() => {});
+    }).catch(() => { });
   }, []);
-   
 
-  
+
+
 
   // ── Table state ──────────────────────────────────────────────────────────
   const [sort, setSort] = React.useState<SortState>({ key: 'name', dir: 'asc' });
@@ -108,7 +109,7 @@ export function InventoryList() {
         status: filterStatus || undefined,
         productCategory: filterCategory || undefined,
         productCode: filterPartNo || undefined,
-        vendorNumber:    filterSupplier  || undefined,
+        vendorNumber: filterSupplier || undefined,
         skip: (page - 1) * pageSize,
         take: pageSize,
         sortKey: sort.key || 'name',
@@ -216,7 +217,7 @@ export function InventoryList() {
       {/* ── Filter bar ── */}
       <div className="flex flex-wrap items-end gap-3 rounded-lg border bg-slate-50/60 px-4 py-3">
 
-        <div className="space-y-1 flex-1 min-w-[180px] max-w-[240px]"> 
+        <div className="space-y-1 flex-1 min-w-[180px] max-w-[240px]">
           <SearchSelect
             value={filterCategory}
             options={categoryOptions}
@@ -225,7 +226,7 @@ export function InventoryList() {
           />
         </div>
 
-        <div className="space-y-1 flex-1 min-w-[200px] max-w-[260px]"> 
+        <div className="space-y-1 flex-1 min-w-[200px] max-w-[260px]">
           <SearchSelect
             value={filterSupplier}
             options={supplierOptions}
@@ -303,9 +304,14 @@ export function InventoryList() {
             title: 'Part No',
             sortable: true,
             render: (row) => (
-              <div className="flex items-center gap-2 font-medium">
-                {row.itemType === 'BOG' && <Package2 className="h-4 w-4 text-orange-600" />}
-                {row.productCode}
+              <div className="flex items-center gap-1.5 font-medium">
+                {row.itemType === 'BOG' && <Package2 className="h-4 w-4 text-orange-600 shrink-0" />}
+                <span>{row.productCode}</span>
+                {row.isFmHardware && (
+                  <span className="rounded bg-sky-100 px-1.5 py-0.5 text-[10px] font-semibold text-sky-800 border border-sky-300">
+                    FM
+                  </span>
+                )}
               </div>
             ),
           },

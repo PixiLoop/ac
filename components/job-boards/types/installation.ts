@@ -31,6 +31,8 @@ export type HardwareModel =
   | 'Driver ID Keypad'
   | (string & {});
 
+export type FMServiceSegment = UnitCode;
+
 export interface HardwareItem {
   id: string;
   model: HardwareModel;
@@ -38,6 +40,8 @@ export interface HardwareItem {
   serialNumber?: string;
   imei?: string;
   category: 'Telematics Unit' | 'Camera & Video' | 'Connectivity' | 'Sensors' | 'Accessories' | 'Core Unit';
+  segmentId?: string;
+  code?: string;
 }
 
 export interface InstallationLineItem {
@@ -113,6 +117,7 @@ export interface ChecklistTemplate {
   id: string;
   name: string;
   hardwareId: string;
+  fmSegmentId?: string | null;
   status: 'ACTIVE' | 'DRAFT' | 'ARCHIVED';
   lastUpdated: string;
   sections: ChecklistTemplateSection[];

@@ -17,11 +17,13 @@ export function AuthenticatedPhoto({
   alt,
   className,
   openOnClick = true,
+  onOpen,
 }: {
   src: string;
   alt: string;
   className?: string;
   openOnClick?: boolean;
+  onOpen?: (objectUrl: string) => void;
 }) {
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
@@ -74,12 +76,14 @@ export function AuthenticatedPhoto({
     <img
       src={objectUrl}
       alt={alt}
-      className={className}
+      className={`${className || ''} ${openOnClick || onOpen ? 'cursor-zoom-in' : ''}`}
       onClick={
-        openOnClick
+        openOnClick || onOpen
           ? (e) => {
+              e.preventDefault();
               e.stopPropagation();
-              window.open(objectUrl, '_blank', 'noopener,noreferrer');
+              if (onOpen) onOpen(objectUrl);
+              else window.open(objectUrl, '_blank', 'noopener,noreferrer');
             }
           : undefined
       }

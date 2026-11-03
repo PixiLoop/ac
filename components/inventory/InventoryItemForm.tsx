@@ -557,8 +557,8 @@ export function InventoryItemForm({ itemId }: Props) {
       return;
     }
 
-    if (!aircoMarkupGroup) {
-      showToast({ type: 'error', title: 'Airco Group is required' });
+    if (!aircoMarkupGroup && !xGroup) {
+      showToast({ type: 'error', title: 'Airco Group or X Group is required' });
       return;
     }
 
@@ -570,43 +570,73 @@ export function InventoryItemForm({ itemId }: Props) {
     }
 
     const payload = {
-      productCode, name, extendedDescription, vendorNumber, vendorName, vendorPartNumber,
-      productCategory: productCategory || null,
-      status, orderRank,
-      aircoMarkupGroup: aircoMarkupGroup || null,
-      xGroup: xGroup || null,
-      isActive,
-      replacedBy: replacedBy || null,
-      description: description || null,
-      billOfGoods, onHand, packSize, grade, leadTimeDays,
-      automaticMaxQty, automaticMinQty, fixedMaxQty, fixedMinQty, itemType,
-      netSupplierBuyPrice: parseFloat(netSupplierBuyPrice) || 0, isTaxable,
+      productCode: productCode.trim(),
+      name: name.trim(),
+      extendedDescription: extendedDescription ? extendedDescription.trim() : undefined,
+      vendorNumber: vendorNumber.trim(),
+      vendorName: vendorName ? vendorName.trim() : undefined,
+      vendorPartNumber: vendorPartNumber ? vendorPartNumber.trim() : undefined,
+      productCategory: productCategory || undefined,
+      status: status || 'Valid Item',
+      orderRank: orderRank || 'Fixed Stock',
+      aircoMarkupGroup: aircoMarkupGroup || undefined,
+      xGroup: xGroup || undefined,
+      isActive: Boolean(isActive),
+      replacedBy: replacedBy || undefined,
+      description: description || undefined,
+      billOfGoods: Boolean(billOfGoods),
+      onHand: Number(onHand) || 0,
+      packSize: Number(packSize) || 1,
+      grade: Number(grade) || 1,
+      leadTimeDays: Number(leadTimeDays) || 0,
+      automaticMaxQty: Number(automaticMaxQty) || 0,
+      automaticMinQty: Number(automaticMinQty) || 0,
+      fixedMaxQty: Number(fixedMaxQty) || 0,
+      fixedMinQty: Number(fixedMinQty) || 0,
+      itemType: itemType || 'Item',
+      netSupplierBuyPrice: parseFloat(netSupplierBuyPrice) || 0,
+      isTaxable: Boolean(isTaxable),
       landedFactor: numLandedFactor,
       importDuty: parseFloat(importDuty) || 0,
       inStoreCost: parseFloat(inStoreCost) || 0,
-      landedCost, 
-      agentFactor: Number(agentFactor) || 0, 
-      agentPrice, 
-      salesPartnerPrice, 
+      landedCost: Number(landedCost) || 0,
+      agentFactor: Number(agentFactor) || 0,
+      agentPrice: Number(agentPrice) || 0,
+      salesPartnerPrice: Number(salesPartnerPrice) || 0,
       partnerFactor: Number(partnerFactor) || 0,
-      tradePrice, 
-      tradeFactor: Number(tradeFactor) || 0, 
-      retailPrice, 
+      tradePrice: Number(tradePrice) || 0,
+      tradeFactor: Number(tradeFactor) || 0,
+      retailPrice: Number(retailPrice) || 0,
       retailFactor: Number(retailFactor) || 0,
-      agentFactorLocked, partnerFactorLocked, tradeFactorLocked, retailFactorLocked,
-      isFmHardware,
-      fmMixCode: fmMixCode || null, 
-      fmUnitCode: fmUnitCode || null,
-      fourGUnitModem, mixUnitSim, isMonitor, isVision,
-      aiOption, tmaOption, rimOption, nrcOption, internSim, mixVisSim, vision4GModem,
-      cameraCount: cameraCount ? Number(cameraCount) : null,
-      fmVisionType: fmVisionType || null,
-      fmCameraType: fmCameraType || null,
-      fmSim1Type: fmSim1Type || null,
-      fmSim2Type: fmSim2Type || null,
-      fmRuleCode: fmRuleCode || null,
+      agentFactorLocked: Boolean(agentFactorLocked),
+      partnerFactorLocked: Boolean(partnerFactorLocked),
+      tradeFactorLocked: Boolean(tradeFactorLocked),
+      retailFactorLocked: Boolean(retailFactorLocked),
+      isFmHardware: Boolean(isFmHardware),
+      fmMixCode: fmMixCode ? fmMixCode.trim() : undefined,
+      fmUnitCode: fmUnitCode ? fmUnitCode.trim() : undefined,
+      fourGUnitModem: Boolean(fourGUnitModem),
+      mixUnitSim: Boolean(mixUnitSim),
+      isMonitor: Boolean(isMonitor),
+      isVision: Boolean(isVision),
+      aiOption: Boolean(aiOption),
+      tmaOption: Boolean(tmaOption),
+      rimOption: Boolean(rimOption),
+      nrcOption: Boolean(nrcOption),
+      internSim: Boolean(internSim),
+      mixVisSim: Boolean(mixVisSim),
+      vision4GModem: Boolean(vision4GModem),
+      cameraCount: cameraCount ? Number(cameraCount) : undefined,
+      fmVisionType: fmVisionType || undefined,
+      fmCameraType: fmCameraType || undefined,
+      fmSim1Type: fmSim1Type || undefined,
+      fmSim2Type: fmSim2Type || undefined,
+      fmRuleCode: fmRuleCode ? fmRuleCode.trim() : undefined,
       bogLines: bogComponents.map((c, i) => ({
-        componentId: c.productId, quantity: c.quantity, uom: c.uom, sortOrder: i,
+        componentId: c.productId,
+        quantity: c.quantity,
+        uom: c.uom,
+        sortOrder: i,
       })),
       minStock: parseFloat(minStock) >= 0 ? parseFloat(minStock) : 0,
       maxStock: parseFloat(maxStock) >= 0 ? parseFloat(maxStock) : 0,
@@ -623,7 +653,13 @@ export function InventoryItemForm({ itemId }: Props) {
       showToast({ type: 'success', title: `Item ${isEdit ? 'updated' : 'created'} successfully` });
       router.push('/inventory');
     } catch (err: any) {
-      showToast({ type: 'error', title: err?.response?.data?.message ?? 'Failed to save item' });
+      const rawMsg = err?.response?.data?.message;
+      const errorMsg = Array.isArray(rawMsg)
+        ? rawMsg.join('; ')
+        : typeof rawMsg === 'string'
+          ? rawMsg
+          : 'Failed to save item';
+      showToast({ type: 'error', title: errorMsg });
     } finally {
       setSaving(false);
     }
@@ -710,7 +746,12 @@ export function InventoryItemForm({ itemId }: Props) {
               { label: 'Replaced', value: 'Replaced' },
               { label: 'N.L.A', value: 'N.L.A' },
               { label: 'Do Not Order', value: 'Do Not Order' },
-            ]} onChange={setStatus} />
+            ]} onChange={(val) => {
+              setStatus(val);
+              if (val === 'FM Service') {
+                setIsFmHardware(true);
+              }
+            }} />
           </div>
           <div className="space-y-2">
             <Label>Order Rank</Label>
@@ -726,15 +767,32 @@ export function InventoryItemForm({ itemId }: Props) {
             <Select value={aircoMarkupGroup} options={[{ label: '— None —', value: '' }, ...aircoGroupOptions]} onChange={setAircoMarkupGroup} />
           </div>
 
-          <div className="flex items-end rounded-lg border px-3 py-2 text-sm">
-            <label className="flex items-center gap-2">
-              <Checkbox checked={isActive} onCheckedChange={() => setIsActive((v) => !v)} /> Inventory_Status
+          <div className="flex items-end rounded-lg border px-3 py-2 text-sm bg-background">
+            <label htmlFor="inventory-status-checkbox" className="flex items-center gap-2 cursor-pointer w-full select-none">
+              <Checkbox
+                id="inventory-status-checkbox"
+                name="isActive"
+                checked={isActive}
+                onCheckedChange={(checked) => setIsActive(checked)}
+              />
+              <span>Inventory Status</span>
             </label>
           </div>
 
-          <div className="flex items-end rounded-lg border px-3 py-2 text-sm">
-            <label className="flex items-center gap-2">
-              <Checkbox checked={isFmHardware} onCheckedChange={() => setIsFmHardware((v) => !v)} /> FM Hardware
+          <div className={`flex items-end rounded-lg border px-3 py-2 text-sm transition-colors ${isFmHardware ? 'bg-sky-50 border-sky-300 font-medium text-sky-950 shadow-xs' : 'bg-background'}`}>
+            <label htmlFor="fm-hardware-checkbox" className="flex items-center gap-2 cursor-pointer w-full select-none">
+              <Checkbox
+                id="fm-hardware-checkbox"
+                name="isFmHardware"
+                checked={isFmHardware}
+                onCheckedChange={(checked) => setIsFmHardware(checked)}
+              />
+              <span>FM Hardware</span>
+              {isFmHardware && (
+                <span className="ml-auto rounded bg-sky-200/80 px-1.5 py-0.5 text-[11px] font-semibold text-sky-800">
+                  ON
+                </span>
+              )}
             </label>
           </div>
         </div>
@@ -749,9 +807,14 @@ export function InventoryItemForm({ itemId }: Props) {
           </div>
           <div className="space-y-2">
             <Label>Bill of Goods</Label>
-            <div className="flex items-center h-10 px-3 rounded-md border">
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={billOfGoods} onCheckedChange={() => setBillOfGoods((v) => !v)} /> Enabled
+            <div className="flex items-center h-10 px-3 rounded-md border bg-background">
+              <label htmlFor="bill-of-goods-checkbox" className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <Checkbox
+                  id="bill-of-goods-checkbox"
+                  checked={billOfGoods}
+                  onCheckedChange={(checked) => setBillOfGoods(checked)}
+                />
+                <span>Enabled</span>
               </label>
             </div>
           </div>
@@ -830,8 +893,13 @@ export function InventoryItemForm({ itemId }: Props) {
                   }}
                 />
               </div>
-              <label className="flex items-center gap-2 text-sm">
-                <Checkbox checked={!isTaxable} onCheckedChange={() => setIsTaxable((v) => !v)} /> Remove GST
+              <label htmlFor="taxable-checkbox" className="flex items-center gap-2 text-sm cursor-pointer select-none">
+                <Checkbox
+                  id="taxable-checkbox"
+                  checked={!isTaxable}
+                  onCheckedChange={(checked) => setIsTaxable(!checked)}
+                />
+                <span>Remove GST</span>
               </label>
               <div className="grid gap-4 grid-cols-2">
                 <div className="space-y-2">
@@ -922,7 +990,7 @@ export function InventoryItemForm({ itemId }: Props) {
                     />
                   </TableCell>
                   <TableCell className="text-center">
-                    <Checkbox checked={agentFactorLocked} onCheckedChange={() => setAgentFactorLocked((v) => !v)} />
+                    <Checkbox checked={agentFactorLocked} onCheckedChange={(checked) => setAgentFactorLocked(checked)} />
                   </TableCell>
                   <TableCell><Input className="text-right" readOnly value={Number(agentPrice).toFixed(2)} /></TableCell>
                 </TableRow>
@@ -944,7 +1012,7 @@ export function InventoryItemForm({ itemId }: Props) {
                     />
                   </TableCell>
                   <TableCell className="text-center">
-                    <Checkbox checked={partnerFactorLocked} onCheckedChange={() => setPartnerFactorLocked((v) => !v)} />
+                    <Checkbox checked={partnerFactorLocked} onCheckedChange={(checked) => setPartnerFactorLocked(checked)} />
                   </TableCell>
                   <TableCell><Input className="text-right" readOnly value={Number(salesPartnerPrice).toFixed(2)} /></TableCell>
                 </TableRow>
@@ -966,7 +1034,7 @@ export function InventoryItemForm({ itemId }: Props) {
                     />
                   </TableCell>
                   <TableCell className="text-center">
-                    <Checkbox checked={tradeFactorLocked} onCheckedChange={() => setTradeFactorLocked((v) => !v)} />
+                    <Checkbox checked={tradeFactorLocked} onCheckedChange={(checked) => setTradeFactorLocked(checked)} />
                   </TableCell>
                   <TableCell><Input className="text-right" readOnly value={Number(tradePrice).toFixed(2)} /></TableCell>
                 </TableRow>
@@ -988,7 +1056,7 @@ export function InventoryItemForm({ itemId }: Props) {
                     />
                   </TableCell>
                   <TableCell className="text-center">
-                    <Checkbox checked={retailFactorLocked} onCheckedChange={() => setRetailFactorLocked((v) => !v)} />
+                    <Checkbox checked={retailFactorLocked} onCheckedChange={(checked) => setRetailFactorLocked(checked)} />
                   </TableCell>
                   <TableCell><Input className="text-right" readOnly value={Number(retailPrice).toFixed(2)} /></TableCell>
                 </TableRow>
@@ -1135,79 +1203,259 @@ export function InventoryItemForm({ itemId }: Props) {
         )}
 
         {/* ── FM Service Hardware ── */}
-        {showFmFields && (
-          <div className="rounded-xl border bg-sky-50/40 p-4">
-            <div className="mb-4 flex items-center justify-between">
+        {showFmFields ? (
+          <div className="rounded-xl border border-sky-300 bg-sky-50/40 p-5 shadow-xs">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-sky-200/70 pb-3">
               <div>
-                <h3 className="font-medium text-sky-800">FM Service Hardware</h3>
-                <p className="text-sm text-muted-foreground">Same options as the Preinstall. Adding this item to an FMP copies them onto the install details.</p>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-base font-semibold text-sky-900">FM Service Hardware</h3>
+                  <Badge className="border-sky-300 bg-sky-100 text-sky-800 text-xs font-medium">Enabled</Badge>
+                  {status === 'FM Service' && (
+                    <Badge variant="outline" className="border-sky-300 text-sky-700 text-xs">Status: FM Service</Badge>
+                  )}
+                </div>
+                <p className="mt-1 text-xs text-sky-700/90">
+                  Pre-configures telematics hardware parameters. Adding this item to an FM Preinstall will automatically copy these configurations onto the vehicle install details.
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="text-xs border-sky-300 text-sky-700 hover:bg-sky-100 shrink-0 self-start sm:self-auto"
+                onClick={() => setIsFmHardware(false)}
+              >
+                Disable FM Hardware
+              </Button>
+            </div>
+
+            <div className="grid gap-4 md:grid-cols-4">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-sky-950">FM Unit Code</Label>
+                <Input
+                  value={fmUnitCode}
+                  placeholder="e.g. FM3000, 4G-MDM"
+                  className="bg-white"
+                  onChange={(e) => setFmUnitCode(e.target.value)}
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-sky-950">FM MIX Code</Label>
+                <Input
+                  value={fmMixCode}
+                  placeholder="e.g. MIX-400"
+                  className="bg-white"
+                  onChange={(e) => setFmMixCode(e.target.value)}
+                />
               </div>
             </div>
-            <div className="grid gap-4 md:grid-cols-4">
-              <div className="space-y-2"><Label>FM Unit Code</Label><Input value={fmUnitCode} onChange={(e) => setFmUnitCode(e.target.value)} /></div>
-              <div className="space-y-2"><Label>FM MIX Code</Label><Input value={fmMixCode} onChange={(e) => setFmMixCode(e.target.value)} /></div>
-            </div>
-            <div className="mt-4 grid gap-4 md:grid-cols-4">
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={fourGUnitModem} onCheckedChange={() => setFourGUnitModem((v) => !v)} /> Unit Modem / 4G</label>
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={mixUnitSim} onCheckedChange={() => setMixUnitSim((v) => !v)} /> Mix Unit SIM</label>
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={isMonitor} onCheckedChange={() => setIsMonitor((v) => !v)} /> Is Monitor Item</label>
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={isVision} onCheckedChange={() => setIsVision((v) => !v)} /> Is Vision Item</label>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 md:grid-cols-4">
+              <label htmlFor="fourg-modem-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm cursor-pointer select-none hover:bg-slate-50">
+                <Checkbox
+                  id="fourg-modem-checkbox"
+                  checked={fourGUnitModem}
+                  onCheckedChange={(checked) => setFourGUnitModem(checked)}
+                />
+                <span className="text-slate-800">Unit Modem / 4G</span>
+              </label>
+              <label htmlFor="mix-unit-sim-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm cursor-pointer select-none hover:bg-slate-50">
+                <Checkbox
+                  id="mix-unit-sim-checkbox"
+                  checked={mixUnitSim}
+                  onCheckedChange={(checked) => setMixUnitSim(checked)}
+                />
+                <span className="text-slate-800">Mix Unit SIM</span>
+              </label>
+              <label htmlFor="is-monitor-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm cursor-pointer select-none hover:bg-slate-50">
+                <Checkbox
+                  id="is-monitor-checkbox"
+                  checked={isMonitor}
+                  onCheckedChange={(checked) => setIsMonitor(checked)}
+                />
+                <span className="text-slate-800">Is Monitor Item</span>
+              </label>
+              <label htmlFor="is-vision-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2.5 text-sm cursor-pointer select-none hover:bg-slate-50">
+                <Checkbox
+                  id="is-vision-checkbox"
+                  checked={isVision}
+                  onCheckedChange={(checked) => setIsVision(checked)}
+                />
+                <span className="text-slate-800">Is Vision Item</span>
+              </label>
             </div>
 
             <div className="mt-4 grid gap-4 md:grid-cols-2">
               <div className="space-y-2">
-                <Label>Sim Card Size</Label>
-                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmSim1Type} onChange={(e) => { setFmSim1Type(e.target.value); if (e.target.value) setMixUnitSim(true); }}>
-                  <option value="">Select</option>
+                <Label className="text-xs font-medium text-sky-950">Sim Card Size</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-ring"
+                  value={fmSim1Type}
+                  onChange={(e) => {
+                    setFmSim1Type(e.target.value);
+                    if (e.target.value) setMixUnitSim(true);
+                  }}
+                >
+                  <option value="">Select SIM Card Size</option>
                   {sim1Options.map((s: any) => <option key={s.id} value={s.code}>{s.label}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Mix Sim Card for the Vision</Label>
-                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmSim2Type} onChange={(e) => { setFmSim2Type(e.target.value); if (e.target.value) setMixVisSim(true); }}>
-                  <option value="">Select</option>
+                <Label className="text-xs font-medium text-sky-950">Mix Sim Card for the Vision</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-ring"
+                  value={fmSim2Type}
+                  onChange={(e) => {
+                    setFmSim2Type(e.target.value);
+                    if (e.target.value) setMixVisSim(true);
+                  }}
+                >
+                  <option value="">Select Vision SIM</option>
                   {sim2Options.map((s: any) => <option key={s.id} value={s.code}>{s.label}</option>)}
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Camera Type</Label>
-                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmCameraType} onChange={(e) => setFmCameraType(e.target.value)}>
-                  <option value="">Select</option>
-                  {camerasForVision.map((c: any) => <option key={c.id} value={c.code}>{c.label}{c.dependsOn ? ` (${c.dependsOn})` : ''}</option>)}
+                <Label className="text-xs font-medium text-sky-950">Camera Type</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-ring"
+                  value={fmCameraType}
+                  onChange={(e) => setFmCameraType(e.target.value)}
+                >
+                  <option value="">Select Camera Type</option>
+                  {camerasForVision.map((c: any) => (
+                    <option key={c.id} value={c.code}>
+                      {c.label}{c.dependsOn ? ` (${c.dependsOn})` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
               <div className="space-y-2">
-                <Label>Vision</Label>
-                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={fmVisionType} onChange={(e) => { setFmVisionType(e.target.value); if (e.target.value) setIsVision(true); }}>
+                <Label className="text-xs font-medium text-sky-950">Vision System</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-ring"
+                  value={fmVisionType}
+                  onChange={(e) => {
+                    setFmVisionType(e.target.value);
+                    if (e.target.value) setIsVision(true);
+                  }}
+                >
                   <option value="">No Vision</option>
-                  {visionOptions.map((v: any) => <option key={v.id} value={v.code}>{v.label}{v.dependsOn ? ` (${v.dependsOn})` : ''}</option>)}
+                  {visionOptions.map((v: any) => (
+                    <option key={v.id} value={v.code}>
+                      {v.label}{v.dependsOn ? ` (${v.dependsOn})` : ''}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
 
-            <div className="mt-4 grid gap-4 md:grid-cols-4">
+            <div className="mt-4 grid gap-4 md:grid-cols-3">
               <div className="space-y-2">
-                <Label>Cameras</Label>
-                <select className="h-9 w-full rounded-md border bg-white px-3 text-sm" value={cameraCount} onChange={(e) => setCameraCount(e.target.value)}>
-                  <option value="">Select</option>
-                  {[2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                <Label className="text-xs font-medium text-sky-950">Cameras Count</Label>
+                <select
+                  className="h-9 w-full rounded-md border border-input bg-white px-3 text-sm focus:outline-hidden focus:ring-1 focus:ring-ring"
+                  value={cameraCount}
+                  onChange={(e) => setCameraCount(e.target.value)}
+                >
+                  <option value="">Select Channels</option>
+                  {[2, 3, 4].map(n => <option key={n} value={n}>{n} Channels</option>)}
                 </select>
               </div>
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={mixVisSim} onCheckedChange={() => setMixVisSim((v) => !v)} /> Mix Sim for Vision</label>
-              <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={vision4GModem} onCheckedChange={() => setVision4GModem((v) => !v)} /> 4G Vision</label>
+              <div className="flex items-end">
+                <label htmlFor="mix-vis-sim-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50 w-full h-9">
+                  <Checkbox
+                    id="mix-vis-sim-checkbox"
+                    checked={mixVisSim}
+                    onCheckedChange={(checked) => setMixVisSim(checked)}
+                  />
+                  <span className="text-slate-800">Mix Sim for Vision</span>
+                </label>
+              </div>
+              <div className="flex items-end">
+                <label htmlFor="vision-4g-modem-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50 w-full h-9">
+                  <Checkbox
+                    id="vision-4g-modem-checkbox"
+                    checked={vision4GModem}
+                    onCheckedChange={(checked) => setVision4GModem(checked)}
+                  />
+                  <span className="text-slate-800">4G Vision</span>
+                </label>
+              </div>
             </div>
 
             <div className="mt-4">
-              <Label>Options</Label>
-              <div className="mt-2 grid gap-3 md:grid-cols-4">
-                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={aiOption} onCheckedChange={() => setAiOption((v) => !v)} /> AI Option</label>
-                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={tmaOption} onCheckedChange={() => setTmaOption((v) => !v)} /> TMA Option</label>
-                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={rimOption} onCheckedChange={() => setRimOption((v) => !v)} /> RIM Option</label>
-                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={nrcOption} onCheckedChange={() => setNrcOption((v) => !v)} /> NRC</label>
-                <label className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm"><Checkbox checked={internSim} onCheckedChange={() => setInternSim((v) => !v)} /> Int SIM</label>
+              <Label className="text-xs font-medium text-sky-950">Telematics Options</Label>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2 md:grid-cols-5">
+                <label htmlFor="ai-option-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50">
+                  <Checkbox
+                    id="ai-option-checkbox"
+                    checked={aiOption}
+                    onCheckedChange={(checked) => setAiOption(checked)}
+                  />
+                  <span className="text-slate-800">AI Option</span>
+                </label>
+                <label htmlFor="tma-option-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50">
+                  <Checkbox
+                    id="tma-option-checkbox"
+                    checked={tmaOption}
+                    onCheckedChange={(checked) => setTmaOption(checked)}
+                  />
+                  <span className="text-slate-800">TMA Option</span>
+                </label>
+                <label htmlFor="rim-option-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50">
+                  <Checkbox
+                    id="rim-option-checkbox"
+                    checked={rimOption}
+                    onCheckedChange={(checked) => setRimOption(checked)}
+                  />
+                  <span className="text-slate-800">RIM Option</span>
+                </label>
+                <label htmlFor="nrc-option-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50">
+                  <Checkbox
+                    id="nrc-option-checkbox"
+                    checked={nrcOption}
+                    onCheckedChange={(checked) => setNrcOption(checked)}
+                  />
+                  <span className="text-slate-800">NRC</span>
+                </label>
+                <label htmlFor="intern-sim-checkbox" className="flex items-center gap-2 rounded-lg border bg-white px-3 py-2 text-sm cursor-pointer select-none hover:bg-slate-50">
+                  <Checkbox
+                    id="intern-sim-checkbox"
+                    checked={internSim}
+                    onCheckedChange={(checked) => setInternSim(checked)}
+                  />
+                  <span className="text-slate-800">Int SIM</span>
+                </label>
               </div>
             </div>
-            <div className="mt-4 space-y-2"><Label>FM Rule Code</Label><Input value={fmRuleCode} onChange={(e) => setFmRuleCode(e.target.value)} /></div>
+
+            <div className="mt-4 space-y-2">
+              <Label className="text-xs font-medium text-sky-950">FM Rule Code</Label>
+              <Input
+                value={fmRuleCode}
+                placeholder="Optional rule code"
+                className="bg-white max-w-md"
+                onChange={(e) => setFmRuleCode(e.target.value)}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-sky-300 bg-sky-50/25 p-4 text-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <div className="font-semibold text-sky-900">FM Service Hardware Extension</div>
+              <div className="text-xs text-slate-500 mt-0.5">
+                Enable FM Hardware to assign FM Unit Code, MIX Code, SIM cards, camera configurations, and telematics options to this catalog item.
+              </div>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="border-sky-400 text-sky-800 hover:bg-sky-100 hover:border-sky-500 shrink-0 font-medium"
+              onClick={() => setIsFmHardware(true)}
+            >
+              Enable FM Hardware
+            </Button>
           </div>
         )}
 

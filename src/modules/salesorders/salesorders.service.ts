@@ -190,6 +190,7 @@ export class SalesOrdersService {
                 onHand: true,
                 committed: true,
                 isFmHardware: true,
+                billOfGoods: true,
               },
             },
           },
@@ -213,9 +214,9 @@ export class SalesOrdersService {
     if (!order) throw new NotFoundException('Sales order not found');
     const { byLine } = await notInvoicedBySalesOrderLine(this.prisma, id);
 
-    const productIds = order.items
-  .map((i) => i.productId)
-  .filter((id, index, self) => id && self.indexOf(id) === index) as string[];
+    const productIds = [
+      ...new Set(order.items.map((i) => i.productId).filter(Boolean) as string[]),
+    ];
     const committedByProduct = new Map<string, number>();
     if (productIds.length > 0) {
       const [sales, preinstalls] = await Promise.all([

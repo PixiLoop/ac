@@ -4,11 +4,9 @@ import { ChecklistTemplates } from '../../../components/job-boards/operations/Ch
 import { AdminShell } from '../../../components/layout/AdminShell';
 
 
-export default function InvoicesPage() {
-    
-
+export default function ChecklistTemplatesPage() {
     return (
-        <AdminShell title="Invoices" showTableDensity>
+        <AdminShell title="Checklist Templates" showTableDensity>
             <ChecklistTemplates />
         </AdminShell>
     );

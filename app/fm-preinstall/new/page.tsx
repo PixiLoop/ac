@@ -123,8 +123,8 @@ export default function Page() {
         const assignedRole: 'technician' | 'contractor' | 'subcontractor' = roleName.includes('subcontractor') || roleName.includes('sub-contractor')
           ? 'subcontractor'
           : roleName.includes('contractor')
-          ? 'contractor'
-          : 'technician';
+            ? 'contractor'
+            : 'technician';
 
         const unitModel = installDetail?.fmUnitCode || installDetail?.fmUnitType || 'MIX4000';
         const itemsHardware = validItems.map((item, idx) => ({
@@ -215,7 +215,7 @@ export default function Page() {
 
 
 
-      
+
 
       <FMPreinstallForm
         form={form}

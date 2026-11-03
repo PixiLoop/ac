@@ -90,6 +90,24 @@ export class ItemsController {
     return this.service.purchaseOrders(id);
   }
 
+  @Get(':id/custom-prices')
+  @Permissions('inventory.view')
+  async getCustomPrices(@Param('id') id: string) {
+    return this.service.getCustomPrices(id);
+  }
+
+  @Post(':id/custom-prices')
+  @Permissions('inventory.edit')
+  async upsertCustomPrice(@Param('id') id: string, @Body() body: any) {
+    return this.service.upsertCustomPrice(id, body);
+  }
+
+  @Delete(':id/custom-prices/:priceId')
+  @Permissions('inventory.edit')
+  async deleteCustomPrice(@Param('id') id: string, @Param('priceId') priceId: string) {
+    return this.service.deleteCustomPrice(id, priceId);
+  }
+
   @Delete(':id')
   @Permissions('inventory.delete')
   async remove(@Param('id') id: string) {

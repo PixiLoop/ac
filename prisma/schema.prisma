@@ -221,6 +221,7 @@ model Customer {
   salesOrders             SalesOrder[]
   vehicles                Vehicle[]
   fmpJobs                 fmpJobs[]
+  customPrices            CustomerProductPrice[]
 
   @@schema("admin")
 }
@@ -813,8 +814,26 @@ model Product {
   productLocations     ProductLocation[]
   purchaseOrderLines   PurchaseOrderLine[]
   stockMovements       StockMovement[]
+  customPrices         CustomerProductPrice[]
 
   @@schema("admin")
+}
+
+model CustomerProductPrice {
+  id          String   @id @default(cuid())
+  customerId  String
+  productId   String
+  customPrice Decimal  @db.Decimal(12, 2)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  customer    Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([customerId, productId])
+  @@index([customerId])
+  @@index([productId])
+  @@schema("inventory")
 }
 
 model ProductLocation {

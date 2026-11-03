@@ -30,6 +30,7 @@ import { CustomerSearchSelect } from '../../../components/common/CustomerSearchS
 import { SearchSelect } from '../../../components/ui/SearchSelect';
 import { FormSection } from '../../../components/forms/FormSection';
 import { FMInstallDetailsPanel } from '../../../components/fm-preinstall/sections/FMInstallDetailsPanel';
+import { BulkRolloutList } from '../../../components/fm-preinstall/BulkRolloutList';
 
 interface VehicleRow {
     id: string;
@@ -75,6 +76,20 @@ function IndexBadge({ children }: { children: React.ReactNode }) {
 export default function BulkFMPreinstallPage() {
     const router = useRouter();
     const { showToast } = useToast();
+
+    // Tab State: 'records' (Read) or 'create' (Create)
+    const [activeTab, setActiveTab] = useState<'records' | 'create'>('records');
+
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const tabParam = new URLSearchParams(window.location.search).get('tab');
+            if (tabParam === 'create' || tabParam === 'new') {
+                setActiveTab('create');
+            } else if (tabParam === 'records') {
+                setActiveTab('records');
+            }
+        }
+    }, []);
 
     // Core Form State
     const [selectedCustomer, setSelectedCustomer] = useState<any>(null);
@@ -835,37 +850,70 @@ export default function BulkFMPreinstallPage() {
     return (
         <AdminShell title="Bulk FM Preinstall">
             {/* Top Action & Navigation Bar */}
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-5">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-4">
                 <div>
                     <h1 className="text-xl font-bold text-slate-800 flex items-center gap-2">
-                        Bulk FM Preinstall
+                        Bulk FM Preinstall Module
                     </h1>
                     <p className="text-xs text-slate-500 mt-0.5">
-                        Create preinstall records for multiple fleet vehicles in one consolidated job with a single click.
+                        Create, inspect, and update consolidated preinstallation rollouts across customer fleets.
                     </p>
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
                     <Button variant="outline" size="sm" onClick={() => router.push('/fm-preinstall')}>
-                        Cancel
+                        Back to Preinstalls
                     </Button>
-                    <Button
-                        size="sm"
-                        onClick={handleSaveBulk}
-                        disabled={saving}
-                        className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm"
-                    >
-                        {saving ? (
-                            <>Creating ({saveProgress}%)...</>
-                        ) : (
-                            <>
-                                <Truck className="w-4 h-4" />
-                                Create Bulk Job ({vehicles.length} Vehicles)
-                            </>
-                        )}
-                    </Button>
+                    {activeTab === 'create' && (
+                        <Button
+                            size="sm"
+                            onClick={handleSaveBulk}
+                            disabled={saving}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white flex items-center gap-1.5 shadow-sm"
+                        >
+                            {saving ? (
+                                <>Creating ({saveProgress}%)...</>
+                            ) : (
+                                <>
+                                    <Truck className="w-4 h-4" />
+                                    Create Bulk Job ({vehicles.length} Vehicles)
+                                </>
+                            )}
+                        </Button>
+                    )}
                 </div>
             </div>
+
+            {/* Sub-nav Tab Switcher */}
+            <div className="flex items-center gap-1 p-1 bg-slate-100 rounded-lg mb-5 w-fit border border-slate-200">
+                <button
+                    onClick={() => setActiveTab('records')}
+                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
+                        activeTab === 'records'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                >
+                    <Layers className="w-3.5 h-3.5" />
+                    Bulk Records
+                </button>
+                <button
+                    onClick={() => setActiveTab('create')}
+                    className={`px-3.5 py-1.5 rounded-md text-xs font-semibold flex items-center gap-2 transition-all ${
+                        activeTab === 'create'
+                            ? 'bg-white text-indigo-700 shadow-sm'
+                            : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                >
+                    <Plus className="w-3.5 h-3.5" />
+                    New Bulk Rollout
+                </button>
+            </div>
+
+            {activeTab === 'records' ? (
+                <BulkRolloutList onCreateNewClick={() => setActiveTab('create')} />
+            ) : (
+                <>
 
             {/* Completion Modal / Banner */}
             {completedResult && (
@@ -904,6 +952,16 @@ export default function BulkFMPreinstallPage() {
 
                             {/* Action buttons */}
                             <div className="mt-4 flex items-center gap-3 flex-wrap">
+                                <Button
+                                    size="sm"
+                                    onClick={() => {
+                                        setCompletedResult(null);
+                                        setActiveTab('records');
+                                    }}
+                                    className="bg-indigo-700 hover:bg-indigo-800 text-white"
+                                >
+                                    View Bulk Rollouts
+                                </Button>
                                 <Button
                                     size="sm"
                                     onClick={() => router.push('/fm-preinstall')}
@@ -1857,6 +1915,8 @@ export default function BulkFMPreinstallPage() {
                         />
                     </div>
                 </div>
+            )}
+                </>
             )}
         </AdminShell>
     );

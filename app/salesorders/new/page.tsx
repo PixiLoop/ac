@@ -77,6 +77,7 @@ export default function NewSalesOrderPage() {
         update('gstExempt', pricing.gstExempt);
         update('fmPriceLevel', pricing.fmPriceLevel);
         update('fmPriceFactor', pricing.fmPriceFactor);
+        update('customPrices', pricing.customPrices);
       });
 
       //Shipping
@@ -218,6 +219,7 @@ export default function NewSalesOrderPage() {
         update('gstExempt', pricing.gstExempt);
         update('fmPriceLevel', pricing.fmPriceLevel);
         update('fmPriceFactor', pricing.fmPriceFactor);
+        update('customPrices', pricing.customPrices);
 
         const allowed = await accountCheck(data?.id, data?.status, 'sales-order');
         if (cancelled) return;

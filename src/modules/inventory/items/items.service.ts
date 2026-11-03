@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
-
+import { Injectable, NotFoundException, ConflictException, BadRequestException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { CreateItemDto } from './dto/create-item.dto';
 import { UpdateItemDto } from './dto/update-item.dto';
+import { customPriceStore } from '../../../common/custom-prices-store';
 
 export interface ItemListQuery {
   search?: string;
@@ -94,7 +95,28 @@ export class ItemsService {
     if (!item) throw new NotFoundException('Item not found');
 
     const stock = await this.stockPosition(id, Number(item.onHand ?? 0));
-    return { ...item, stock };
+
+    let customPrices: any[] = [];
+    try {
+      customPrices = await (this.prisma as any).customerProductPrice.findMany({
+        where: { productId: id },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              customerNumber: true,
+              name: true,
+              priceLevel: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch {
+      customPrices = customPriceStore.getByProduct(id);
+    }
+
+    return { ...item, stock, customPrices: customPrices || [] };
   }
 
   /** On hand, committed demand, purchase-order remainder, and what is left to sell. */
@@ -554,5 +576,97 @@ export class ItemsService {
       where: { id },
       data: { deletedAt: new Date() },
     });
+  }
+
+  /* =========================
+     CUSTOMER CUSTOM PRICES
+  ========================= */
+
+  async getCustomPrices(productId: string) {
+    try {
+      const records = await (this.prisma as any).customerProductPrice.findMany({
+        where: { productId },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              customerNumber: true,
+              name: true,
+              priceLevel: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return records;
+    } catch {
+      return customPriceStore.getByProduct(productId);
+    }
+  }
+
+  async upsertCustomPrice(productId: string, body: { customerId: string; customPrice: number; notes?: string }) {
+    if (!body.customerId) {
+      throw new BadRequestException('Customer is required');
+    }
+    const priceNum = Number(body.customPrice);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      throw new BadRequestException('Custom price must be a valid non-negative number');
+    }
+
+    try {
+      const customer = await this.prisma.customer.findUnique({
+        where: { id: body.customerId },
+        select: { id: true, customerNumber: true, name: true, priceLevel: true },
+      });
+
+      const saved = await (this.prisma as any).customerProductPrice.upsert({
+        where: {
+          customerId_productId: {
+            customerId: body.customerId,
+            productId,
+          },
+        },
+        create: {
+          customerId: body.customerId,
+          productId,
+          customPrice: new Prisma.Decimal(priceNum),
+          notes: body.notes || '',
+        },
+        update: {
+          customPrice: new Prisma.Decimal(priceNum),
+          notes: body.notes || '',
+        },
+        include: {
+          customer: {
+            select: {
+              id: true,
+              customerNumber: true,
+              name: true,
+              priceLevel: true,
+            },
+          },
+        },
+      });
+
+      customPriceStore.upsert(body.customerId, productId, priceNum, body.notes, customer, undefined, saved.id);
+      return saved;
+    } catch {
+      let customerMeta: any = undefined;
+      try {
+        const cus = await this.prisma.customer.findUnique({ where: { id: body.customerId } });
+        if (cus) customerMeta = { id: cus.id, customerNumber: cus.customerNumber, name: cus.name, priceLevel: cus.priceLevel };
+      } catch {}
+      return customPriceStore.upsert(body.customerId, productId, priceNum, body.notes, customerMeta, undefined);
+    }
+  }
+
+  async deleteCustomPrice(productId: string, priceId: string) {
+    try {
+      await (this.prisma as any).customerProductPrice.delete({
+        where: { id: priceId },
+      });
+    } catch {}
+    customPriceStore.delete(priceId);
+    return { success: true };
   }
 }

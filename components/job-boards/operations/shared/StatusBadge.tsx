@@ -89,3 +89,5 @@ export const TechnicianStatusBadge: React.FC<{ status: TechnicianStatus; classNa
     </span>
   );
 };
+
+export { JobSourceBadge, getJobSource, type JobSource } from './JobSourceBadge';

@@ -259,6 +259,7 @@ export default function EditSalesOrderPage() {
           update('gstExempt', pricing.gstExempt);
           update('fmPriceLevel', pricing.fmPriceLevel);
           update('fmPriceFactor', pricing.fmPriceFactor);
+          update('customPrices', pricing.customPrices);
           await accountCheck(customer?.id, customer?.status, 'sales-order');
         } catch { }
       }
@@ -515,6 +516,7 @@ export default function EditSalesOrderPage() {
                     update('gstExempt', pricing.gstExempt);
                     update('fmPriceLevel', pricing.fmPriceLevel);
                     update('fmPriceFactor', pricing.fmPriceFactor);
+                    update('customPrices', pricing.customPrices);
                     const addresses = data.addresses || [];
                     const shippingAddr = addresses.find((a: any) => a.type === 'SHIPPING' && a.isDefault) || addresses.find((a: any) => a.type === 'SHIPPING');
                     if (shippingAddr) {

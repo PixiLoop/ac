@@ -31,12 +31,55 @@ export function isFmPricedProduct(product: any): boolean {
     || Boolean(product?.fieldServiceType);
 }
 
-export function pricedList(product: any, form: any): number {
+export interface CustomPriceMatch {
+  customPrice: number;
+  notes?: string;
+  source: 'CUSTOMER_SPECIFIC';
+}
+
+export function resolveCustomerPrice(productId?: string | null, form?: any): CustomPriceMatch | null {
+  if (!productId || !form) return null;
+  const list: any[] = form.customPrices || form.customerCustomPrices || form.customer?.customPrices || [];
+  if (!Array.isArray(list) || list.length === 0) return null;
+
+  const found = list.find((item: any) => {
+    if (!item) return false;
+    if (item.productId && item.productId === productId) return true;
+    if (item.product?.id && item.product.id === productId) return true;
+    return false;
+  });
+
+  if (found && found.customPrice != null && found.customPrice !== '') {
+    const val = Number(found.customPrice);
+    if (Number.isFinite(val) && val >= 0) {
+      return {
+        customPrice: val,
+        notes: found.notes || undefined,
+        source: 'CUSTOMER_SPECIFIC',
+      };
+    }
+  }
+  return null;
+}
+
+export function isCustomerSpecificPrice(productId: string | null | undefined, form: any): boolean {
+  return resolveCustomerPrice(productId, form) != null;
+}
+
+export function defaultPricedList(product: any, form: any): number {
   const useFm = isFmPricedProduct(product) && form?.fmPriceLevel;
   const level = useFm ? form.fmPriceLevel : form?.priceLevel;
   const factorRaw = Number(useFm ? form?.fmPriceFactor : form?.salesFactor);
   const multiplier = Number.isFinite(factorRaw) && factorRaw !== 0 ? factorRaw / 1000 : 1;
   return catalogSlot(product, level) * multiplier;
+}
+
+export function pricedList(product: any, form: any): number {
+  const custom = resolveCustomerPrice(product?.id || product?.productId, form);
+  if (custom) {
+    return custom.customPrice;
+  }
+  return defaultPricedList(product, form);
 }
 
 export function netUnit(listPrice: number, discountPct: number): number {
@@ -67,6 +110,7 @@ export function accountPricingFields(customer: any) {
     fmPriceFactor: customer?.fmCustomer?.priceFactor ?? '',
     priceLevel: customer?.priceLevel || '',
     salesFactor: customer?.salesFactor ?? '',
+    customPrices: customer?.customPrices || [],
   };
 }
 

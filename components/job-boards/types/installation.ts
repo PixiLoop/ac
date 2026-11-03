@@ -162,6 +162,8 @@ export interface InstallationJob {
   canInvoice: boolean;
   invoiceId?: string;
   salesOrderId?: string;
+  jobSource?: 'Whiteboard' | 'FM Pre-Installation' | 'Sales Order';
+  sourceType?: string;
 }
 
 export interface Technician {

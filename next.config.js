@@ -9,18 +9,8 @@ dotenv.config({
   path: path.resolve(__dirname, '.env'),
 });
 
-const withPWA = require('next-pwa')({
-  dest: 'public',
-  register: true,
-  skipWaiting: true,
-  /**
-   * Disable PWA in development (recommended)
-   */
-  disable: process.env.NODE_ENV === 'development',
-});
-
 /** @type {import('next').NextConfig} */
-module.exports = withPWA({
+const nextConfig = {
   output: 'standalone',
   reactStrictMode: true,
 
@@ -41,4 +31,6 @@ module.exports = withPWA({
       },
     ];
   },
-});
+};
+
+module.exports = nextConfig;

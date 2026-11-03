@@ -349,9 +349,16 @@ export default function FMPreinstallPage() {
               <Button
                 variant="outline"
                 className="bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100 flex items-center gap-1.5 font-medium"
-                onClick={() => router.push('/fm-preinstall/bulk')}
+                onClick={() => router.push('/fm-preinstall/bulk?tab=records')}
               >
                 <Layers className="w-4 h-4 text-indigo-600" />
+                Bulk Rollouts
+              </Button>
+              <Button
+                variant="outline"
+                className="border-slate-300 text-slate-700 hover:bg-slate-50 flex items-center gap-1"
+                onClick={() => router.push('/fm-preinstall/bulk?tab=create')}
+              >
                 Bulk New
               </Button>
               <Button onClick={() => router.push('/fm-preinstall/new')}>New Preinstall</Button>
@@ -375,6 +382,23 @@ export default function FMPreinstallPage() {
             key: 'preinstallNo',
             title: 'Record',
             sortable: true,
+            render: r => (
+              <div className="flex items-center gap-1.5">
+                <span className="font-mono font-semibold">{r.preinstallNo}</span>
+                {r.installJobId?.startsWith('INSTALL-BULK') && (
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      router.push(`/fm-preinstall/bulk/${r.installJobId}`);
+                    }}
+                    className="cursor-pointer px-1 py-0.2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded text-[9px] font-semibold"
+                    title="View Bulk Batch"
+                  >
+                    Bulk
+                  </span>
+                )}
+              </div>
+            ),
           },
           {
             key: 'createdAt',

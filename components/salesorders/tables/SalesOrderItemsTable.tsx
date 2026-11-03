@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { X } from 'lucide-react';
+import { X, Tag } from 'lucide-react';
 import { Input } from '../../../components/ui/input';
 import { Button } from '../../../components/ui/button';
 import { SearchSelect } from '../../../components/ui/SearchSelect';
@@ -11,12 +11,15 @@ import { useToast } from '../../ui/toast';
 import { useAuth } from '../../../providers/auth-provider';
 import {
   clampPriceAdjustment,
+  defaultPricedList,
+  isCustomerSpecificPrice,
   isDoNotOrder,
   isFmPricedProduct,
   marginRatio,
   marginTone,
   netUnit,
   pricedList,
+  resolveCustomerPrice,
 } from '../../../lib/line-pricing';
 import { availableStock } from '../../../lib/available-stock';
 
@@ -223,22 +226,28 @@ export function SalesOrderItemsTable({
   }, [form?._uninvoicedByProduct, soOutstanding, setItems]);
 
   useEffect(() => {
-    if (!form?.priceLevel && !form?.fmPriceLevel) return;
+    if (!form?.priceLevel && !form?.fmPriceLevel && !form?.customPrices) return;
 
     setItems(prev =>
       prev.map(item => {
         if (!item.itemId || item.priceOverridden || item.replacedNote) return item;
         if (item.retailPrice == null && item.tradePrice == null && item.agentPrice == null) return item;
         const listPrice = pricedList(item, form);
+        const defPrice = defaultPricedList(item, form);
+        const customMatch = resolveCustomerPrice(item.itemId, form);
+        const isCust = Boolean(customMatch);
         const discountPct = Number(item.discountPct) || 0;
         return {
           ...item,
           listPrice,
+          defaultPrice: defPrice,
+          isCustomerPrice: isCust,
+          customPriceNotes: customMatch?.notes,
           unitPrice: netUnit(listPrice, discountPct),
         };
       })
     );
-  }, [form?.priceLevel, form?.salesFactor, form?.fmPriceLevel, form?.fmPriceFactor]);
+  }, [form?.priceLevel, form?.salesFactor, form?.fmPriceLevel, form?.fmPriceFactor, form?.customPrices]);
 
   return (
     <div className="space-y-4 overflow-visible">
@@ -310,7 +319,11 @@ export function SalesOrderItemsTable({
 
                     const makeLine = (product: any, qtyValue: number, extra: any = {}) => {
                       const onHand = Number(product.onHand ?? 0);
-                      const listPrice = pricedList({ ...product, isFmPriced: isFmPricedProduct(product) }, form);
+                      const isFm = isFmPricedProduct(product);
+                      const defPrice = defaultPricedList({ ...product, isFmPriced: isFm }, form);
+                      const listPrice = pricedList({ ...product, isFmPriced: isFm }, form);
+                      const customMatch = resolveCustomerPrice(product.id, form);
+                      const isCust = Boolean(customMatch);
                       const avail = useAvailableStock ? availableStock(product) : onHand;
                       const notInvoicedQty = fromSalesOrder
                         ? Number(soBackOrderRef.current[product.id] ?? qtyValue)
@@ -337,6 +350,9 @@ export function SalesOrderItemsTable({
                         fieldServiceType: product.fieldServiceType,
                         status: product.status,
                         listPrice,
+                        defaultPrice: defPrice,
+                        isCustomerPrice: isCust,
+                        customPriceNotes: customMatch?.notes,
                         unitPrice: listPrice,
                         landedCost: Number(product.landedCost ?? 0),
                         qty: qtyValue,
@@ -600,9 +616,38 @@ export function SalesOrderItemsTable({
                 )}
 
               </div>
-
-
             </div>
+
+            {item.itemId && (
+              <div className="flex flex-wrap items-center gap-2 px-2 pb-1.5 text-xs">
+                {item.priceOverridden ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-800 border border-amber-200 font-medium">
+                    <span>Manual Price Override: <strong>${Number(item.unitPrice).toFixed(2)}</strong></span>
+                    <span className="text-slate-500 font-normal">
+                      (Default: ${(item.defaultPrice != null ? Number(item.defaultPrice) : defaultPricedList(item, form)).toFixed(2)})
+                    </span>
+                  </span>
+                ) : (item.isCustomerPrice || isCustomerSpecificPrice(item.itemId, form)) ? (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-300 font-medium shadow-2xs">
+                    <Tag className="h-3 w-3 text-emerald-600" />
+                    <span>Customer-Specific Price: <strong>${Number(item.listPrice ?? item.unitPrice).toFixed(2)}</strong></span>
+                    <span className="text-emerald-700/80 font-normal">
+                      (Default: ${(item.defaultPrice != null ? Number(item.defaultPrice) : defaultPricedList(item, form)).toFixed(2)})
+                    </span>
+                    {item.customPriceNotes && (
+                      <span className="text-slate-500 italic pl-1">"{item.customPriceNotes}"</span>
+                    )}
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 font-medium">
+                    <span>Default Price: ${Number(item.listPrice ?? item.unitPrice).toFixed(2)}</span>
+                    <span className="text-slate-400 font-normal">
+                      ({form?.priceLevel || 'RETAIL'}{form?.salesFactor ? ` · Factor: ${form.salesFactor}` : ''})
+                    </span>
+                  </span>
+                )}
+              </div>
+            )}
           </div>
         );
       })}

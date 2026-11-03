@@ -118,6 +118,7 @@ export default function Page() {
 
         await createInstallationJob({
           jobNumber: `JOB-${preinstallNo}`,
+          assignedTo: 'technician',
           isWhiteboard: false,
           jobType: 'FM Preinstall',
           customerId: form.customerId,

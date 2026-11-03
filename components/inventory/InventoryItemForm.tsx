@@ -18,6 +18,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
   ItemStatusBadge,
 } from "./shared-ui";
+import { ProductCustomerPricingSection } from "./ProductCustomerPricingSection";
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 type Props = { itemId?: string };
@@ -995,6 +996,17 @@ export function InventoryItemForm({ itemId }: Props) {
             </Table>
           </div>
         </div>
+
+        {/* ── Customer-Specific Pricing (edit mode only) ── */}
+        {isEdit && (
+          <ProductCustomerPricingSection
+            productId={itemId!}
+            retailPrice={retailPrice}
+            tradePrice={tradePrice}
+            partnerPrice={salesPartnerPrice}
+            agentPrice={agentPrice}
+          />
+        )}
 
         {/* ── Warehouse Locations (edit mode only) ── */}
         {isEdit && <ProductLocationsSection productId={itemId!} />}

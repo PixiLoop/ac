@@ -10,6 +10,7 @@ import { UpdateCustomerPaymentDto } from './dto/update-customer-payment.dto'
 import { UpdateCustomerDepotsDto, UpdateCustomerDispatchesDto } from './dto/update-customer-dispatches.dto'
 import { UpdateCustomerAccountDto } from './dto/update-customer-account.dto'
 import { Prisma, CustomerStatus, AddressType } from '@prisma/client';
+import { customPriceStore } from '../../common/custom-prices-store';
 
 
 const PAYMENT_FIELDS = [
@@ -144,7 +145,35 @@ export class CustomerService {
     })
     console.log("customer==", customer)
     if (!customer) throw new NotFoundException('Customer not found')
-    return customer
+
+    let customPrices: any[] = [];
+    try {
+      customPrices = await (this.prisma as any).customerProductPrice.findMany({
+        where: { customerId: id },
+        include: {
+          product: {
+            select: {
+              id: true,
+              productCode: true,
+              name: true,
+              retailPrice: true,
+              tradePrice: true,
+              salesPartnerPrice: true,
+              agentPrice: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    } catch {
+      customPrices = customPriceStore.getByCustomer(id);
+    }
+
+    return {
+      ...customer,
+      customPrices: customPrices || [],
+    };
   }
 
   /* =========================
@@ -763,4 +792,186 @@ export class CustomerService {
     });
   }
 
+  /* =========================
+     CUSTOMER CUSTOM PRICES
+  ========================= */
+
+  async getCustomPrices(customerId: string) {
+    try {
+      const records = await (this.prisma as any).customerProductPrice.findMany({
+        where: { customerId },
+        include: {
+          product: {
+            select: {
+              id: true,
+              productCode: true,
+              name: true,
+              retailPrice: true,
+              tradePrice: true,
+              salesPartnerPrice: true,
+              agentPrice: true,
+              status: true,
+            },
+          },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      return records;
+    } catch {
+      return customPriceStore.getByCustomer(customerId);
+    }
+  }
+
+  async upsertCustomPrice(customerId: string, body: { productId: string; customPrice: number; notes?: string }) {
+    if (!body.productId) {
+      throw new BadRequestException('Product is required');
+    }
+    const priceNum = Number(body.customPrice);
+    if (!Number.isFinite(priceNum) || priceNum < 0) {
+      throw new BadRequestException('Custom price must be a valid non-negative number');
+    }
+
+    try {
+      const product = await this.prisma.product.findUnique({
+        where: { id: body.productId },
+        select: {
+          id: true,
+          productCode: true,
+          name: true,
+          retailPrice: true,
+          tradePrice: true,
+          salesPartnerPrice: true,
+          agentPrice: true,
+          status: true,
+        },
+      });
+
+      const saved = await (this.prisma as any).customerProductPrice.upsert({
+        where: {
+          customerId_productId: {
+            customerId,
+            productId: body.productId,
+          },
+        },
+        create: {
+          customerId,
+          productId: body.productId,
+          customPrice: new Prisma.Decimal(priceNum),
+          notes: body.notes || '',
+        },
+        update: {
+          customPrice: new Prisma.Decimal(priceNum),
+          notes: body.notes || '',
+        },
+        include: {
+          product: {
+            select: {
+              id: true,
+              productCode: true,
+              name: true,
+              retailPrice: true,
+              tradePrice: true,
+              salesPartnerPrice: true,
+              agentPrice: true,
+              status: true,
+            },
+          },
+        },
+      });
+
+      customPriceStore.upsert(customerId, body.productId, priceNum, body.notes, undefined, product, saved.id);
+      return saved;
+    } catch {
+      let productMeta: any = undefined;
+      try {
+        const prod = await this.prisma.product.findUnique({ where: { id: body.productId } });
+        if (prod) {
+          productMeta = {
+            id: prod.id,
+            productCode: prod.productCode,
+            name: prod.name,
+            retailPrice: prod.retailPrice,
+            tradePrice: prod.tradePrice,
+            salesPartnerPrice: prod.salesPartnerPrice,
+            agentPrice: prod.agentPrice,
+          };
+        }
+      } catch {}
+      return customPriceStore.upsert(customerId, body.productId, priceNum, body.notes, undefined, productMeta);
+    }
+  }
+
+  async updateCustomPrices(
+    customerId: string,
+    body: { customPrices: Array<{ id?: string; productId: string; customPrice: number; notes?: string }> },
+  ) {
+    const list = body.customPrices || [];
+    for (const item of list) {
+      if (!item.productId) throw new BadRequestException('Product ID is required for each custom price');
+      const num = Number(item.customPrice);
+      if (!Number.isFinite(num) || num < 0) {
+        throw new BadRequestException('Custom price must be a valid non-negative number');
+      }
+    }
+
+    try {
+      const existing = await (this.prisma as any).customerProductPrice.findMany({
+        where: { customerId },
+      });
+      const incomingProductIds = list.map(i => i.productId);
+      const toDelete = existing.filter((e: any) => !incomingProductIds.includes(e.productId));
+
+      if (toDelete.length > 0) {
+        await (this.prisma as any).customerProductPrice.deleteMany({
+          where: { id: { in: toDelete.map((d: any) => d.id) } },
+        });
+      }
+
+      for (const item of list) {
+        await (this.prisma as any).customerProductPrice.upsert({
+          where: {
+            customerId_productId: {
+              customerId,
+              productId: item.productId,
+            },
+          },
+          create: {
+            customerId,
+            productId: item.productId,
+            customPrice: new Prisma.Decimal(Number(item.customPrice)),
+            notes: item.notes || '',
+          },
+          update: {
+            customPrice: new Prisma.Decimal(Number(item.customPrice)),
+            notes: item.notes || '',
+          },
+        });
+        customPriceStore.upsert(customerId, item.productId, Number(item.customPrice), item.notes);
+      }
+
+      return this.getCustomPrices(customerId);
+    } catch {
+      const currentStored = customPriceStore.getByCustomer(customerId);
+      const incomingProductIds = list.map(i => i.productId);
+      for (const item of currentStored) {
+        if (!incomingProductIds.includes(item.productId)) {
+          customPriceStore.delete(item.id);
+        }
+      }
+      for (const item of list) {
+        customPriceStore.upsert(customerId, item.productId, Number(item.customPrice), item.notes);
+      }
+      return customPriceStore.getByCustomer(customerId);
+    }
+  }
+
+  async deleteCustomPrice(customerId: string, priceId: string) {
+    try {
+      await (this.prisma as any).customerProductPrice.delete({
+        where: { id: priceId },
+      });
+    } catch {}
+    customPriceStore.delete(priceId);
+    return { success: true };
+  }
 }

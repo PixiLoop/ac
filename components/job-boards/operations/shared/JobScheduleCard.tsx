@@ -3,7 +3,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { InstallationJob } from '../../types/installation';
-import { ScheduleBadge } from './StatusBadge';
+import { ScheduleBadge, JobSourceBadge, getJobSource } from './StatusBadge';
 import { ChecklistProgress } from './ChecklistProgress';
 import { AuthenticatedPhoto } from './AuthenticatedPhoto';
 import {
@@ -290,6 +290,7 @@ export const JobScheduleCard: React.FC<JobScheduleCardProps> = ({
                   {job.id}
                 </span>
                 <ScheduleBadge isScheduled={job.isScheduled} className="shrink-0 !text-[9px] !px-1.5 !py-0" />
+                <JobSourceBadge source={getJobSource(job)} size="xs" />
               </div>
               <h4 className="text-[11px] font-semibold text-slate-800 truncate mt-0.5 leading-snug">
                 {job.customerName}

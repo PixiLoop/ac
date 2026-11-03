@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { InstallationJob, InstallationStatus, HardwareModel } from '../types/installation';
-import { StatusBadge, ScheduleBadge } from './shared/StatusBadge';
+import { StatusBadge, ScheduleBadge, JobSourceBadge, getJobSource, JobSource } from './shared/StatusBadge';
 import { ChecklistProgress } from './shared/ChecklistProgress';
 import { JobScheduleCard } from './shared/JobScheduleCard';
 import { ScheduleJobDialog } from './ScheduleJobDialog';
@@ -20,6 +20,10 @@ import {
   CalendarCheck,
   ChevronRight,
   X,
+  Layers,
+  Layout,
+  Cpu,
+  ShoppingBag,
 } from 'lucide-react';
 import { useOperations } from '../../../providers/OperationsContext';
 import { useRouter } from 'next/navigation';
@@ -34,10 +38,12 @@ const BOARD_STATUSES: InstallationStatus[] = [
   'Completed',
 ];
 
+type SourceFilter = 'All' | 'Whiteboard' | 'FM Pre-Installation' | 'Sales Order';
+
 type SearchSuggestion = {
   value: string;
   label: string;
-  kind: 'Job' | 'Customer' | 'Technician' | 'Rego' | 'Fleet';
+  kind: 'Job' | 'Customer' | 'Technician' | 'Rego' | 'Fleet' | 'Source';
   jobId?: string;
 };
 
@@ -66,6 +72,7 @@ export const InstallationList: React.FC = () => {
     changeJobStatus,
   } = useOperations();
 
+  const [sourceFilter, setSourceFilter] = useState<SourceFilter>('All');
   const [schedulingJob, setSchedulingJob] = useState<InstallationJob | null>(null);
   const [statusChangingJob, setStatusChangingJob] = useState<InstallationJob | null>(null);
   const [showCreateModal, setShowCreateModal] = useState<boolean>(false);
@@ -73,6 +80,22 @@ export const InstallationList: React.FC = () => {
   const [highlightIdx, setHighlightIdx] = useState(0);
   const searchWrapRef = useRef<HTMLDivElement | null>(null);
   const dropInFlightRef = useRef<string | null>(null);
+
+  const sourceCounts = useMemo((): Record<SourceFilter, number> => {
+    const counts: Record<SourceFilter, number> = {
+      'All': jobs.length,
+      'Whiteboard': 0,
+      'FM Pre-Installation': 0,
+      'Sales Order': 0,
+    };
+    for (const job of jobs) {
+      const src = getJobSource(job);
+      if (src in counts) {
+        counts[src]++;
+      }
+    }
+    return counts;
+  }, [jobs]);
 
   const resolveTechName = (job: InstallationJob) => {
     const fromJob =
@@ -94,6 +117,7 @@ export const InstallationList: React.FC = () => {
     const q = qRaw.trim().toLowerCase();
     if (!q) return true;
     const techName = resolveTechName(job).toLowerCase();
+    const sourceName = getJobSource(job).toLowerCase();
     const haystacks = [
       job.id,
       job.jobNumber,
@@ -105,6 +129,8 @@ export const InstallationList: React.FC = () => {
       job.vehicle?.makeModel,
       techName,
       job.technicianId,
+      sourceName,
+      job.notes,
     ]
       .filter(Boolean)
       .map((s) => String(s).toLowerCase());
@@ -215,6 +241,12 @@ export const InstallationList: React.FC = () => {
 
   // Filtering
   const filteredJobs = jobs.filter((job) => {
+    // Source filter
+    if (sourceFilter !== 'All') {
+      const src = getJobSource(job);
+      if (src !== sourceFilter) return false;
+    }
+
     // Status filter
     if (statusFilter !== 'All' && job.status !== statusFilter) return false;
 
@@ -361,7 +393,11 @@ export const InstallationList: React.FC = () => {
       })),
       isScheduled: false,
       status: 'Not Actioned',
-      notes: 'Freshly raised work order.',
+      notes: 'Freshly raised work order. [Whiteboard Job]',
+      isWhiteboard: true,
+      jobType: 'Whiteboard',
+      jobSource: 'Whiteboard',
+      sourceType: 'WHITEBOARD',
     });
 
     setShowCreateModal(false);
@@ -457,10 +493,119 @@ export const InstallationList: React.FC = () => {
         </div>
       </div>
 
+      {/* Job Source Quick Filter Pills Bar */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-2 shadow-xs overflow-x-auto">
+        <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+          <div className="flex items-center gap-1.5 flex-wrap min-w-max">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 mr-1 pl-1">
+              <Filter className="w-3.5 h-3.5 text-slate-400" /> Source:
+            </span>
+
+            {/* All Jobs */}
+            <button
+              onClick={() => setSourceFilter('All')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+                sourceFilter === 'All'
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-50 text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>All Jobs</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  sourceFilter === 'All'
+                    ? 'bg-slate-700 text-white'
+                    : 'bg-slate-200 text-slate-700'
+                }`}
+              >
+                {sourceCounts['All']}
+              </span>
+            </button>
+
+            {/* Whiteboard Jobs */}
+            <button
+              onClick={() => setSourceFilter('Whiteboard')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+                sourceFilter === 'Whiteboard'
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : 'bg-purple-50/70 text-purple-700 hover:bg-purple-100/70 border border-purple-200/80'
+              }`}
+            >
+              <Layout className="w-3.5 h-3.5 text-purple-500" />
+              <span>Whiteboard Jobs</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  sourceFilter === 'Whiteboard'
+                    ? 'bg-purple-800 text-white'
+                    : 'bg-purple-100 text-purple-800'
+                }`}
+              >
+                {sourceCounts['Whiteboard']}
+              </span>
+            </button>
+
+            {/* FM Pre-Installation Jobs */}
+            <button
+              onClick={() => setSourceFilter('FM Pre-Installation')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+                sourceFilter === 'FM Pre-Installation'
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'bg-blue-50/70 text-blue-700 hover:bg-blue-100/70 border border-blue-200/80'
+              }`}
+            >
+              <Cpu className="w-3.5 h-3.5 text-blue-500" />
+              <span>FM Pre-Installation Jobs</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  sourceFilter === 'FM Pre-Installation'
+                    ? 'bg-blue-800 text-white'
+                    : 'bg-blue-100 text-blue-800'
+                }`}
+              >
+                {sourceCounts['FM Pre-Installation']}
+              </span>
+            </button>
+
+            {/* Sales Order Jobs */}
+            <button
+              onClick={() => setSourceFilter('Sales Order')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-2 ${
+                sourceFilter === 'Sales Order'
+                  ? 'bg-emerald-600 text-white shadow-xs'
+                  : 'bg-emerald-50/70 text-emerald-700 hover:bg-emerald-100/70 border border-emerald-200/80'
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5 text-emerald-500" />
+              <span>Sales Order Jobs</span>
+              <span
+                className={`text-[11px] px-1.5 py-0.2 rounded-full font-bold ${
+                  sourceFilter === 'Sales Order'
+                    ? 'bg-emerald-800 text-white'
+                    : 'bg-emerald-100 text-emerald-800'
+                }`}
+              >
+                {sourceCounts['Sales Order']}
+              </span>
+            </button>
+          </div>
+
+          {sourceFilter !== 'All' && (
+            <button
+              onClick={() => setSourceFilter('All')}
+              className="text-xs text-slate-500 hover:text-slate-800 flex items-center gap-1 font-medium transition-colors px-2 py-1"
+            >
+              <X className="w-3.5 h-3.5" />
+              Reset Source Filter
+            </button>
+          )}
+        </div>
+      </div>
+
       {/* Filter and Search Bar */}
-      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs grid grid-cols-1 md:grid-cols-4 gap-3">
+      <div className="bg-white rounded-2xl border border-slate-200/90 p-4 shadow-xs grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
         {/* Search + autocomplete */}
-        <div className="relative md:col-span-2" ref={searchWrapRef}>
+        <div className="relative sm:col-span-2 lg:col-span-2" ref={searchWrapRef}>
           <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3 pointer-events-none z-10" />
           <input
             type="text"
@@ -532,6 +677,20 @@ export const InstallationList: React.FC = () => {
           )}
         </div>
 
+        {/* Source Filter Dropdown */}
+        <div>
+          <select
+            value={sourceFilter}
+            onChange={(e) => setSourceFilter(e.target.value as SourceFilter)}
+            className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+          >
+            <option value="All">Source: All Jobs ({sourceCounts['All']})</option>
+            <option value="Whiteboard">Source: Whiteboard Jobs ({sourceCounts['Whiteboard']})</option>
+            <option value="FM Pre-Installation">Source: FM Pre-Installation Jobs ({sourceCounts['FM Pre-Installation']})</option>
+            <option value="Sales Order">Source: Sales Order Jobs ({sourceCounts['Sales Order']})</option>
+          </select>
+        </div>
+
         {/* Schedule Status Filter (Requirement #34) */}
         <div>
           <select
@@ -572,6 +731,7 @@ export const InstallationList: React.FC = () => {
                 <tr>
                   <th className="py-3.5 px-4">Job / Vehicle</th>
                   <th className="py-3.5 px-4">Customer & Depot</th>
+                  <th className="py-3.5 px-4">Source</th>
                   <th className="py-3.5 px-4">Assigned To</th>
                   <th className="py-3.5 px-4">Installer</th>
                   <th className="py-3.5 px-4">Schedule Date & Time</th>
@@ -583,7 +743,7 @@ export const InstallationList: React.FC = () => {
               <tbody className="divide-y divide-slate-100">
                 {filteredJobs.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="py-12 text-center text-slate-400">
+                    <td colSpan={9} className="py-12 text-center text-slate-400">
                       No installation jobs match your current filters.
                     </td>
                   </tr>
@@ -622,6 +782,11 @@ export const InstallationList: React.FC = () => {
                             <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
                             {job.location}
                           </p>
+                        </td>
+
+                        {/* Job Source */}
+                        <td className="py-3.5 px-4 whitespace-nowrap">
+                          <JobSourceBadge source={getJobSource(job)} />
                         </td>
 
                         {/* Assigned to */}

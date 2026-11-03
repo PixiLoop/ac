@@ -293,13 +293,21 @@ export class InstallationsService {
     let lastError: any;
     for (const include of attempts) {
       try {
+        const preinstalls = await (this.prisma as any).fMPreinstall.findMany({
+          where: { installJobId: { not: null } },
+          select: { installJobId: true },
+        }).catch(() => []);
+        const preinstallJobIds = new Set<string>(
+          preinstalls.map((p: any) => String(p.installJobId || '')).filter(Boolean),
+        );
+
         const jobs = await (this.prisma as any).installationJob.findMany({
           where,
           include,
           orderBy: { createdAt: 'desc' },
         });
         const nameById = await this.technicianNameMap(jobs);
-        const mapped = jobs.map((j: any) => this.mapJobToFrontend(j, nameById));
+        const mapped = jobs.map((j: any) => this.mapJobToFrontend(j, nameById, preinstallJobIds));
         return { data: mapped, total: mapped.length };
       } catch (err: any) {
         lastError = err;
@@ -434,7 +442,12 @@ export class InstallationsService {
     }
 
     const nameById = await this.technicianNameMap([job]);
-    return this.mapJobToFrontend(job, nameById);
+    const preinstall = await (this.prisma as any).fMPreinstall.findFirst({
+      where: { installJobId: job.id },
+      select: { installJobId: true },
+    }).catch(() => null);
+    const preinstallJobIds = preinstall?.installJobId ? new Set([preinstall.installJobId]) : new Set<string>();
+    return this.mapJobToFrontend(job, nameById, preinstallJobIds);
   }
 
   async createJob(dto: any) {
@@ -1124,12 +1137,30 @@ export class InstallationsService {
     return { success: true, job };
   }
 
-  private mapJobToFrontend(j: any, nameById?: Map<string, string>) {
+  private mapJobToFrontend(j: any, nameById?: Map<string, string>, preinstallJobIds?: Set<string>) {
     const techId = j.technicianId || j.userId || undefined;
     const technicianName =
       this.userDisplayName(j.user) ||
       (techId ? nameById?.get(techId) : undefined) ||
       undefined;
+
+    const isPreinstall =
+      Boolean(preinstallJobIds?.has(j.id)) ||
+      Boolean(j.jobNumber && (j.jobNumber.startsWith('JOB-PI-') || j.jobNumber.startsWith('JOB-BULK-'))) ||
+      Boolean(j.id && j.id.startsWith('INSTALL-BULK')) ||
+      Boolean(j.notes && /fm preinstall|preinstall|bulk rollout/i.test(j.notes));
+
+    const isSalesOrder =
+      Boolean(j.salesOrderId) ||
+      Boolean(j.jobNumber && (j.jobNumber.startsWith('JOB-SO-') || j.jobNumber.startsWith('SO-'))) ||
+      Boolean(j.id && j.id.startsWith('SO-')) ||
+      Boolean(j.notes && /sales order|so-\d+/i.test(j.notes));
+
+    const jobSource: 'Whiteboard' | 'FM Pre-Installation' | 'Sales Order' = isSalesOrder
+      ? 'Sales Order'
+      : isPreinstall
+        ? 'FM Pre-Installation'
+        : 'Whiteboard';
 
     return {
       id: j.id,
@@ -1221,6 +1252,11 @@ export class InstallationsService {
       createdAt: j.createdAt ? new Date(j.createdAt).toISOString() : new Date().toISOString(),
       canInvoice: j.canInvoice,
       invoiceId: j.invoiceId,
+      salesOrderId: j.salesOrderId || undefined,
+      isWhiteboard: jobSource === 'Whiteboard',
+      jobType: jobSource === 'FM Pre-Installation' ? 'FM Preinstall' : jobSource,
+      sourceType: jobSource === 'Sales Order' ? 'SALES_ORDER' : jobSource === 'FM Pre-Installation' ? 'FM_PREINSTALL' : 'WHITEBOARD',
+      jobSource,
     };
   }
 

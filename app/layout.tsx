@@ -6,16 +6,25 @@ import PwaClient from '../components/pwa/PwaClient';
 import { CommentProvider } from '../providers/CommentProvider'
 import { OperationsProvider } from '../providers/OperationsContext';
 
+export const dynamic = 'force-dynamic';
+
 export const metadata = {
-  title: 'AIMS',
-  description: 'Airco AIMS - Field Services',
+  title: 'Fleet Telematics Operations & Job Book',
+  description: 'Enterprise fleet management, hardware inventory, FM preinstallation tracking, and technician job book operations platform.',
   manifest: '/manifest.json',
-  themeColor: '#0f172a',
   icons: {
     icon: '/icons/favicon.ico',
     shortcut: '/icons/favicon.ico',
     apple: '/apple-touch-icon.png',
   },
+  openGraph: {
+    title: 'Fleet Telematics Operations & Job Book',
+    description: 'Enterprise fleet management, hardware inventory, FM preinstallation tracking, and technician job book operations platform.',
+  },
+};
+
+export const viewport = {
+  themeColor: '#0f172a',
 };
 export default function RootLayout({ children }: { children: ReactNode }) {
   return (

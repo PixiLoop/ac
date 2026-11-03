@@ -104,6 +104,30 @@ export class CustomerController {
     return this.service.getIndicators(id)
   }
 
+  @Get(':id/custom-prices')
+  @Permissions('customers.view')
+  getCustomPrices(@Param('id') id: string) {
+    return this.service.getCustomPrices(id);
+  }
+
+  @Post(':id/custom-prices')
+  @Permissions('customers.edit')
+  upsertCustomPrice(@Param('id') id: string, @Body() body: any) {
+    return this.service.upsertCustomPrice(id, body);
+  }
+
+  @Patch(':id/custom-prices')
+  @Permissions('customers.edit')
+  updateCustomPrices(@Param('id') id: string, @Body() body: any) {
+    return this.service.updateCustomPrices(id, body);
+  }
+
+  @Delete(':id/custom-prices/:priceId')
+  @Permissions('customers.edit')
+  deleteCustomPrice(@Param('id') id: string, @Param('priceId') priceId: string) {
+    return this.service.deleteCustomPrice(id, priceId);
+  }
+
   @Delete(':id')
   @Permissions('customers.delete')
   delete(@Param('id') id: string) {

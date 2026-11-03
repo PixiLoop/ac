@@ -1061,6 +1061,8 @@ export const OperationsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       jobNumber: jobData.jobNumber || (jobData.isWhiteboard ? `WB-2026-${nextNum}` : `JOB-2026-${nextNum}`),
       isWhiteboard: jobData.isWhiteboard ?? true,
       jobType: jobData.jobType ?? (jobData.isWhiteboard ? 'Whiteboard' : 'Standard'),
+      jobSource: jobData.jobSource ?? 'Whiteboard',
+      sourceType: jobData.sourceType ?? 'WHITEBOARD',
       checklistSections,
       timeline: [
         {

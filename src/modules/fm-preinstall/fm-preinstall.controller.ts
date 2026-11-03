@@ -3,6 +3,7 @@ import {
     Get,
     Post,
     Patch,
+    Put,
     Delete,
     Param,
     Body,
@@ -79,6 +80,40 @@ export class FMPreinstallController {
     @Permissions('fmpreinstalls.view')
     findByInvoice(@Param('invoiceId') invoiceId: string) {
         return this.service.findByInvoiceId(invoiceId);
+    }
+
+    @Get('bulk')
+    @Permissions('fmpreinstalls.view')
+    listBulk(@Query() query: any) {
+        return this.service.listBulk(query);
+    }
+
+    @Get('bulk/:id')
+    @Permissions('fmpreinstalls.view')
+    findBulk(@Param('id') id: string) {
+        return this.service.findBulkById(id);
+    }
+
+    @Patch('bulk/:id')
+    @Permissions('fmpreinstalls.edit')
+    updateBulk(
+        @Param('id') id: string,
+        @Body() dto: any,
+        @Req() req: any,
+    ) {
+        const userId = req.user?.id || 'SYSTEM';
+        return this.service.updateBulk(id, dto, userId);
+    }
+
+    @Put('bulk/:id')
+    @Permissions('fmpreinstalls.edit')
+    updateBulkPut(
+        @Param('id') id: string,
+        @Body() dto: any,
+        @Req() req: any,
+    ) {
+        const userId = req.user?.id || 'SYSTEM';
+        return this.service.updateBulk(id, dto, userId);
     }
 
     @Get(':id')

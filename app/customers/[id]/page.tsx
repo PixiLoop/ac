@@ -15,6 +15,7 @@ import { FormSection } from '../../../components/forms/FormSection';
 import { AbnLookup } from '../../../components/common/AbnLookup';
 import { fetchDispatchMethodOptions } from '../../../components/customers/forms/CustomerDispatchForm';
 import { MainAccountSelect, type MainAccountOption } from '../../../components/customers/MainAccountSelect';
+import { CustomerPricingSection, type CustomerCustomPriceRow } from '../../../components/customers/sections/CustomerPricingSection';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const phoneRegex = /^[0-9+\-\s]{6,20}$/;
@@ -78,12 +79,13 @@ export default function EditCustomerPage({ params }: any) {
   const [depots, setDepots] = useState([])
   const [parentAccount, setParentAccount] = useState<MainAccountOption | null>(null)
   const [childAccounts, setChildAccounts] = useState<MainAccountOption[]>([])
+  const [customPrices, setCustomPrices] = useState<CustomerCustomPriceRow[]>([])
 
   /* ---------------- Track Unsaved Changes (Dirty State) ---------------- */
 
   const currentDataSnapshot = useMemo(() => {
-    return JSON.stringify({ details, contacts, addresses, account, dispatches });
-  }, [details, contacts, addresses, account, dispatches]);
+    return JSON.stringify({ details, contacts, addresses, account, dispatches, depots, customPrices });
+  }, [details, contacts, addresses, account, dispatches, depots, customPrices]);
 
   const isDirty = useMemo(() => {
     if (!initialData) return false;
@@ -157,6 +159,15 @@ export default function EditCustomerPage({ params }: any) {
 
       const loadedDispatches = c.dispatches || [];
       const loadedDepots = c.Depots || [];
+      const loadedCustomPrices: CustomerCustomPriceRow[] = (c.customPrices || []).map((cp: any) => ({
+        id: cp.id,
+        productId: cp.productId,
+        productCode: cp.product?.productCode,
+        productName: cp.product?.name,
+        customPrice: Number(cp.customPrice),
+        notes: cp.notes || '',
+        product: cp.product,
+      }));
 
       setDetails(loadedDetails);
       setContacts(loadedContacts);
@@ -175,6 +186,7 @@ export default function EditCustomerPage({ params }: any) {
       setChildAccounts(c.childAccounts ?? []);
       setDispatches(loadedDispatches);
       setDepots(loadedDepots);
+      setCustomPrices(loadedCustomPrices);
 
       // Snapshot clean data baseline
       setInitialData(
@@ -184,6 +196,8 @@ export default function EditCustomerPage({ params }: any) {
           addresses: loadedAddresses,
           account: loadedAccount,
           dispatches: loadedDispatches,
+          depots: loadedDepots,
+          customPrices: loadedCustomPrices,
         })
       );
     } catch {
@@ -538,6 +552,15 @@ export default function EditCustomerPage({ params }: any) {
           paymentMethod: account.paymentMethod,
           gstExempt: account.gstExempt,
           invoiceDelivery: account.invoiceDelivery || 'PRINT_WITH_GOODS',
+        }),
+        api.patch(`/customers/${targetId}/custom-prices`, {
+          customPrices: customPrices
+            .filter(cp => cp.productId && Number(cp.customPrice) >= 0)
+            .map(cp => ({
+              productId: cp.productId,
+              customPrice: Number(cp.customPrice),
+              notes: cp.notes || '',
+            })),
         }),
       ]);
 
@@ -1223,6 +1246,16 @@ export default function EditCustomerPage({ params }: any) {
               ))
             )}
           </div>
+        </FormSection>
+
+        <FormSection title="Customer-Specific Pricing" defaultOpen={true}>
+          <CustomerPricingSection
+            customerId={customerId}
+            customerPriceLevel={account.priceLevel}
+            customerSalesFactor={account.salesFactor}
+            customPrices={customPrices}
+            onChange={setCustomPrices}
+          />
         </FormSection>
 
         <div className="flex justify-end gap-3 pt-2">

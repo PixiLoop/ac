@@ -237,6 +237,7 @@ export function InvoiceForm({ mode = 'create', initialData, onEdit }: any) {
         update('gstExempt', pricing.gstExempt);
         update('fmPriceLevel', pricing.fmPriceLevel);
         update('fmPriceFactor', pricing.fmPriceFactor);
+        update('customPrices', pricing.customPrices);
         if (pricing.priceLevel) update('priceLevel', pricing.priceLevel);
         if (pricing.salesFactor !== '') update('salesFactor', pricing.salesFactor);
 

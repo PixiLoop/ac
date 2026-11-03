@@ -92,6 +92,7 @@ export function QuotationDetailsSection({ value, update, readOnly = false, setFr
                 update('gstExempt', pricing.gstExempt);
                 update('fmPriceLevel', pricing.fmPriceLevel);
                 update('fmPriceFactor', pricing.fmPriceFactor);
+                update('customPrices', pricing.customPrices);
             })
             .catch(() => setDispatches([]));
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -144,6 +145,7 @@ export function QuotationDetailsSection({ value, update, readOnly = false, setFr
         update('gstExempt', pricing.gstExempt);
         update('fmPriceLevel', pricing.fmPriceLevel);
         update('fmPriceFactor', pricing.fmPriceFactor);
+        update('customPrices', pricing.customPrices);
 
         const shipping = customer.addresses?.find(
             (a: any) => a.type === 'SHIPPING'

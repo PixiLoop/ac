@@ -15,6 +15,7 @@ import { InvoiceDto } from '../../../invoices/page';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../../../../components/inventory/shared-ui';
 import { QuotationDto } from '../../../quotations/page';
 import { SalesOrderDto } from '../../../salesorders/page';
+import { CustomerPricingSection } from '../../../../components/customers/sections/CustomerPricingSection';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: 'bg-slate-100 text-slate-700',
@@ -263,6 +264,7 @@ export default function CustomerViewPage({ params }: any) {
       <Tabs defaultValue="details" className="space-y-4">
         <TabsList className="grid w-full grid-cols-3 gap-2 md:grid-cols-6">
           <TabsTrigger value="details">Details</TabsTrigger>
+          <TabsTrigger value="pricing">Custom Pricing ({customer.customPrices?.length || 0})</TabsTrigger>
           <TabsTrigger value="pending-invoices">Pending Invoices</TabsTrigger>
           <TabsTrigger value="invoices">Invoices</TabsTrigger>
           <TabsTrigger value="quotations">Quotations</TabsTrigger>
@@ -415,6 +417,26 @@ export default function CustomerViewPage({ params }: any) {
               value={customer.gstExempt ? 'Yes' : 'No'}
             />
           </Section>
+        </TabsContent>
+
+        {/* ── Custom Pricing tab ─────────────────────────────────────────── */}
+        <TabsContent value="pricing" className="space-y-6">
+          <CustomerPricingSection
+            customerId={customer.id}
+            customerPriceLevel={customer.priceLevel}
+            customerSalesFactor={customer.salesFactor}
+            customPrices={(customer.customPrices || []).map((cp: any) => ({
+              id: cp.id,
+              productId: cp.productId,
+              productCode: cp.product?.productCode,
+              productName: cp.product?.name,
+              customPrice: Number(cp.customPrice),
+              notes: cp.notes || '',
+              product: cp.product,
+            }))}
+            onChange={() => {}}
+            readOnly={true}
+          />
         </TabsContent>
         <TabsContent value="pending-invoices" className="space-y-6">
           <DataTable

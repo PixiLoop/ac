@@ -28,7 +28,29 @@ export function catalogSlot(product: any, level?: string | null): number {
 export function isFmPricedProduct(product: any): boolean {
   return Boolean(product?.isFmHardware)
     || product?.status === 'FM Service'
-    || Boolean(product?.fieldServiceType);
+    || product?.productCategory === 'FMS'
+    || product?.productCategory === 'DRIVER_OPTIONS'
+    || Boolean(product?.fieldServiceType)
+    || String(product?.productCode || '').toUpperCase().startsWith('FMS')
+    || Boolean(product?.isFmPriced);
+}
+
+export function isNonInventoryItem(product: any): boolean {
+  if (!product) return false;
+  const itemType = String(product.itemType || '').toLowerCase();
+  if (itemType === 'service' || itemType === 'non-inventory' || itemType === 'non_inventory') {
+    return true;
+  }
+  if (product.productCategory === 'FMS') {
+    return true;
+  }
+  if (product.status === 'FM Service' && !product.isFmHardware) {
+    return true;
+  }
+  if (String(product.productCode || '').toUpperCase().startsWith('FMS') && !product.isFmHardware) {
+    return true;
+  }
+  return false;
 }
 
 export interface CustomPriceMatch {
@@ -71,7 +93,8 @@ export function defaultPricedList(product: any, form: any): number {
   const level = useFm ? form.fmPriceLevel : form?.priceLevel;
   const factorRaw = Number(useFm ? form?.fmPriceFactor : form?.salesFactor);
   const multiplier = Number.isFinite(factorRaw) && factorRaw !== 0 ? factorRaw / 1000 : 1;
-  return catalogSlot(product, level) * multiplier;
+  const val = catalogSlot(product, level) * multiplier;
+  return Math.round(val * 100) / 100;
 }
 
 export function pricedList(product: any, form: any): number {
